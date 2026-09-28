@@ -2,9 +2,7 @@ package com.example.ui.screens
 
 import android.content.Intent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -217,7 +215,7 @@ fun NoteEditorScreen(
     }
 
     val formattedHeaderDate = remember(updatedAt) {
-        val sdf = SimpleDateFormat("d 'de' MMMM 'de' yyyy, HH:mm", Locale("es", "ES"))
+        val sdf = SimpleDateFormat("d 'de' MMMM 'de' yyyy, HH:mm", Locale.forLanguageTag("es-ES"))
         sdf.format(Date(updatedAt))
     }
 
@@ -819,7 +817,7 @@ fun NoteEditorScreen(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    PaperStyle.values().forEach { style ->
+                    PaperStyle.entries.forEach { style ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = if (paperStyle == style) amber.copy(alpha = 0.15f) else Color.Transparent,

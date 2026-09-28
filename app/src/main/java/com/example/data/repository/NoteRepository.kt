@@ -26,7 +26,7 @@ class NoteRepository(private val noteDao: NoteDao) {
         noteDao.updateNote(
             note.copy(
                 isPinned = !note.isPinned,
-                updatedAt = System.currentTimeMillis()
+                updatedAt = System.currentTimeMillis(),
             )
         )
     }
@@ -76,8 +76,8 @@ class NoteRepository(private val noteDao: NoteDao) {
                 paperStyle = "RULED",
                 isPinned = true,
                 tags = "Ideas,Inicio",
-                createdAt = now - 1000 * 60 * 30,
-                updatedAt = now - 1000 * 60 * 30
+                createdAt = now - (1000 * 60 * 30),
+                updatedAt = now - (1000 * 60 * 30),
             ),
             NoteEntity(
                 title = "🛒 Lista de compras y tareas",
@@ -94,8 +94,8 @@ class NoteRepository(private val noteDao: NoteDao) {
                     {"id":"4","text":"Plumas estilográficas de repuesto","isChecked":false},
                     {"id":"5","text":"Revisar sincronización de archivos","isChecked":false}
                 ]""",
-                createdAt = now - 1000 * 60 * 60 * 2,
-                updatedAt = now - 1000 * 60 * 45
+                createdAt = now - (1000 * 60 * 60 * 2),
+                updatedAt = now - (1000 * 60 * 45),
             ),
             NoteEntity(
                 title = "🧮 Math Notes: Presupuesto del proyecto",
@@ -112,8 +112,8 @@ class NoteRepository(private val noteDao: NoteDao) {
                 paperStyle = "GRID",
                 isPinned = false,
                 tags = "Trabajo,Cálculo",
-                createdAt = now - 1000 * 60 * 120,
-                updatedAt = now - 1000 * 60 * 10
+                createdAt = now - (1000 * 60 * 120),
+                updatedAt = now - (1000 * 60 * 10),
             ),
             NoteEntity(
                 title = "🎨 Boceto de arquitectura",
@@ -124,8 +124,8 @@ class NoteRepository(private val noteDao: NoteDao) {
                 isPinned = false,
                 tags = "Diseño,Ideas",
                 drawingData = "PRESET_SKETCH",
-                createdAt = now - 1000 * 60 * 180,
-                updatedAt = now - 1000 * 60 * 90
+                createdAt = now - (1000 * 60 * 180),
+                updatedAt = now - (1000 * 60 * 90),
             )
         )
 

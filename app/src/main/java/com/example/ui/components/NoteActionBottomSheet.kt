@@ -26,7 +26,6 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Unarchive
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -74,7 +73,7 @@ fun NoteActionBottomSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = if (note.title.isNotBlank()) note.title else "Opciones de nota",
+                text = note.title.ifBlank { "Opciones de nota" },
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1
             )
@@ -123,7 +122,7 @@ fun NoteActionBottomSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                PaperStyle.values().forEach { style ->
+                PaperStyle.entries.forEach { style ->
                     val isSelected = note.paperStyle == style.name
                     FilterChip(
                         selected = isSelected,

@@ -74,7 +74,7 @@ fun NoteCard(
     val isLockedNote = note.isLocked && !isUnlocked
 
     val checklistItems = remember(note.checklistData) {
-        if (note.noteType == "CHECKLIST" && note.checklistData.isNotBlank()) {
+        if ((note.noteType == "CHECKLIST") && note.checklistData.isNotBlank()) {
             runCatching {
                 val array = JSONArray(note.checklistData)
                 val list = mutableListOf<ChecklistItem>()
@@ -139,7 +139,7 @@ fun NoteCard(
                     verticalAlignment = Alignment.Top
                 ) {
                     Text(
-                        text = if (note.title.isNotBlank()) note.title else "Nota sin título",
+                        text = note.title.ifBlank { "Nota sin título" },
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp

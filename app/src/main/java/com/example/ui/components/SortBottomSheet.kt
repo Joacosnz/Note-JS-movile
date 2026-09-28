@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,7 +51,7 @@ fun SortBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            SortOption.values().forEach { option ->
+            SortOption.entries.forEach { option ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

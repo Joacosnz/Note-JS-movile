@@ -19,7 +19,7 @@ enum class PaperStyle(val title: String) {
 data class ChecklistItem(
     val id: String,
     val text: String,
-    val isChecked: Boolean = false
+    val isChecked: Boolean = false,
 )
 
 data class DrawingPoint(

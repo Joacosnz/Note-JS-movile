@@ -22,5 +22,5 @@ data class NoteEntity(
     val drawingData: String = "", // JSON representation of stroke paths
     val mathEvaluations: String = "", // Results evaluated
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
 )

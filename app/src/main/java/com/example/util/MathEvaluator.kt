@@ -25,7 +25,7 @@ object MathEvaluator {
             expr = expr.replace(Regex("(\\d+(?:\\.\\d+)?)\\s*%\\s*de\\s*(\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)) {
                 val p = it.groupValues[1].toDoubleOrNull() ?: 0.0
                 val v = it.groupValues[2].toDoubleOrNull() ?: 0.0
-                (p / 100.0 * v).toString()
+                ((p / 100.0) * v).toString()
             }
 
             // Replace single percentages: "20%" -> "0.20"

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -32,7 +31,6 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Highlight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -307,7 +305,7 @@ fun DrawingScreen(
                         horizontalArrangement = Arrangement.SpaceAround,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        DrawingTool.values().forEach { tool ->
+                        DrawingTool.entries.forEach { tool ->
                             val isSelected = currentTool == tool
                             val icon = when (tool) {
                                 DrawingTool.PEN -> Icons.Default.Create
@@ -391,7 +389,7 @@ fun DrawingScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        PaperStyle.values().forEach { style ->
+                        PaperStyle.entries.forEach { style ->
                             FilterChip(
                                 selected = paperStyle == style,
                                 onClick = { paperStyle = style },

@@ -3,7 +3,6 @@ package com.example.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Lock
@@ -49,8 +47,8 @@ fun AppleNoteRow(
     note: NoteEntity,
     isUnlocked: Boolean,
     onClick: () -> Unit,
-    showDivider: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = true
 ) {
     val isDark = isSystemInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
@@ -60,9 +58,9 @@ fun AppleNoteRow(
         val now = System.currentTimeMillis()
         val diff = now - note.updatedAt
         when {
-            diff < 24 * 60 * 60 * 1000 -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(note.updatedAt))
-            diff < 48 * 60 * 60 * 1000 -> "ayer"
-            diff < 7 * 24 * 60 * 60 * 1000 -> SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(note.updatedAt))
+            diff < (24 * 60 * 60 * 1000) -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(note.updatedAt))
+            diff < (48 * 60 * 60 * 1000) -> "ayer"
+            diff < (7 * 24 * 60 * 60 * 1000) -> SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(note.updatedAt))
             else -> SimpleDateFormat("d/M/yy", Locale.getDefault()).format(Date(note.updatedAt))
         }
     }
@@ -106,7 +104,7 @@ fun AppleNoteRow(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = if (note.title.isNotBlank()) note.title else "Nota sin título",
+                        text = note.title.ifBlank { "Nota sin título" },
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp
