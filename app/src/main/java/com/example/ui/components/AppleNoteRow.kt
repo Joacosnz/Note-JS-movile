@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -24,17 +27,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NoteEntity
+import com.example.model.NoteBlock
 import com.example.model.NoteColors
+import com.example.model.PdfBlock
+import com.example.model.AudioBlock
 import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
+import com.example.util.NoteBlockSerializer
 import com.example.util.sanitizeNoteSnippet
-import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,10 +53,14 @@ fun AppleNoteRow(
     isUnlocked: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    showDivider: Boolean = true
+    showDivider: Boolean = true,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectToggle: () -> Unit = {}
 ) {
     val isDark = isSystemInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val haptics = LocalHapticFeedback.current
     val isLockedNote = note.isLocked && !isUnlocked
 
     val rowBg = if (note.colorIndex != 0) {
@@ -68,23 +80,29 @@ fun AppleNoteRow(
         }
     }
 
-    val snippetText = remember(note.content, note.checklistData, note.noteType) {
-        val raw = when {
-            isLockedNote -> "Nota bloqueada"
-            note.noteType == "CHECKLIST" && note.checklistData.isNotBlank() -> {
-                runCatching {
-                    val arr = JSONArray(note.checklistData)
-                    val items = mutableListOf<String>()
-                    for (i in 0 until arr.length()) {
-                        val o = arr.getJSONObject(i)
-                        items.add(o.getString("text"))
-                    }
-                    items.joinToString(", ")
-                }.getOrDefault("Lista de tareas")
+    val blocks = remember(note.content) { NoteBlockSerializer.deserialize(note.content) }
+    val checklistBlocks = remember(blocks) { blocks.filterIsInstance<NoteBlock.Checklist>() }
+    val completedCount = checklistBlocks.count { isChecked -> isChecked.isChecked }
+    val totalChecklist = checklistBlocks.size
+
+    val snippetText = remember(blocks, isLockedNote) {
+        val raw = if (isLockedNote) {
+            "Nota bloqueada"
+        } else if (totalChecklist > 0) {
+            "☑️ $completedCount/$totalChecklist tareas completadas"
+        } else {
+            blocks.filter { it !is NoteBlock.Drawing }.joinToString(" ") { block ->
+                when (block) {
+                    is NoteBlock.Text -> block.content
+                    is NoteBlock.Checklist -> block.content
+                    is NoteBlock.SimpleList -> block.content
+                    is NoteBlock.CalloutBox -> block.content
+                    is NoteBlock.Drawing -> "[Boceto]"
+                    is NoteBlock.Table -> block.matrix.joinToString(" ") { row -> row.joinToString(" ") { it.text } }
+                    is PdfBlock -> "[PDF: ${block.fileName}]"
+                    is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
+                }
             }
-            note.noteType == "DRAWING" -> "Dibujo / Boceto a mano alzada"
-            note.noteType == "MATH" -> note.content.ifBlank { "Math Note con cálculo reactivo" }
-            else -> note.content
         }
         sanitizeNoteSnippet(raw)
     }
@@ -93,7 +111,14 @@ fun AppleNoteRow(
         modifier = modifier
             .fillMaxWidth()
             .background(rowBg)
-            .clickable(onClick = onClick)
+            .clickable {
+                if (isSelectionMode) {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSelectToggle()
+                } else {
+                    onClick()
+                }
+            }
             .testTag("apple_note_row_${note.id}")
     ) {
         Row(
@@ -102,95 +127,89 @@ fun AppleNoteRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                // Title
+            if (isSelectionMode) {
+                Icon(
+                    imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                    contentDescription = null,
+                    tint = if (isSelected) amber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .size(22.dp)
+                        .padding(end = 12.dp)
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = note.title.ifBlank { "Nota sin título" },
-                        style = MaterialTheme.typography.bodyLarge.copy(
+                        style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp
                         ),
-                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
 
-                    if (note.isPinned) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.PushPin,
-                            contentDescription = "Nota fijada",
-                            tint = amber,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-
-                    if (note.isLocked) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "Nota protegida",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                // Date + snippet line (Iconic Apple Notes structure)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = formattedDate,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(
-                        text = snippetText.ifBlank { "Sin texto adicional" },
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // Apple folder / tags label
-                val tagList = note.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                if (tagList.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        tagList.take(2).forEach { tag ->
-                            Text(
-                                text = "#$tag",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                color = amber
+                        if (note.reminderTimestamp != null) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = amber,
+                                modifier = Modifier.size(14.dp)
                             )
                         }
+                        if (note.isLocked) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        if (note.isPinned) {
+                            Icon(
+                                imageVector = Icons.Default.PushPin,
+                                contentDescription = null,
+                                tint = amber,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        Text(
+                            text = formattedDate,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = snippetText.ifBlank { "Sin contenido adicional" },
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
 
         if (showDivider) {
             HorizontalDivider(
                 modifier = Modifier.padding(start = 16.dp),
-                thickness = 0.6.dp,
-                color = MaterialTheme.colorScheme.outline
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             )
         }
     }

@@ -17,11 +17,17 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE isTrashed = 0 AND isArchived = 1 ORDER BY updatedAt DESC")
     fun getArchivedNotes(): Flow<List<NoteEntity>>
 
+    @Query("SELECT * FROM notes WHERE (content LIKE '%' || :query || '%' OR title LIKE '%' || :query || '%') AND isTrashed = 0 ORDER BY isPinned DESC, updatedAt DESC")
+    fun searchNotes(query: String): Flow<List<NoteEntity>>
+
     @Query("SELECT * FROM notes WHERE isTrashed = 1 ORDER BY updatedAt DESC")
     fun getTrashedNotes(): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
     suspend fun getNoteById(id: Long): NoteEntity?
+
+    @Query("SELECT * FROM notes WHERE id IN (:ids)")
+    suspend fun getNotesByIds(ids: List<Long>): List<NoteEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNote(note: NoteEntity): Long
@@ -34,6 +40,15 @@ interface NoteDao {
 
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteNoteById(id: Long)
+
+    @Query("UPDATE notes SET isTrashed = 1, isPinned = 0 WHERE id IN (:ids)")
+    suspend fun moveToTrashBatch(ids: List<Long>)
+
+    @Query("DELETE FROM notes WHERE id IN (:ids)")
+    suspend fun deletePermanentlyBatch(ids: List<Long>)
+
+    @Query("UPDATE notes SET folder = :folder WHERE id IN (:ids)")
+    suspend fun updateFolderBatch(ids: List<Long>, folder: String)
 
     @Query("DELETE FROM notes WHERE isTrashed = 1")
     suspend fun emptyTrash()

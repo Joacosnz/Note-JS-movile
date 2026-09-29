@@ -1,6 +1,9 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -24,8 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -35,22 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Campo de búsqueda estilo cápsula ergonómico.
- *
- * Cumple con las especificaciones de diseño:
- * 1. Geometría y Contenedor:
- *    - Forma: Cápsula completamente redondeada (CircleShape).
- *    - Dimensiones: Altura de 52.dp, ocupando el ancho completo con márgenes laterales de 16.dp.
- *    - Fondo: Modo claro: blanco puro (Color.White), Modo oscuro: gris oscuro elegante (#1C1C1E).
- *    - Sombra y elevación: Sombra suave de 3.dp y sutil borde BorderStroke(1.dp, Color(0xFFE5E5EA)) en modo claro.
- * 2. Ícono de Búsqueda:
- *    - Extremo izquierdo con padding inicial de 18.dp.
- *    - Ícono de lupa delineado (Icons.Outlined.Search) en tono azul marino/índigo (Color(0xFF1E3A8A)) en modo claro y azul brillante (#60A5FA) en modo oscuro.
- *    - Tamaño: 22.dp.
- * 3. Campo de Texto y Placeholder:
- *    - Tipografía: Sans-serif limpia de peso regular, tamaño 16.sp.
- *    - Placeholder: "Buscar en notas..." en gris medio neutro (Color(0xFF6B7280)).
- *    - Comportamiento: BasicTextField de una sola línea, cursor en color azul a juego, botón de limpieza en el extremo derecho cuando hay texto, testTag "search_bar_input".
+ * Barra de Búsqueda con paradigma de diseño "Liquid Glass" (Matriz Vitrocerámica + Metal Amorfo BMG).
  */
 @Composable
 fun AppleSearchBar(
@@ -60,32 +51,58 @@ fun AppleSearchBar(
     placeholderText: String = "Buscar en notas...",
 ) {
     val isDark = isSystemInDarkTheme()
+    val haptic = LocalHapticFeedback.current
 
-    // Colores según especificaciones
-    val backgroundColor = if (isDark) Color(0xFF1C1C1E) else Color.White
-    val searchIconColor = if (isDark) Color(0xFF60A5FA) else Color(0xFF1E3A8A)
+    // Colores Liquid Glass
+    val backgroundColor = if (isDark) Color(0xFF141416).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.82f)
+    val searchIconColor = if (isDark) Color(0xFF60A5FA) else Color(0xFF1A365D)
     val textColor = if (isDark) Color.White else Color(0xFF111827)
-    val placeholderColor = Color(0xFF6B7280)
-    val borderStroke = if (!isDark) BorderStroke(1.dp, Color(0xFFE5E5EA)) else null
+    val placeholderColor = Color(0xFF71717A) // Gris mineral neutro
+
+    // Bisel Vitrocerámico (Borde con gradiente especular)
+    val specularBorder = if (isDark) {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.35f),
+                Color.Transparent,
+                Color(0xFF27272A).copy(alpha = 0.50f)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.90f),
+                Color.White.copy(alpha = 0.25f),
+                Color(0xFFCBD5E1).copy(alpha = 0.40f)
+            )
+        )
+    }
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .height(52.dp)
-            .shadow(elevation = 3.dp, shape = CircleShape),
+            .shadow(
+                elevation = 10.dp,
+                shape = CircleShape,
+                ambientColor = Color.Black.copy(alpha = 0.08f),
+                spotColor = Color.Black.copy(alpha = 0.12f)
+            )
+            .border(width = 1.dp, brush = specularBorder, shape = CircleShape)
+            .testTag("search_bar_liquid_glass"),
         shape = CircleShape,
         color = backgroundColor,
-        border = borderStroke,
+        tonalElevation = 0.dp
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Padding inicial de 18.dp antes del ícono de búsqueda
+            // Padding inicial de 18.dp
             Spacer(modifier = Modifier.width(18.dp))
 
-            // Ícono de búsqueda
+            // Ícono de Búsqueda (Lupa) en azul índigo pulido (aleación amorfa)
             Icon(
                 imageVector = Icons.Outlined.Search,
                 contentDescription = "Buscar",
@@ -95,7 +112,7 @@ fun AppleSearchBar(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // Campo de texto y placeholder
+            // Campo de entrada (BasicTextField)
             Box(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.CenterStart,
@@ -114,7 +131,10 @@ fun AppleSearchBar(
 
                 BasicTextField(
                     value = query,
-                    onValueChange = onQueryChange,
+                    onValueChange = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onQueryChange(it)
+                    },
                     singleLine = true,
                     textStyle = TextStyle(
                         fontSize = 16.sp,
@@ -129,10 +149,17 @@ fun AppleSearchBar(
                 )
             }
 
-            // Botón de limpieza si hay texto escrito
-            if (query.isNotEmpty()) {
+            // Botón de limpieza animado con respuesta háptica snap-back
+            AnimatedVisibility(
+                visible = query.isNotEmpty(),
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
                 IconButton(
-                    onClick = { onQueryChange("") },
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onQueryChange("")
+                    },
                     modifier = Modifier
                         .padding(end = 6.dp)
                         .size(36.dp),
@@ -144,14 +171,16 @@ fun AppleSearchBar(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-            } else {
+            }
+
+            if (query.isEmpty()) {
                 Spacer(modifier = Modifier.width(18.dp))
             }
         }
     }
 }
 
-@Preview(showBackground = true, name = "Apple Search Bar - Light")
+@Preview(showBackground = true, name = "Apple Search Bar Liquid Glass - Light")
 @Composable
 private fun AppleSearchBarLightPreview() {
     AppleSearchBar(
@@ -160,20 +189,20 @@ private fun AppleSearchBarLightPreview() {
     )
 }
 
-@Preview(showBackground = true, name = "Apple Search Bar - Light with text")
+@Preview(showBackground = true, name = "Apple Search Bar Liquid Glass - Light with text")
 @Composable
 private fun AppleSearchBarLightWithTextPreview() {
     AppleSearchBar(
-        query = "Nota de reunión",
+        query = "Investigación BMG",
         onQueryChange = {},
     )
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF000000, name = "Apple Search Bar - Dark")
+@Preview(showBackground = true, backgroundColor = 0xFF000000, name = "Apple Search Bar Liquid Glass - Dark")
 @Composable
 private fun AppleSearchBarDarkPreview() {
     AppleSearchBar(
-        query = "Ideas",
+        query = "Ceramic Shield",
         onQueryChange = {},
     )
 }

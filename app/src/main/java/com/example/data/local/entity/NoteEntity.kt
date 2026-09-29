@@ -18,9 +18,12 @@ data class NoteEntity(
     val isLocked: Boolean = false,
     val lockPin: String = "",
     val tags: String = "", // Comma-separated tags e.g. "Ideas,Trabajo"
+    val folder: String = "Notas", // Folder name e.g. "Notas", "Personal", etc.
     val checklistData: String = "", // JSON representation of items
     val drawingData: String = "", // JSON representation of stroke paths
     val mathEvaluations: String = "", // Results evaluated
+    val reminderTimestamp: Long? = null,
+    val isReminderDone: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

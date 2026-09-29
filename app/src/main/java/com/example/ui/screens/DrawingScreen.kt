@@ -61,7 +61,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -98,6 +100,7 @@ fun DrawingScreen(
 ) {
     val isDark = isSystemInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val haptics = LocalHapticFeedback.current
 
     var title by remember { mutableStateOf("Boceto") }
     var paperStyle by remember { mutableStateOf(PaperStyle.BLANK) }
@@ -188,6 +191,19 @@ fun DrawingScreen(
         viewModel.navigateBack()
     }
 
+    fun saveAndExitToText() {
+        val json = serializeStrokes()
+        viewModel.saveNote(
+            id = noteId,
+            title = title,
+            content = if (strokes.isNotEmpty()) "Boceto de Apple Notes (${strokes.size} trazos)" else "",
+            noteType = NoteType.TEXT,
+            paperStyle = paperStyle.name,
+            drawingData = json
+        )
+        viewModel.navigateBack()
+    }
+
     BackHandler {
         saveAndExit()
     }
@@ -265,6 +281,23 @@ fun DrawingScreen(
                         }
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = "Limpiar lienzo", tint = amber)
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            saveAndExitToText()
+                        },
+                        modifier = Modifier.testTag("drawing_exit_to_text")
+                    ) {
+                        Text(
+                            text = "Aa",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            ),
+                            color = amber
+                        )
                     }
 
                     TextButton(onClick = { saveAndExit() }) {

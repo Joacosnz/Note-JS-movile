@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +35,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -43,17 +44,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NoteEntity
-import com.example.model.ChecklistItem
+import com.example.model.NoteBlock
 import com.example.model.NoteColors
 import com.example.model.PaperStyle
+import com.example.model.PdfBlock
+import com.example.model.AudioBlock
 import com.example.ui.theme.AppleCardBgDark
 import com.example.ui.theme.AppleCardBgLight
 import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
 import com.example.ui.theme.AppleSeparatorDark
 import com.example.ui.theme.AppleSeparatorLight
+import com.example.util.NoteBlockSerializer
 import com.example.util.sanitizeNoteSnippet
-import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,10 +69,14 @@ fun NoteCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onTogglePin: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectToggle: () -> Unit = {}
 ) {
     val isDark = isSystemInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val haptics = LocalHapticFeedback.current
 
     val isCustomColor = note.colorIndex != 0
     val cardBg = if (isCustomColor) {
@@ -86,26 +93,27 @@ fun NoteCard(
     val paperStyle = runCatching { PaperStyle.valueOf(note.paperStyle) }.getOrDefault(PaperStyle.BLANK)
     val isLockedNote = note.isLocked && !isUnlocked
 
-    val checklistItems = remember(note.checklistData) {
-        if ((note.noteType == "CHECKLIST") && note.checklistData.isNotBlank()) {
-            runCatching {
-                val array = JSONArray(note.checklistData)
-                val list = mutableListOf<ChecklistItem>()
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    list.add(
-                        ChecklistItem(
-                            id = obj.getString("id"),
-                            text = obj.getString("text"),
-                            isChecked = obj.optBoolean("isChecked", false)
-                        )
-                    )
-                }
-                list
-            }.getOrDefault(emptyList())
-        } else {
-            emptyList()
+    val blocks = remember(note.content) { NoteBlockSerializer.deserialize(note.content) }
+    val checklistBlocks = remember(blocks) { blocks.filterIsInstance<NoteBlock.Checklist>() }
+    val completedCount = checklistBlocks.count { it.isChecked }
+    val totalChecklist = checklistBlocks.size
+    val hasDrawing = remember(blocks) { blocks.any { it is NoteBlock.Drawing } || note.drawingData.isNotBlank() }
+    val hasCallout = remember(blocks) { blocks.any { it is NoteBlock.CalloutBox } }
+
+    val snippetText = remember(blocks) {
+        val raw = blocks.filter { it !is NoteBlock.Drawing }.joinToString(" ") { block ->
+            when (block) {
+                is NoteBlock.Text -> block.content
+                is NoteBlock.Checklist -> block.content
+                is NoteBlock.SimpleList -> block.content
+                is NoteBlock.CalloutBox -> block.content
+                is NoteBlock.Drawing -> ""
+                is NoteBlock.Table -> block.matrix.joinToString(" ") { row -> row.joinToString(" ") { it.text } }
+                is PdfBlock -> "[PDF: ${block.fileName}]"
+                is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
+            }
         }
+        sanitizeNoteSnippet(raw)
     }
 
     val dateFormatted = remember(note.updatedAt) {
@@ -124,8 +132,22 @@ fun NoteCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
+                onClick = {
+                    if (isSelectionMode) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelectToggle()
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = {
+                    if (isSelectionMode) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelectToggle()
+                    } else {
+                        onLongClick()
+                    }
+                }
             )
             .testTag("apple_card_${note.id}"),
         shape = RoundedCornerShape(14.dp),
@@ -145,24 +167,57 @@ fun NoteCard(
                     .fillMaxWidth()
                     .padding(14.dp)
             ) {
-                // Header with Title and Pin
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
                 ) {
-                    Text(
-                        text = note.title.ifBlank { "Nota sin título" },
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 16.sp
-                        ),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isSelectionMode) {
+                            Icon(
+                                imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                                contentDescription = null,
+                                tint = if (isSelected) amber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .padding(end = 8.dp)
+                            )
+                        }
+                        Text(
+                            text = note.title.ifBlank { "Nota sin título" },
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (hasDrawing) {
+                            Icon(
+                                imageVector = Icons.Default.Gesture,
+                                contentDescription = null,
+                                tint = amber,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(end = 4.dp)
+                            )
+                        }
+                        if (hasCallout) {
+                            Icon(
+                                imageVector = Icons.Default.Calculate,
+                                contentDescription = null,
+                                tint = amber,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(end = 4.dp)
+                            )
+                        }
                         if (note.isLocked) {
                             Icon(
                                 imageVector = Icons.Default.Lock,
@@ -174,7 +229,7 @@ fun NoteCard(
                             )
                         }
 
-                        if (note.isPinned) {
+                        if (note.isPinned && !isSelectionMode) {
                             IconButton(
                                 onClick = onTogglePin,
                                 modifier = Modifier.size(22.dp)
@@ -183,7 +238,7 @@ fun NoteCard(
                                     imageVector = Icons.Default.PushPin,
                                     contentDescription = "Nota fijada",
                                     tint = amber,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                             }
                         }
@@ -198,139 +253,74 @@ fun NoteCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    when (note.noteType) {
-                        "CHECKLIST" -> {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            checklistItems.take(4).forEach { item ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (item.isChecked) Icons.Default.CheckCircle else Icons.Outlined.Circle,
-                                        contentDescription = null,
-                                        tint = if (item.isChecked) amber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = sanitizeNoteSnippet(item.text),
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontSize = 13.sp,
-                                            textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None
-                                        ),
-                                        color = if (item.isChecked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                        "DRAWING" -> {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Box(
+                    if (totalChecklist > 0) {
+                        Text(
+                            text = "☑️ $completedCount/$totalChecklist tareas completadas",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                            color = amber
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        checklistBlocks.take(3).forEach { item ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(56.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                        RoundedCornerShape(8.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
+                                    .padding(vertical = 1.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Gesture,
-                                        contentDescription = null,
-                                        tint = amber,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Boceto a mano",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-
-                        "MATH" -> {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Default.Calculate,
+                                    imageVector = if (item.isChecked) Icons.Default.CheckCircle else Icons.Outlined.Circle,
                                     contentDescription = null,
-                                    tint = amber,
+                                    tint = if (item.isChecked) amber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Math Note",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = amber
-                                )
-                            }
-                            val sanitizedMath = sanitizeNoteSnippet(note.content)
-                            if (sanitizedMath.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = sanitizedMath,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                                    maxLines = 3,
+                                    text = sanitizeNoteSnippet(item.content),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontSize = 12.sp,
+                                        textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None
+                                    ),
+                                    color = if (item.isChecked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
-
-                        else -> {
-                            val sanitizedBody = sanitizeNoteSnippet(note.content)
-                            if (sanitizedBody.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = sanitizedBody,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                                    maxLines = 4,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                    } else if (snippetText.isNotBlank()) {
+                        Text(
+                            text = snippetText,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 
-                // Apple folder / tags label
-                val tagList = note.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                if (tagList.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        tagList.take(2).forEach { tag ->
-                            Text(
-                                text = "#$tag",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = amber
-                            )
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Date in bottom right
-                Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = dateFormatted,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
+
+                    if (note.tags.isNotBlank()) {
+                        Text(
+                            text = "#${note.tags.split(",").firstOrNull()?.trim() ?: ""}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+                            color = amber,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }

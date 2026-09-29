@@ -81,6 +81,17 @@ fun AppleFormatSheet(
             ) {
                 Column {
                     FormatRow(
+                        title = "📝 Texto normal (Cuerpo)",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Normal,
+                        onClick = {
+                            onApplyStyle("NORMAL")
+                            onDismiss()
+                        }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
+
+                    FormatRow(
                         title = "Título",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
@@ -92,20 +103,9 @@ fun AppleFormatSheet(
                     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
 
                     FormatRow(
-                        title = "Encabezado",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        onClick = {
-                            onApplyStyle("HEADING")
-                            onDismiss()
-                        }
-                    )
-                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
-
-                    FormatRow(
-                        title = "Subencabezado",
+                        title = "Subtítulo",
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
                         onClick = {
                             onApplyStyle("SUBHEADING")
                             onDismiss()

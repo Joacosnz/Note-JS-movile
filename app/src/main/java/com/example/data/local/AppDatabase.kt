@@ -4,17 +4,20 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.example.data.local.dao.FolderDao
 import com.example.data.local.dao.NoteDao
+import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.NoteEntity
 
 @Database(
-    entities = [NoteEntity::class],
-    version = 2,
+    entities = [NoteEntity::class, FolderEntity::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun noteDao(): NoteDao
+    abstract fun folderDao(): FolderDao
 
     companion object {
         @Volatile
@@ -25,7 +28,7 @@ abstract class AppDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "auranotes_v2.db"
+                    "auranotes_v3.db"
                 )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
