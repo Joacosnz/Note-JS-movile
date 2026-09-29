@@ -67,13 +67,13 @@ class NoteRepository(private val noteDao: NoteDao) {
             NoteEntity(
                 title = "✨ Bienvenido a AuraNotes",
                 content = "Una experiencia de notas que fusiona lo mejor de Google Keep (rapidez, tarjetas de colores y FAB multimodal), Samsung Notes (lienzo con cuadrículas, lápices y ergonomía) y Apple Notes (Math Notes, listas y formato fluido).\n\n" +
-                        "• Toca '+' para crear notas rápidas, listas, dibujos o cálculos.\n" +
-                        "• Cambia entre vista en cuadrícula de 2 columnas o lista.\n" +
-                        "• Organiza con etiquetas (#Ideas, #Trabajo, #Estudio).\n" +
-                        "• Protege notas privadas con código PIN.",
+                        "Toca '+' para crear notas rápidas, listas, dibujos o cálculos.\n" +
+                        "Cambia entre vista en cuadrícula de 2 columnas o lista.\n" +
+                        "Organiza con etiquetas (#Ideas, #Trabajo, #Estudio).\n" +
+                        "Protege notas privadas con código PIN.",
                 noteType = "TEXT",
-                colorIndex = 5, // Lavender
-                paperStyle = "RULED",
+                colorIndex = 0,
+                paperStyle = "BLANK",
                 isPinned = true,
                 tags = "Ideas,Inicio",
                 createdAt = now - (1000 * 60 * 30),
@@ -83,7 +83,7 @@ class NoteRepository(private val noteDao: NoteDao) {
                 title = "🛒 Lista de compras y tareas",
                 content = "Pendientes para la semana",
                 noteType = "CHECKLIST",
-                colorIndex = 3, // Mint
+                colorIndex = 0,
                 paperStyle = "BLANK",
                 isPinned = true,
                 tags = "Personal",
@@ -108,8 +108,8 @@ class NoteRepository(private val noteDao: NoteDao) {
                         "Gran total: 1450 + 304.5 = 1754.5\n\n" +
                         "¡Escribe cualquier operación seguida de '=' para calcular en tiempo real!",
                 noteType = "MATH",
-                colorIndex = 2, // Amber
-                paperStyle = "GRID",
+                colorIndex = 0,
+                paperStyle = "BLANK",
                 isPinned = false,
                 tags = "Trabajo,Cálculo",
                 createdAt = now - (1000 * 60 * 120),
@@ -119,8 +119,8 @@ class NoteRepository(private val noteDao: NoteDao) {
                 title = "🎨 Boceto de arquitectura",
                 content = "Lienzo de dibujo vectorial con soporte para cuadrícula, pautado y puntos, inspirado en Samsung Notes y Apple Pencil.",
                 noteType = "DRAWING",
-                colorIndex = 4, // Sky
-                paperStyle = "GRID",
+                colorIndex = 0,
+                paperStyle = "BLANK",
                 isPinned = false,
                 tags = "Diseño,Ideas",
                 drawingData = "PRESET_SKETCH",

@@ -9,7 +9,7 @@ import com.example.data.local.entity.NoteEntity
 
 @Database(
     entities = [NoteEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,7 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "auranotes.db"
+                    "auranotes_v2.db"
                 )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

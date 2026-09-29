@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NoteEntity
 import com.example.model.ChecklistItem
+import com.example.model.NoteColors
 import com.example.model.PaperStyle
 import com.example.ui.theme.AppleCardBgDark
 import com.example.ui.theme.AppleCardBgLight
@@ -51,6 +52,7 @@ import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
 import com.example.ui.theme.AppleSeparatorDark
 import com.example.ui.theme.AppleSeparatorLight
+import com.example.util.sanitizeNoteSnippet
 import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,8 +70,19 @@ fun NoteCard(
 ) {
     val isDark = isSystemInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
-    val cardBg = if (isDark) AppleCardBgDark else AppleCardBgLight
-    val cardBorder = if (isDark) AppleSeparatorDark else AppleSeparatorLight
+
+    val isCustomColor = note.colorIndex != 0
+    val cardBg = if (isCustomColor) {
+        NoteColors.getColor(note.colorIndex, isDark)
+    } else {
+        if (isDark) AppleCardBgDark else AppleCardBgLight
+    }
+    val cardBorder = if (isCustomColor) {
+        NoteColors.getBorderColor(note.colorIndex, isDark)
+    } else {
+        if (isDark) AppleSeparatorDark else AppleSeparatorLight
+    }
+
     val paperStyle = runCatching { PaperStyle.valueOf(note.paperStyle) }.getOrDefault(PaperStyle.BLANK)
     val isLockedNote = note.isLocked && !isUnlocked
 
@@ -203,7 +216,7 @@ fun NoteCard(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = item.text,
+                                        text = sanitizeNoteSnippet(item.text),
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             fontSize = 13.sp,
                                             textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None
@@ -261,10 +274,11 @@ fun NoteCard(
                                     color = amber
                                 )
                             }
-                            if (note.content.isNotBlank()) {
+                            val sanitizedMath = sanitizeNoteSnippet(note.content)
+                            if (sanitizedMath.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = note.content,
+                                    text = sanitizedMath,
                                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis
@@ -273,10 +287,11 @@ fun NoteCard(
                         }
 
                         else -> {
-                            if (note.content.isNotBlank()) {
+                            val sanitizedBody = sanitizeNoteSnippet(note.content)
+                            if (sanitizedBody.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = note.content,
+                                    text = sanitizedBody,
                                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                                     maxLines = 4,
                                     overflow = TextOverflow.Ellipsis,

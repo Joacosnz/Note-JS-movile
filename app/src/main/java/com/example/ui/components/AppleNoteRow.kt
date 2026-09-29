@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -12,15 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -29,14 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NoteEntity
-import com.example.model.ChecklistItem
+import com.example.model.NoteColors
 import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
+import com.example.util.sanitizeNoteSnippet
 import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,6 +51,12 @@ fun AppleNoteRow(
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
     val isLockedNote = note.isLocked && !isUnlocked
 
+    val rowBg = if (note.colorIndex != 0) {
+        NoteColors.getColor(note.colorIndex, isDark).copy(alpha = if (isDark) 0.25f else 0.4f)
+    } else {
+        Color.Transparent
+    }
+
     val formattedDate = remember(note.updatedAt) {
         val now = System.currentTimeMillis()
         val diff = now - note.updatedAt
@@ -66,7 +69,7 @@ fun AppleNoteRow(
     }
 
     val snippetText = remember(note.content, note.checklistData, note.noteType) {
-        when {
+        val raw = when {
             isLockedNote -> "Nota bloqueada"
             note.noteType == "CHECKLIST" && note.checklistData.isNotBlank() -> {
                 runCatching {
@@ -81,13 +84,15 @@ fun AppleNoteRow(
             }
             note.noteType == "DRAWING" -> "Dibujo / Boceto a mano alzada"
             note.noteType == "MATH" -> note.content.ifBlank { "Math Note con cálculo reactivo" }
-            else -> note.content.replace("\n", " ")
+            else -> note.content
         }
+        sanitizeNoteSnippet(raw)
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .background(rowBg)
             .clickable(onClick = onClick)
             .testTag("apple_note_row_${note.id}")
     ) {

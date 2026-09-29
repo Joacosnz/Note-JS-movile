@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import com.example.util.sanitizeNoteSnippet
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -167,13 +168,16 @@ fun HomeScreen(
                 if (uiState.activeTab == NavTab.NOTES) {
                     AppleBottomToolbar(
                         noteCount = uiState.activeNotes.size,
+                        isHomeActive = true,
+                        onHomeClick = { viewModel.setActiveTab(NavTab.NOTES) },
+                        onFoldersClick = { scope.launch { drawerState.open() } },
                         onNewNote = { type ->
                             if (type == NoteType.DRAWING) {
                                 viewModel.navigateTo(Screen.Drawing(0))
                             } else {
                                 viewModel.navigateTo(Screen.Editor(0, type))
                             }
-                        }
+                        },
                     )
                 }
             },
@@ -393,7 +397,7 @@ fun HomeScreen(
                                                                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
                                                             )
                                                             Text(
-                                                                text = note.content,
+                                                                text = sanitizeNoteSnippet(note.content),
                                                                 style = MaterialTheme.typography.bodySmall,
                                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                                 maxLines = 1

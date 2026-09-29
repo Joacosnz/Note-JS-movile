@@ -100,7 +100,7 @@ fun DrawingScreen(
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
 
     var title by remember { mutableStateOf("Boceto") }
-    var paperStyle by remember { mutableStateOf(PaperStyle.GRID) }
+    var paperStyle by remember { mutableStateOf(PaperStyle.BLANK) }
     var currentTool by remember { mutableStateOf(DrawingTool.PEN) }
     var selectedColor by remember { mutableStateOf(if (isDark) Color(0xFFFFFFFF) else Color(0xFF000000)) }
     var strokeWidth by remember { mutableFloatStateOf(6f) }
@@ -127,7 +127,7 @@ fun DrawingScreen(
             val entity = viewModel.getNote(noteId)
             entity?.let {
                 if (it.title.isNotBlank()) title = it.title
-                paperStyle = runCatching { PaperStyle.valueOf(it.paperStyle) }.getOrDefault(PaperStyle.GRID)
+                paperStyle = runCatching { PaperStyle.valueOf(it.paperStyle) }.getOrDefault(PaperStyle.BLANK)
                 if (it.drawingData.isNotBlank() && it.drawingData != "PRESET_SKETCH") {
                     runCatching {
                         val array = JSONArray(it.drawingData)

@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -30,31 +30,20 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Gesture
-import androidx.compose.material.icons.filled.GridOn
-import androidx.compose.material.icons.filled.Highlight
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,7 +70,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -89,6 +77,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.ChecklistItem
+import com.example.model.NoteColors
 import com.example.model.NoteType
 import com.example.model.PaperStyle
 import com.example.ui.components.AppleFormatSheet
@@ -139,12 +128,25 @@ fun NoteEditorScreen(
     var updatedAt by remember { mutableStateOf(System.currentTimeMillis()) }
 
     var showMenu by remember { mutableStateOf(false) }
+    var showColorDialog by remember { mutableStateOf(false) }
     var showPaperDialog by remember { mutableStateOf(false) }
     var showLockDialog by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
 
     val formatSheetState = rememberModalBottomSheetState()
     var showFormatSheet by remember { mutableStateOf(false) }
+
+    val isCustomColor = colorIndex != 0
+    val editorBgColor = if (isCustomColor) {
+        NoteColors.getColor(colorIndex, isDark)
+    } else {
+        MaterialTheme.colorScheme.background
+    }
+    val bottomBarBgColor = if (isCustomColor) {
+        NoteColors.getColor(colorIndex, isDark)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
 
     LaunchedEffect(noteId) {
         if (noteId > 0) {
@@ -292,6 +294,14 @@ fun NoteEditorScreen(
                             )
 
                             DropdownMenuItem(
+                                text = { Text("Color de la nota...") },
+                                onClick = {
+                                    showMenu = false
+                                    showColorDialog = true
+                                }
+                            )
+
+                            DropdownMenuItem(
                                 text = { Text(if (isLocked) "Eliminar bloqueo con PIN" else "Bloquear nota con PIN") },
                                 onClick = {
                                     showMenu = false
@@ -346,7 +356,7 @@ fun NoteEditorScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = editorBgColor
                 )
             )
         },
@@ -357,7 +367,7 @@ fun NoteEditorScreen(
                     .fillMaxWidth()
                     .imePadding()
                     .navigationBarsPadding(),
-                color = MaterialTheme.colorScheme.surface,
+                color = bottomBarBgColor,
                 shadowElevation = 4.dp
             ) {
                 Column {
@@ -451,9 +461,6 @@ fun NoteEditorScreen(
                                         .size(18.dp)
                                         .clip(CircleShape)
                                         .background(hlColor)
-                                        .clickable {
-                                            content += " [•] "
-                                        }
                                 )
                             }
                         }
@@ -461,7 +468,7 @@ fun NoteEditorScreen(
                 }
             }
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = editorBgColor
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -790,18 +797,62 @@ fun NoteEditorScreen(
             onApplyStyle = { styleType ->
                 when (styleType) {
                     "TITLE" -> title = if (title.isBlank()) "Título" else title
-                    "HEADING" -> content += "\n\n### Encabezado\n"
-                    "SUBHEADING" -> content += "\n\n#### Subencabezado\n"
+                    "HEADING" -> content += "\n\nEncabezado\n"
+                    "SUBHEADING" -> content += "\n\nSubencabezado\n"
                     "BODY" -> content += "\n"
-                    "MONOSPACE" -> content += "\n```\nCódigo\n```\n"
+                    "MONOSPACE" -> content += "\n\nCódigo\n"
                 }
                 showFormatSheet = false
             },
             onApplyHighlight = { _ ->
-                content += " [•] "
                 showFormatSheet = false
             },
             onDismiss = { showFormatSheet = false }
+        )
+    }
+
+    // Color Selector Dialog
+    if (showColorDialog) {
+        AlertDialog(
+            onDismissRequest = { showColorDialog = false },
+            title = { Text("Color de la nota") },
+            text = {
+                Column {
+                    Text(
+                        text = "Selecciona un color personalizado para esta nota:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(NoteColors.options) { option ->
+                            val isSelected = colorIndex == option.id
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(option.chipColor)
+                                    .border(
+                                        width = if (isSelected) 3.dp else 1.dp,
+                                        color = if (isSelected) amber else Color.Transparent,
+                                        shape = CircleShape
+                                    )
+                                    .clickable {
+                                        colorIndex = option.id
+                                        showColorDialog = false
+                                    }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showColorDialog = false }) {
+                    Text("Cerrar", color = amber)
+                }
+            }
         )
     }
 
