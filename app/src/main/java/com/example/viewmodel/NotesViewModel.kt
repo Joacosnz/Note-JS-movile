@@ -54,6 +54,7 @@ sealed class Screen {
     data object Folders : Screen()
     data class Editor(val noteId: Long = 0, val initialType: NoteType = NoteType.TEXT) : Screen()
     data class Drawing(val noteId: Long = 0) : Screen()
+    data class PdfViewer(val noteId: Long = 0, val pdfPath: String = "") : Screen()
 }
 
 data class NotesUiState(
@@ -519,6 +520,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         folder: String = "Notas",
         checklistItems: List<ChecklistItem> = emptyList(),
         drawingData: String = "",
+        pdfPath: String = "",
+        pdfAnnotationData: String = "",
         isLocked: Boolean = false,
         lockPin: String = "",
         reminderTimestamp: Long? = null,
@@ -552,6 +555,9 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             val existing = if (id > 0) repository.getNoteById(id) else null
             val finalReminderTimestamp = reminderTimestamp ?: existing?.reminderTimestamp
 
+            val finalPdfPath = if (pdfPath.isNotEmpty()) pdfPath else (existing?.pdfPath ?: "")
+            val finalPdfAnnotationData = if (pdfAnnotationData.isNotEmpty()) pdfAnnotationData else (existing?.pdfAnnotationData ?: "")
+
             val entity = if (existing != null) {
                 existing.copy(
                     title = title,
@@ -565,6 +571,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     folder = folder,
                     checklistData = jsonChecklist,
                     drawingData = if (drawingData.isNotEmpty()) drawingData else existing.drawingData,
+                    pdfPath = finalPdfPath,
+                    pdfAnnotationData = finalPdfAnnotationData,
                     isLocked = isLocked,
                     lockPin = lockPin,
                     reminderTimestamp = finalReminderTimestamp,
@@ -583,6 +591,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     folder = folder,
                     checklistData = jsonChecklist,
                     drawingData = drawingData,
+                    pdfPath = finalPdfPath,
+                    pdfAnnotationData = finalPdfAnnotationData,
                     isLocked = isLocked,
                     lockPin = lockPin,
                     reminderTimestamp = finalReminderTimestamp,
@@ -593,6 +603,23 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
             val savedId = repository.insert(entity)
             onSaved(if (id > 0) id else savedId)
+        }
+    }
+
+    fun savePdfAnnotationData(noteId: Long, pdfAnnotationData: String, onSaved: () -> Unit = {}) {
+        viewModelScope.launch {
+            val existing = repository.getNoteById(noteId)
+            if (existing != null) {
+                val updated = existing.copy(
+                    pdfAnnotationData = pdfAnnotationData,
+                    updatedAt = System.currentTimeMillis()
+                )
+                repository.update(updated)
+                _snackbarMessage.value = "Anotaciones guardadas"
+                onSaved()
+            } else {
+                onSaved()
+            }
         }
     }
 

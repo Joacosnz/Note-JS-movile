@@ -2,16 +2,21 @@ package com.example.ui.components
 
 import android.content.Intent
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -41,12 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
-import com.example.model.PdfBlock
+import com.example.model.NoteBlock
 import com.example.model.PdfDrawingStroke
 import com.example.model.SignatureStamp
+import com.example.model.PdfBlock
 import com.example.util.PdfRenderUtil
 import java.io.File
-import java.util.UUID
 
 enum class PdfTool {
     NONE, PEN, HIGHLIGHTER, ERASER
@@ -54,37 +59,45 @@ enum class PdfTool {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PdfBlockItem(
-    block: PdfBlock,
-    onPageChange: (newPageIndex: Int) -> Unit,
-    onToggleExpand: () -> Unit,
-    onDeleteBlock: () -> Unit,
+fun PdfInlineBlock(
+    block: NoteBlock.Pdf,
+    onNextPage: () -> Unit = {},
+    onPrevPage: () -> Unit = {},
+    onToggleExpand: () -> Unit = {},
+    onDelete: () -> Unit = {},
+    onOpenFullScreen: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val file = remember(block.filePath) { File(block.filePath) }
-    var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
+
+    var pageBitmap by remember(block.currentPageIndex) { mutableStateOf<Bitmap?>(null) }
+    var isLoading by remember(block.currentPageIndex) { mutableStateOf(true) }
 
     var isFullScreen by remember { mutableStateOf(false) }
     var currentTool by remember { mutableStateOf(PdfTool.NONE) }
+    var selectedPenColor by remember { mutableStateOf("#FF000080") }
+    var selectedHighlighterColor by remember { mutableStateOf("#66FFFF00") }
+    var penStrokeWidth by remember { mutableFloatStateOf(4f) }
+    var highlighterStrokeWidth by remember { mutableFloatStateOf(18f) }
     var showSignatureDialog by remember { mutableStateOf(false) }
     var showPagesGrid by remember { mutableStateOf(false) }
 
-    // Estado reactivo para la página actual
-    var strokes by remember { mutableStateOf(block.annotationsPerPage[block.currentPageIndex] ?: emptyList()) }
-    var signatures by remember { mutableStateOf(block.signaturesPerPage[block.currentPageIndex] ?: emptyList()) }
+    var strokes by remember(block.currentPageIndex) {
+        mutableStateOf(block.annotationsPerPage[block.currentPageIndex] ?: emptyList())
+    }
+    var signatures by remember(block.currentPageIndex) {
+        mutableStateOf(block.signaturesPerPage[block.currentPageIndex] ?: emptyList())
+    }
     var currentPath by remember { mutableStateOf<List<Pair<Float, Float>>>(emptyList()) }
 
-    LaunchedEffect(block.currentPageIndex, block.isExpanded, isFullScreen) {
-        if (block.isExpanded || isFullScreen) {
-            isLoading = true
-            pageBitmap = PdfRenderUtil.renderPageToBitmap(file, block.currentPageIndex)
-            strokes = block.annotationsPerPage[block.currentPageIndex] ?: emptyList()
-            signatures = block.signaturesPerPage[block.currentPageIndex] ?: emptyList()
-            isLoading = false
-        }
+    LaunchedEffect(block.currentPageIndex, isFullScreen) {
+        isLoading = true
+        pageBitmap = PdfRenderUtil.renderPageToBitmap(file, block.currentPageIndex)
+        strokes = block.annotationsPerPage[block.currentPageIndex] ?: emptyList()
+        signatures = block.signaturesPerPage[block.currentPageIndex] ?: emptyList()
+        isLoading = false
     }
 
     val saveStrokes = {
@@ -92,23 +105,32 @@ fun PdfBlockItem(
         map[block.currentPageIndex] = strokes
         block.annotationsPerPage = map
     }
-    
+
     val saveSignatures = {
         val map = block.signaturesPerPage.toMutableMap()
         map[block.currentPageIndex] = signatures
         block.signaturesPerPage = map
     }
 
-    // --- VISTA INLINE (Tarjeta) ---
+    val handleOpenFullScreen = {
+        if (onOpenFullScreen != null) {
+            onOpenFullScreen()
+        } else {
+            isFullScreen = true
+        }
+    }
+
+    // --- BLOQUE INLINE (Tarjeta dentro de la Nota) ---
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
+            .testTag("embedded_pdf_card")
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            // Cabecera
+            // Cabecera del archivo
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -117,188 +139,154 @@ fun PdfBlockItem(
                     imageVector = Icons.Default.PictureAsPdf,
                     contentDescription = null,
                     tint = Color(0xFFE11D48),
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = block.fileName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (block.fileSizeFormatted.isNotEmpty()) {
-                        Text(
-                            text = "${block.fileSizeFormatted} • ${block.pageCount} pág",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                Text(
+                    text = block.fileName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "Pág. ${block.currentPageIndex + 1} de ${block.pageCount}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 // Botón de Pantalla Completa
-                IconButton(onClick = { isFullScreen = true }) {
-                    Icon(Icons.Default.Fullscreen, "Pantalla Completa")
-                }
-
-                // Menú desplegable para opciones
-                var showMenu by remember { mutableStateOf(false) }
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, "Opciones del PDF")
-                    }
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Ver todas las páginas") },
-                            onClick = {
-                                showMenu = false
-                                showPagesGrid = true
-                            },
-                            modifier = Modifier.testTag("btn_pdf_pages_grid")
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Compartir PDF anotado") },
-                            onClick = {
-                                showMenu = false
-                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/pdf"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(intent, "Compartir PDF"))
-                            }
-                        )
-                    }
-                }
-                
-                IconButton(onClick = onToggleExpand) {
+                IconButton(onClick = { handleOpenFullScreen() }, modifier = Modifier.size(32.dp)) {
                     Icon(
-                        imageVector = if (block.isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Alternar"
+                        imageVector = Icons.Default.Fullscreen,
+                        contentDescription = "Pantalla completa / Dibujar",
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(onClick = onDeleteBlock) {
-                    Icon(Icons.Default.DeleteOutline, "Eliminar", tint = MaterialTheme.colorScheme.error)
+
+                // Botón de Eliminar
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Eliminar PDF",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 
-            // Cuerpo del PDF Inline (Solo lectura)
-            if (block.isExpanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.White)
-                        .clickable { isFullScreen = true }, // Tap para expandir
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.padding(32.dp))
-                    } else if (pageBitmap != null) {
-                        val img = pageBitmap!!.asImageBitmap()
-                        Image(
-                            bitmap = img,
-                            contentDescription = "Página PDF",
-                            modifier = Modifier.fillMaxWidth(),
-                            contentScale = ContentScale.FillWidth
-                        )
-                        
-                        // Capa estática de trazos
-                        Canvas(modifier = Modifier.matchParentSize()) {
-                            strokes.forEach { stroke ->
-                                if (stroke.points.size > 1) {
-                                    val path = Path()
-                                    path.moveTo(stroke.points.first().first * size.width, stroke.points.first().second * size.height)
-                                    for (i in 1 until stroke.points.size) {
-                                        path.lineTo(stroke.points[i].first * size.width, stroke.points[i].second * size.height)
-                                    }
-                                    val colorHexInt = runCatching { android.graphics.Color.parseColor(stroke.colorHex) }.getOrDefault(android.graphics.Color.BLACK)
-                                    drawPath(
-                                        path = path,
-                                        color = Color(colorHexInt),
-                                        style = Stroke(width = stroke.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                                        blendMode = if (stroke.isHighlighter) BlendMode.Multiply else BlendMode.SrcOver,
-                                        alpha = if (stroke.isHighlighter) 0.4f else 1f
-                                    )
-                                }
-                            }
-                        }
+            Spacer(modifier = Modifier.height(8.dp))
 
-                        // Capa estática de firmas
-                        signatures.forEach { stamp ->
-                            Canvas(modifier = Modifier.matchParentSize()) {
-                                val stampWidth = stamp.widthRatio * size.width
-                                val stampHeight = stamp.heightRatio * size.height
-                                val stampX = stamp.normalizedX * size.width
-                                val stampY = stamp.normalizedY * size.height
-                                
-                                if (stamp.points.isNotEmpty()) {
-                                    val path = Path()
-                                    path.moveTo(stampX + stamp.points.first().first * stampWidth, stampY + stamp.points.first().second * stampHeight)
-                                    for (i in 1 until stamp.points.size) {
-                                        path.lineTo(stampX + stamp.points[i].first * stampWidth, stampY + stamp.points[i].second * stampHeight)
-                                    }
-                                    drawPath(
-                                        path = path,
-                                        color = Color.Black,
-                                        style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Text("Error al cargar la página", Modifier.padding(24.dp))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                // Controles de navegación inline
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(
-                        onClick = { 
-                            if (block.currentPageIndex > 0) {
-                                onPageChange(block.currentPageIndex - 1)
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                        },
-                        enabled = block.currentPageIndex > 0
-                    ) { Text("← Ant") }
-
-                    Text(
-                        text = "Pág. ${block.currentPageIndex + 1} de ${block.pageCount}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
+            // Hoja del PDF renderizada (Incrustada)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.White)
+                    .clickable { handleOpenFullScreen() },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.padding(32.dp))
+                } else if (pageBitmap != null) {
+                    val img = pageBitmap!!.asImageBitmap()
+                    Image(
+                        bitmap = img,
+                        contentDescription = "Página ${block.currentPageIndex + 1}",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = ContentScale.FillWidth
                     )
 
-                    TextButton(
-                        onClick = { 
-                            if (block.currentPageIndex < block.pageCount - 1) {
-                                onPageChange(block.currentPageIndex + 1)
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    // Capa estática de trazos dibujados
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        strokes.forEach { stroke ->
+                            if (stroke.points.size > 1) {
+                                val path = Path()
+                                path.moveTo(stroke.points.first().first * size.width, stroke.points.first().second * size.height)
+                                for (i in 1 until stroke.points.size) {
+                                    path.lineTo(stroke.points[i].first * size.width, stroke.points[i].second * size.height)
+                                }
+                                val colorHexInt = runCatching { android.graphics.Color.parseColor(stroke.colorHex) }.getOrDefault(android.graphics.Color.BLACK)
+                                drawPath(
+                                    path = path,
+                                    color = Color(colorHexInt),
+                                    style = Stroke(width = stroke.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                                    blendMode = if (stroke.isHighlighter) BlendMode.Multiply else BlendMode.SrcOver,
+                                    alpha = if (stroke.isHighlighter) 0.4f else 1f
+                                )
                             }
-                        },
-                        enabled = block.currentPageIndex < block.pageCount - 1
-                    ) { Text("Sig →") }
+                        }
+                    }
+
+                    // Capa estática de firmas
+                    signatures.forEach { stamp ->
+                        Canvas(modifier = Modifier.matchParentSize()) {
+                            val stampWidth = stamp.widthRatio * size.width
+                            val stampHeight = stamp.heightRatio * size.height
+                            val stampX = stamp.normalizedX * size.width
+                            val stampY = stamp.normalizedY * size.height
+
+                            if (stamp.points.isNotEmpty()) {
+                                val path = Path()
+                                path.moveTo(stampX + stamp.points.first().first * stampWidth, stampY + stamp.points.first().second * stampHeight)
+                                for (i in 1 until stamp.points.size) {
+                                    path.lineTo(stampX + stamp.points[i].first * stampWidth, stampY + stamp.points[i].second * stampHeight)
+                                }
+                                drawPath(
+                                    path = path,
+                                    color = Color.Black,
+                                    style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Navegación de páginas inline
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = {
+                        if (block.currentPageIndex > 0) {
+                            onPrevPage()
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    },
+                    enabled = block.currentPageIndex > 0
+                ) {
+                    Text("← Anterior")
+                }
+
+                TextButton(
+                    onClick = {
+                        if (block.currentPageIndex < block.pageCount - 1) {
+                            onNextPage()
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    },
+                    enabled = block.currentPageIndex < block.pageCount - 1
+                ) {
+                    Text("Siguiente →")
                 }
             }
         }
     }
 
-    // --- VISTA PANTALLA COMPLETA (Interactiva) ---
+    // --- PANTALLA COMPLETA CON HERRAMIENTAS DE DIBUJO ---
     if (isFullScreen) {
         Dialog(
             onDismissRequest = { isFullScreen = false },
             properties = DialogProperties(
-                usePlatformDefaultWidth = false, 
+                usePlatformDefaultWidth = false,
                 dismissOnBackPress = true,
-                decorFitsSystemWindows = false
+                decorFitsSystemWindows = true
             )
         ) {
             Scaffold(
@@ -307,8 +295,16 @@ fun PdfBlockItem(
                     TopAppBar(
                         title = {
                             Column {
-                                Text(block.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                                Text("Pág. ${block.currentPageIndex + 1} de ${block.pageCount}", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = block.fileName,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "Pág. ${block.currentPageIndex + 1} de ${block.pageCount}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                         },
                         navigationIcon = {
@@ -318,9 +314,9 @@ fun PdfBlockItem(
                         },
                         actions = {
                             IconButton(
-                                onClick = { 
+                                onClick = {
                                     if (block.currentPageIndex > 0) {
-                                        onPageChange(block.currentPageIndex - 1)
+                                        onPrevPage()
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     }
                                 },
@@ -329,9 +325,9 @@ fun PdfBlockItem(
                                 Icon(Icons.Default.ChevronLeft, "Anterior")
                             }
                             IconButton(
-                                onClick = { 
+                                onClick = {
                                     if (block.currentPageIndex < block.pageCount - 1) {
-                                        onPageChange(block.currentPageIndex + 1)
+                                        onNextPage()
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     }
                                 },
@@ -342,52 +338,209 @@ fun PdfBlockItem(
                             IconButton(onClick = { showPagesGrid = true }) {
                                 Icon(Icons.Default.GridView, "Ver páginas")
                             }
+                            IconButton(onClick = {
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/pdf"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Compartir PDF"))
+                            }) {
+                                Icon(Icons.Default.Share, "Compartir")
+                            }
                         }
                     )
                 },
                 bottomBar = {
-                    BottomAppBar {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .testTag("pdf_markup_palette"),
+                        shape = RoundedCornerShape(24.dp),
+                        tonalElevation = 8.dp,
+                        shadowElevation = 12.dp,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            IconButton(
-                                onClick = { 
-                                    currentTool = if (currentTool == PdfTool.PEN) PdfTool.NONE else PdfTool.PEN 
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    containerColor = if (currentTool == PdfTool.PEN) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
-                            ) { Icon(Icons.Default.Edit, "Pluma") }
+                            // Tool Selector Chips Row
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                item {
+                                    FilterChip(
+                                        selected = currentTool == PdfTool.NONE,
+                                        onClick = {
+                                            currentTool = PdfTool.NONE
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
+                                        label = { Text("Navegar") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.TouchApp, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+                                item {
+                                    FilterChip(
+                                        selected = currentTool == PdfTool.PEN,
+                                        onClick = {
+                                            currentTool = PdfTool.PEN
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
+                                        label = { Text("Pluma") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+                                item {
+                                    FilterChip(
+                                        selected = currentTool == PdfTool.HIGHLIGHTER,
+                                        onClick = {
+                                            currentTool = PdfTool.HIGHLIGHTER
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
+                                        label = { Text("Resaltador") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Brush, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+                                item {
+                                    FilterChip(
+                                        selected = currentTool == PdfTool.ERASER,
+                                        onClick = {
+                                            currentTool = PdfTool.ERASER
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
+                                        label = { Text("Borrador") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.AutoFixNormal, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+                                item {
+                                    FilterChip(
+                                        selected = false,
+                                        onClick = {
+                                            showSignatureDialog = true
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
+                                        label = { Text("Firma") },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.testTag("btn_insert_signature")
+                                    )
+                                }
+                            }
 
-                            IconButton(
-                                onClick = { 
-                                    currentTool = if (currentTool == PdfTool.HIGHLIGHTER) PdfTool.NONE else PdfTool.HIGHLIGHTER
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    containerColor = if (currentTool == PdfTool.HIGHLIGHTER) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
-                            ) { Icon(Icons.Default.Brush, "Resaltador") }
-                            
-                            IconButton(
-                                onClick = { 
-                                    currentTool = if (currentTool == PdfTool.ERASER) PdfTool.NONE else PdfTool.ERASER 
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    containerColor = if (currentTool == PdfTool.ERASER) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
-                            ) { Icon(Icons.Default.AutoFixNormal, "Borrador") }
+                            // Colors Palette & Thickness Slider
+                            if (currentTool == PdfTool.PEN || currentTool == PdfTool.HIGHLIGHTER) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val isPen = currentTool == PdfTool.PEN
+                                    val colors = if (isPen) {
+                                        listOf("#FF000080", "#E11D48", "#2563EB", "#16A34A", "#D97706", "#000000")
+                                    } else {
+                                        listOf("#66FFFF00", "#6600FF00", "#6600FFFF", "#66FF00FF", "#66FF8800")
+                                    }
+                                    val selectedColor = if (isPen) selectedPenColor else selectedHighlighterColor
 
-                            IconButton(
-                                onClick = { 
-                                    showSignatureDialog = true 
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                                modifier = Modifier.testTag("btn_insert_signature")
-                            ) { Icon(Icons.Default.Draw, "Firmar") }
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        items(colors) { colorHex ->
+                                            val colorInt = runCatching { android.graphics.Color.parseColor(colorHex) }.getOrDefault(android.graphics.Color.BLACK)
+                                            val isColorSelected = selectedColor.equals(colorHex, ignoreCase = true)
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(30.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(colorInt))
+                                                    .border(
+                                                        width = if (isColorSelected) 3.dp else 1.dp,
+                                                        color = if (isColorSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f),
+                                                        shape = CircleShape
+                                                    )
+                                                    .clickable {
+                                                        if (isPen) selectedPenColor = colorHex else selectedHighlighterColor = colorHex
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    }
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "Grosor",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Slider(
+                                            value = if (isPen) penStrokeWidth else highlighterStrokeWidth,
+                                            onValueChange = {
+                                                if (isPen) penStrokeWidth = it else highlighterStrokeWidth = it
+                                            },
+                                            valueRange = if (isPen) 2f..24f else 10f..40f,
+                                            modifier = Modifier.width(90.dp)
+                                        )
+                                    }
+                                }
+                            } else if (currentTool == PdfTool.ERASER) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Arrastra sobre cualquier trazo para borrarlo",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            strokes = emptyList()
+                                            saveStrokes()
+                                            signatures = emptyList()
+                                            saveSignatures()
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Borrar todo", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -396,7 +549,7 @@ fun PdfBlockItem(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
-                        .background(Color(0xFF1E1E1E)), // Fondo oscuro de visor PDF clásico
+                        .background(Color(0xFF1E1E1E)),
                     contentAlignment = Alignment.Center
                 ) {
                     when {
@@ -406,7 +559,7 @@ fun PdfBlockItem(
                         pageBitmap != null -> {
                             val img = pageBitmap!!.asImageBitmap()
                             val aspectRatio = img.width.toFloat() / img.height.toFloat()
-                            
+
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -425,79 +578,80 @@ fun PdfBlockItem(
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Fit
                                     )
-                                    
-                                    // Capa interactiva de Canvas para dibujar
+
                                     Canvas(
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .pointerInput(currentTool) {
-                                            if (currentTool == PdfTool.NONE) return@pointerInput
-                                            
-                                            detectDragGestures(
-                                                onDragStart = { offset ->
-                                                    if (currentTool == PdfTool.ERASER) {
-                                                        val normX = offset.x / size.width
-                                                        val normY = offset.y / size.height
-                                                        val updated = strokes.filterNot { stroke ->
-                                                            stroke.points.any { p ->
-                                                                val dx = p.first - normX
-                                                                val dy = p.second - normY
-                                                                (dx * dx + dy * dy) < 0.002f
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .pointerInput(currentTool, selectedPenColor, selectedHighlighterColor, penStrokeWidth, highlighterStrokeWidth) {
+                                                if (currentTool == PdfTool.NONE) return@pointerInput
+
+                                                detectDragGestures(
+                                                    onDragStart = { offset ->
+                                                        if (currentTool == PdfTool.ERASER) {
+                                                            val normX = offset.x / size.width
+                                                            val normY = offset.y / size.height
+                                                            val updated = strokes.filterNot { stroke ->
+                                                                stroke.points.any { p ->
+                                                                    val dx = p.first - normX
+                                                                    val dy = p.second - normY
+                                                                    (dx * dx + dy * dy) < 0.002f
+                                                                }
                                                             }
-                                                        }
-                                                        if (updated.size != strokes.size) {
-                                                            strokes = updated
-                                                            saveStrokes()
-                                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        }
-                                                    } else {
-                                                        val p = Pair(offset.x / size.width, offset.y / size.height)
-                                                        currentPath = listOf(p)
-                                                    }
-                                                },
-                                                onDrag = { change, _ ->
-                                                    if (currentTool == PdfTool.ERASER) {
-                                                        val normX = change.position.x / size.width
-                                                        val normY = change.position.y / size.height
-                                                        val updated = strokes.filterNot { stroke ->
-                                                            stroke.points.any { p ->
-                                                                val dx = p.first - normX
-                                                                val dy = p.second - normY
-                                                                (dx * dx + dy * dy) < 0.002f
+                                                            if (updated.size != strokes.size) {
+                                                                strokes = updated
+                                                                saveStrokes()
+                                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                             }
+                                                        } else {
+                                                            val p = Pair(offset.x / size.width, offset.y / size.height)
+                                                            currentPath = listOf(p)
                                                         }
-                                                        if (updated.size != strokes.size) {
-                                                            strokes = updated
+                                                    },
+                                                    onDrag = { change, _ ->
+                                                        if (currentTool == PdfTool.ERASER) {
+                                                            val normX = change.position.x / size.width
+                                                            val normY = change.position.y / size.height
+                                                            val updated = strokes.filterNot { stroke ->
+                                                                stroke.points.any { p ->
+                                                                    val dx = p.first - normX
+                                                                    val dy = p.second - normY
+                                                                    (dx * dx + dy * dy) < 0.002f
+                                                                }
+                                                            }
+                                                            if (updated.size != strokes.size) {
+                                                                strokes = updated
+                                                                saveStrokes()
+                                                            }
+                                                        } else {
+                                                            val p = Pair(change.position.x / size.width, change.position.y / size.height)
+                                                            currentPath = currentPath + p
+                                                        }
+                                                    },
+                                                    onDragEnd = {
+                                                        if (currentTool != PdfTool.ERASER && currentPath.isNotEmpty()) {
+                                                            val isHighlight = currentTool == PdfTool.HIGHLIGHTER
+                                                            val newStroke = PdfDrawingStroke(
+                                                                points = currentPath,
+                                                                colorHex = if (isHighlight) selectedHighlighterColor else selectedPenColor,
+                                                                strokeWidth = if (isHighlight) highlighterStrokeWidth else penStrokeWidth,
+                                                                isHighlighter = isHighlight
+                                                            )
+                                                            strokes = strokes + newStroke
                                                             saveStrokes()
+                                                            currentPath = emptyList()
                                                         }
-                                                    } else {
-                                                        val p = Pair(change.position.x / size.width, change.position.y / size.height)
-                                                        currentPath = currentPath + p
                                                     }
-                                                },
-                                                onDragEnd = {
-                                                    if (currentTool != PdfTool.ERASER && currentPath.isNotEmpty()) {
-                                                        val newStroke = PdfDrawingStroke(
-                                                            points = currentPath,
-                                                            colorHex = if (currentTool == PdfTool.HIGHLIGHTER) "#66FFFF00" else "#FF000080",
-                                                            strokeWidth = if (currentTool == PdfTool.HIGHLIGHTER) 16f else 4f,
-                                                            isHighlighter = currentTool == PdfTool.HIGHLIGHTER
-                                                        )
-                                                        strokes = strokes + newStroke
-                                                        saveStrokes()
-                                                        currentPath = emptyList()
-                                                    }
-                                                }
-                                            )
-                                        }
+                                                )
+                                            }
                                     ) {
+                                        val activeIsHighlight = currentTool == PdfTool.HIGHLIGHTER
                                         val drawStrokes = strokes + if (currentPath.isNotEmpty()) {
                                             listOf(
                                                 PdfDrawingStroke(
                                                     points = currentPath,
-                                                    colorHex = if (currentTool == PdfTool.HIGHLIGHTER) "#66FFFF00" else "#FF000080",
-                                                    strokeWidth = if (currentTool == PdfTool.HIGHLIGHTER) 16f else 4f,
-                                                    isHighlighter = currentTool == PdfTool.HIGHLIGHTER
+                                                    colorHex = if (activeIsHighlight) selectedHighlighterColor else selectedPenColor,
+                                                    strokeWidth = if (activeIsHighlight) highlighterStrokeWidth else penStrokeWidth,
+                                                    isHighlighter = activeIsHighlight
                                                 )
                                             )
                                         } else emptyList()
@@ -513,11 +667,7 @@ fun PdfBlockItem(
                                                 drawPath(
                                                     path = path,
                                                     color = Color(colorHexInt),
-                                                    style = Stroke(
-                                                        width = stroke.strokeWidth,
-                                                        cap = StrokeCap.Round,
-                                                        join = StrokeJoin.Round
-                                                    ),
+                                                    style = Stroke(width = stroke.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
                                                     blendMode = if (stroke.isHighlighter) BlendMode.Multiply else BlendMode.SrcOver,
                                                     alpha = if (stroke.isHighlighter) 0.4f else 1f
                                                 )
@@ -525,11 +675,8 @@ fun PdfBlockItem(
                                         }
                                     }
 
-                                    // Superposición de firmas interactivas (Movimiento y Zoom)
-                                    for (stamp in signatures) {
-                                        Box(
-                                            modifier = Modifier.matchParentSize()
-                                        ) {
+                                    signatures.forEach { stamp ->
+                                        Box(modifier = Modifier.matchParentSize()) {
                                             Canvas(
                                                 modifier = Modifier
                                                     .fillMaxSize()
@@ -554,7 +701,7 @@ fun PdfBlockItem(
                                                 val stampHeight = stamp.heightRatio * size.height
                                                 val stampX = stamp.normalizedX * size.width
                                                 val stampY = stamp.normalizedY * size.height
-                                                
+
                                                 if (stamp.points.isNotEmpty()) {
                                                     val path = Path()
                                                     path.moveTo(stampX + stamp.points.first().first * stampWidth, stampY + stamp.points.first().second * stampHeight)
@@ -566,7 +713,6 @@ fun PdfBlockItem(
                                                         color = Color.Black,
                                                         style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
                                                     )
-                                                    // Dibujar recuadro de selección sutil para indicar que se puede mover
                                                     drawRect(
                                                         color = Color.Gray.copy(alpha = 0.3f),
                                                         topLeft = Offset(stampX, stampY),
@@ -580,7 +726,7 @@ fun PdfBlockItem(
                                 }
                             }
                         }
-                         else -> {
+                        else -> {
                             Text("Error al cargar la página", Modifier.padding(24.dp), color = Color.White)
                         }
                     }
@@ -589,8 +735,8 @@ fun PdfBlockItem(
         }
     }
 
-    // --- DIÁLOGOS COMPARTIDOS ---
-    
+    // --- DIÁLOGOS Y MODALES ---
+
     // Diálogo para crear firma
     if (showSignatureDialog) {
         Dialog(onDismissRequest = { showSignatureDialog = false }) {
@@ -637,7 +783,7 @@ fun PdfBlockItem(
                             if (signPath.isNotEmpty()) {
                                 val newStamp = SignatureStamp(
                                     points = signPath,
-                                    normalizedX = 0.5f - 0.35f / 2, // Centrado
+                                    normalizedX = 0.5f - 0.35f / 2,
                                     normalizedY = 0.5f - 0.15f / 2
                                 )
                                 signatures = signatures + newStamp
@@ -652,7 +798,7 @@ fun PdfBlockItem(
         }
     }
 
-    // ModalBottomSheet: Gestor de miniaturas (Page Manager)
+    // ModalBottomSheet: Gestor de cuadrícula de páginas
     if (showPagesGrid) {
         ModalBottomSheet(
             onDismissRequest = { showPagesGrid = false },
@@ -671,7 +817,7 @@ fun PdfBlockItem(
                             modifier = Modifier
                                 .aspectRatio(0.7f)
                                 .clickable {
-                                    onPageChange(index)
+                                    block.currentPageIndex = index
                                     showPagesGrid = false
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 },
@@ -681,10 +827,8 @@ fun PdfBlockItem(
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Box(modifier = Modifier.fillMaxSize()) {
-                                // Miniatura real cargada asíncronamente
                                 PdfPageThumbnail(file = file, pageIndex = index)
-                                
-                                // Indicador oscuro en la parte inferior para mostrar el número de página
+
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -726,9 +870,8 @@ fun PdfBlockItem(
 
 @Composable
 fun PdfPageThumbnail(file: File, pageIndex: Int, modifier: Modifier = Modifier) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var bitmap by remember(file, pageIndex) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(file, pageIndex) {
-        // Genera la miniatura rápidamente reduciendo la resolución (ancho = 300px)
         bitmap = PdfRenderUtil.renderPageToBitmap(file, pageIndex, targetWidthPx = 300)
     }
     if (bitmap != null) {
@@ -743,4 +886,36 @@ fun PdfPageThumbnail(file: File, pageIndex: Int, modifier: Modifier = Modifier) 
             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
         }
     }
+}
+
+@Composable
+fun PdfBlockItem(
+    block: NoteBlock.Pdf,
+    onPageChange: (newPageIndex: Int) -> Unit = {},
+    onToggleExpand: () -> Unit = {},
+    onDeleteBlock: () -> Unit = {},
+    onOpenFullScreen: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    PdfInlineBlock(
+        block = block,
+        onNextPage = {
+            if (block.currentPageIndex < block.pageCount - 1) {
+                val newIndex = block.currentPageIndex + 1
+                block.currentPageIndex = newIndex
+                onPageChange(newIndex)
+            }
+        },
+        onPrevPage = {
+            if (block.currentPageIndex > 0) {
+                val newIndex = block.currentPageIndex - 1
+                block.currentPageIndex = newIndex
+                onPageChange(newIndex)
+            }
+        },
+        onToggleExpand = onToggleExpand,
+        onDelete = onDeleteBlock,
+        onOpenFullScreen = onOpenFullScreen,
+        modifier = modifier
+    )
 }

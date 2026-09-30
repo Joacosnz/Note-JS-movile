@@ -286,9 +286,29 @@ object NoteBlockSerializer {
                     }
                 }
             }
-            if (list.isEmpty()) listOf(NoteBlock.Text(content = "")) else list
+            val parsedList = if (list.isEmpty()) listOf(NoteBlock.Text(content = "")) else list
+            mergeConsecutiveTextBlocks(parsedList)
         } catch (e: Exception) {
             listOf(NoteBlock.Text(content = json))
         }
+    }
+
+    private fun mergeConsecutiveTextBlocks(blocks: List<NoteBlock>): List<NoteBlock> {
+        if (blocks.isEmpty()) return blocks
+        val result = mutableListOf<NoteBlock>()
+        for (block in blocks) {
+            val last = result.lastOrNull()
+            if (last is NoteBlock.Text && block is NoteBlock.Text && last.style == block.style) {
+                val combinedText = when {
+                    last.content.isEmpty() -> block.content
+                    block.content.isEmpty() -> last.content
+                    else -> "${last.content}\n${block.content}"
+                }
+                result[result.lastIndex] = last.copy(content = combinedText)
+            } else {
+                result.add(block)
+            }
+        }
+        return result
     }
 }

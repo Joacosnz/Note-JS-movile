@@ -22,6 +22,8 @@ data class NoteEntity(
     val checklistData: String = "", // JSON representation of items
     val drawingData: String = "", // JSON representation of stroke paths
     val mathEvaluations: String = "", // Results evaluated
+    val pdfPath: String = "",           // Ruta del archivo PDF en el almacenamiento interno privado
+    val pdfAnnotationData: String = "", // JSON con los trazos, resaltados y firmas por página
     val reminderTimestamp: Long? = null,
     val isReminderDone: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),

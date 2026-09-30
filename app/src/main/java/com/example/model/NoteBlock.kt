@@ -29,18 +29,7 @@ data class SignatureStamp(
     var heightRatio: Float = 0.15f
 )
 
-data class PdfBlock(
-    override val id: String = UUID.randomUUID().toString(),
-    val filePath: String,              // Ruta local absoluta en filesDir
-    val fileName: String,              // Nombre del archivo (ej. "Contrato.pdf")
-    val fileSizeFormatted: String = "",// Format: "2.4 MB"
-    val pageCount: Int,                // Total de páginas del PDF
-    var currentPageIndex: Int = 0,     // Índice de página visible (inicia en 0)
-    var isExpanded: Boolean = true,    // true = ver página grande, false = tarjeta compacta
-    var annotationsPerPage: MutableMap<Int, List<PdfDrawingStroke>> = mutableMapOf(),
-    var signaturesPerPage: MutableMap<Int, List<SignatureStamp>> = mutableMapOf(),
-    var indexedText: String = ""       // Texto extraído del documento para el motor de búsqueda
-) : NoteBlock
+typealias PdfBlock = NoteBlock.Pdf
 
 data class AudioBlock(
     override val id: String = UUID.randomUUID().toString(),
@@ -53,6 +42,19 @@ data class AudioBlock(
 
 sealed interface NoteBlock {
     val id: String
+
+    data class Pdf(
+        override val id: String = UUID.randomUUID().toString(),
+        val filePath: String,              // Ruta local absoluta en filesDir
+        val fileName: String,              // Nombre del archivo (ej. "Contrato.pdf")
+        val fileSizeFormatted: String = "",// Format: "2.4 MB"
+        val pageCount: Int,                // Total de páginas del PDF
+        var currentPageIndex: Int = 0,     // Índice de página visible (inicia en 0)
+        var isExpanded: Boolean = true,    // true = ver página grande, false = tarjeta compacta
+        var annotationsPerPage: MutableMap<Int, List<PdfDrawingStroke>> = mutableMapOf(),
+        var signaturesPerPage: MutableMap<Int, List<SignatureStamp>> = mutableMapOf(),
+        var indexedText: String = ""       // Texto extraído del documento para el motor de búsqueda
+    ) : NoteBlock
 
     data class Text(
         override val id: String = UUID.randomUUID().toString(),

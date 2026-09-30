@@ -1,6 +1,5 @@
 package com.example.util
 
-import android.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -10,12 +9,38 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import com.example.R
+import com.example.model.AudioBlock
+import com.example.model.NoteBlock
+import com.example.model.PdfBlock
 
 class NoteReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val noteId = intent.getLongExtra("EXTRA_NOTE_ID", 0L)
         val title = intent.getStringExtra("EXTRA_TITLE") ?: "Recordatorio de Nota"
-        val content = intent.getStringExtra("EXTRA_CONTENT") ?: "Tienes un recordatorio pendiente."
+        val rawContent = intent.getStringExtra("EXTRA_CONTENT") ?: "Tienes un recordatorio pendiente."
+
+        val displayContent = if (rawContent.trim().startsWith("[")) {
+            runCatching {
+                val deserialized = NoteBlockSerializer.deserialize(rawContent)
+                val lines = deserialized.map { block ->
+                    when (block) {
+                        is NoteBlock.Text -> block.content
+                        is NoteBlock.Checklist -> "${if (block.isChecked) "☑" else "☐"} ${block.content}"
+                        is NoteBlock.SimpleList -> block.content
+                        is NoteBlock.CalloutBox -> block.content
+                        is NoteBlock.Drawing -> "[Boceto]"
+                        is NoteBlock.Table -> block.matrix.joinToString(" | ") { row -> row.joinToString(" | ") { cell -> cell.text } }
+                        is PdfBlock -> "[PDF: ${block.fileName}]"
+                        is AudioBlock -> "[Audio]"
+                    }
+                }.filter { it.isNotBlank() }
+                val text = lines.joinToString("\n")
+                if (text.isBlank()) "Tienes un recordatorio pendiente." else text
+            }.getOrDefault(rawContent)
+        } else {
+            rawContent
+        }
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -46,11 +71,13 @@ class NoteReminderReceiver : BroadcastReceiver() {
         )
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title.ifBlank { "Nota sin título" })
-            .setContentText(content)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setContentText(displayContent)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(displayContent))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
