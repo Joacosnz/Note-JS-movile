@@ -3,7 +3,7 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Apple Notes iconic primary tint
-val AppleNotesAmber = Color(0xFFD97706)
+val AppleNotesAmber = Color(0xFFEAB308)
 val AppleNotesAmberDark = Color(0xFFEAB308)
 
 // Apple iOS system surfaces

@@ -92,6 +92,23 @@ class TableBlockTest {
     }
 
     @Test
+    fun testApplyColorToMultipleCellsAndClear() {
+        var table = NoteBlock.Table(rows = 2, cols = 2)
+        val selected = setOf(Pair(0, 0), Pair(1, 1))
+
+        table = table.applyColorToCells(selected, "#EF4444")
+        assertEquals("#EF4444", table.matrix[0][0].backgroundColorHex)
+        assertEquals("#EF4444", table.matrix[1][1].backgroundColorHex)
+        assertNull(table.matrix[0][1].backgroundColorHex)
+
+        table = table.updateCellText(0, 0, "A")
+        table = table.updateCellText(1, 1, "B")
+        table = table.clearCells(selected)
+        assertEquals("", table.matrix[0][0].text)
+        assertEquals("", table.matrix[1][1].text)
+    }
+
+    @Test
     fun testToggleHeaderRowAndSerialization() {
         var table = NoteBlock.Table(rows = 2, cols = 2)
         assertFalse(table.hasHeaderRow)

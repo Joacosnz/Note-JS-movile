@@ -83,6 +83,16 @@ import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.automirrored.rounded.Subject
+import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.Title
+import androidx.compose.material.icons.rounded.FormatSize
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.FormatListNumbered
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.Draw
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import com.example.ui.components.LiquidGlassContainer
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
@@ -142,6 +152,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.example.model.NoteBlock
@@ -158,6 +169,7 @@ import com.example.ui.components.AudioRecorderDialog
 import com.example.ui.components.AudioBlockItem
 import com.example.ui.components.PdfBlockItem
 import com.example.ui.components.TableBlockItem
+import com.example.ui.components.CreateTableBottomSheet
 import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
 import com.example.util.NoteBlockSerializer
@@ -1577,12 +1589,12 @@ fun NoteEditorScreen(
 
     // Insert Bottom Sheet (Menú desplegable desde abajo hacia arriba)
     if (showFormatSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
         ModalBottomSheet(
             onDismissRequest = { showFormatSheet = false },
             sheetState = sheetState,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White,
+            containerColor = Color.Black,
             tonalElevation = 8.dp
         ) {
             Column(
@@ -1590,7 +1602,8 @@ fun NoteEditorScreen(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(horizontal = 20.dp)
-                    .padding(bottom = 24.dp),
+                    .padding(bottom = 24.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
@@ -1599,14 +1612,14 @@ fun NoteEditorScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     ),
-                    color = if (isDark) Color.White else Color(0xFF0F172A),
-                    modifier = Modifier.padding(bottom = 12.dp, start = 4.dp)
+                    color = Color.White,
+                    modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
                 )
 
+                FormatSectionTitle("Básico")
                 FormatOptionItem(
-                    icon = "📝",
-                    text = "Texto normal (Cuerpo)",
-                    isDark = isDark
+                    icon = Icons.AutoMirrored.Rounded.Subject,
+                    text = "Texto normal (Cuerpo)"
                 ) {
                     showFormatSheet = false
                     transformOrInsertBlock { id, content ->
@@ -1616,9 +1629,8 @@ fun NoteEditorScreen(
                 }
 
                 FormatOptionItem(
-                    icon = "𝐇₁",
-                    text = "Título grande",
-                    isDark = isDark
+                    icon = Icons.Rounded.Title,
+                    text = "Título grande"
                 ) {
                     showFormatSheet = false
                     transformOrInsertBlock { id, content ->
@@ -1628,9 +1640,8 @@ fun NoteEditorScreen(
                 }
 
                 FormatOptionItem(
-                    icon = "𝐇₂",
-                    text = "Subtítulo",
-                    isDark = isDark
+                    icon = Icons.Rounded.FormatSize,
+                    text = "Subtítulo"
                 ) {
                     showFormatSheet = false
                     transformOrInsertBlock { id, content ->
@@ -1639,10 +1650,10 @@ fun NoteEditorScreen(
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
 
+                FormatSectionTitle("Listas")
                 FormatOptionItem(
-                    icon = "☑",
-                    text = "Lista de tareas (Checklist)",
-                    isDark = isDark
+                    icon = Icons.Rounded.CheckBox,
+                    text = "Lista de tareas (Checklist)"
                 ) {
                     showFormatSheet = false
                     toggleOrInsertChecklist()
@@ -1650,9 +1661,8 @@ fun NoteEditorScreen(
                 }
 
                 FormatOptionItem(
-                    icon = "•",
-                    text = "Lista con viñetas",
-                    isDark = isDark
+                    icon = Icons.AutoMirrored.Rounded.FormatListBulleted,
+                    text = "Lista con viñetas"
                 ) {
                     showFormatSheet = false
                     transformOrInsertBlock { id, content ->
@@ -1662,9 +1672,8 @@ fun NoteEditorScreen(
                 }
 
                 FormatOptionItem(
-                    icon = "1.",
-                    text = "Lista numerada",
-                    isDark = isDark
+                    icon = Icons.Rounded.FormatListNumbered,
+                    text = "Lista numerada"
                 ) {
                     showFormatSheet = false
                     transformOrInsertBlock { id, content ->
@@ -1673,10 +1682,10 @@ fun NoteEditorScreen(
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
 
+                FormatSectionTitle("Elementos Avanzados")
                 FormatOptionItem(
-                    icon = "▢",
-                    text = "Cuadro destacado",
-                    isDark = isDark
+                    icon = Icons.Rounded.Info,
+                    text = "Cuadro destacado"
                 ) {
                     showFormatSheet = false
                     transformOrInsertBlock { id, content ->
@@ -1686,9 +1695,8 @@ fun NoteEditorScreen(
                 }
 
                 FormatOptionItem(
-                    icon = "▦",
-                    text = "Tabla",
-                    isDark = isDark
+                    icon = Icons.Rounded.TableChart,
+                    text = "Tabla"
                 ) {
                     showFormatSheet = false
                     createTableRows = 3
@@ -1698,9 +1706,8 @@ fun NoteEditorScreen(
                 }
 
                 FormatOptionItem(
-                    icon = "〰️",
-                    text = "Boceto a mano (Dibujo)",
-                    isDark = isDark
+                    icon = Icons.Rounded.Draw,
+                    text = "Boceto a mano (Dibujo)"
                 ) {
                     showFormatSheet = false
                     blocks.add(NoteBlock.Drawing())
@@ -1708,9 +1715,8 @@ fun NoteEditorScreen(
                 }
 
                 FormatOptionItem(
-                    icon = "📄",
-                    text = "Adjuntar PDF",
-                    isDark = isDark
+                    icon = Icons.Rounded.PictureAsPdf,
+                    text = "Adjuntar PDF"
                 ) {
                     showFormatSheet = false
                     pdfPickerLauncher.launch(arrayOf("application/pdf"))
@@ -1879,80 +1885,24 @@ fun NoteEditorScreen(
     }
 
     if (showCreateTableDialog) {
-        AlertDialog(
-            onDismissRequest = { showCreateTableDialog = false },
-            modifier = Modifier.testTag("dialog_create_table"),
-            title = { Text("Crear tabla") },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Filas: $createTableRows", style = MaterialTheme.typography.bodyLarge)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { if (createTableRows > 1) createTableRows-- },
-                                enabled = createTableRows > 1
-                            ) {
-                                Icon(Icons.Default.Remove, contentDescription = "Menos filas")
-                            }
-                            Text("$createTableRows", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            IconButton(
-                                onClick = { if (createTableRows < 10) createTableRows++ },
-                                enabled = createTableRows < 10
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Más filas")
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Columnas: $createTableCols", style = MaterialTheme.typography.bodyLarge)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { if (createTableCols > 1) createTableCols-- },
-                                enabled = createTableCols > 1
-                            ) {
-                                Icon(Icons.Default.Remove, contentDescription = "Menos columnas")
-                            }
-                            Text("$createTableCols", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            IconButton(
-                                onClick = { if (createTableCols < 6) createTableCols++ },
-                                enabled = createTableCols < 6
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Más columnas")
-                            }
-                        }
-                    }
-                }
+        CreateTableBottomSheet(
+            initialRows = createTableRows,
+            initialCols = createTableCols,
+            onCreateTable = { r, c, header, zebra ->
+                showCreateTableDialog = false
+                val newId = UUID.randomUUID().toString()
+                blocks.add(
+                    NoteBlock.Table(
+                        id = newId,
+                        rows = r,
+                        cols = c,
+                        hasHeaderRow = header,
+                        hasZebraStripes = zebra
+                    )
+                )
+                targetFocusBlockId = newId
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showCreateTableDialog = false
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        val newId = UUID.randomUUID().toString()
-                        blocks.add(NoteBlock.Table(id = newId, rows = createTableRows, cols = createTableCols))
-                        targetFocusBlockId = newId
-                    }
-                ) {
-                    Text("Crear tabla", color = amber)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateTableDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
+            onDismiss = { showCreateTableDialog = false }
         )
     }
 
@@ -2750,31 +2700,49 @@ fun NoteEditorScreen(
 }
 
 @Composable
+fun FormatSectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium.copy(
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp
+        ),
+        color = Color(0xFF94A3B8),
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 12.dp)
+    )
+}
+
+@Composable
 fun FormatOptionItem(
-    icon: String,
+    icon: ImageVector,
     text: String,
-    isDark: Boolean,
     onClick: () -> Unit
 ) {
+    val bgColor = Color(0xFF1C1C1E)
+    val contentColor = Color.White
+    val iconTint = AppleNotesAmber
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Box(
-            modifier = Modifier.width(28.dp),
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(bgColor),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = icon,
-                fontSize = 17.sp,
-                color = if (isDark) Color.White.copy(alpha = 0.9f) else Color(0xFF334155),
-                fontWeight = FontWeight.Bold
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
             )
         }
         Text(
@@ -2783,7 +2751,7 @@ fun FormatOptionItem(
                 fontWeight = FontWeight.Medium,
                 fontSize = 15.sp
             ),
-            color = if (isDark) Color.White else Color(0xFF0F172A)
+            color = contentColor
         )
     }
 }

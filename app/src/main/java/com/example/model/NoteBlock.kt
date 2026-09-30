@@ -98,7 +98,8 @@ sealed interface NoteBlock {
         var rows: Int = 2,
         var cols: Int = 2,
         var matrix: MutableList<MutableList<TableCell>> = mutableListOf(),
-        var hasHeaderRow: Boolean = false
+        var hasHeaderRow: Boolean = false,
+        var hasZebraStripes: Boolean = false
     ) : NoteBlock {
         init {
             ensureMatrixSize()
@@ -172,6 +173,16 @@ sealed interface NoteBlock {
             return copy(matrix = newMatrix)
         }
 
+        fun applyColorToCells(cells: Set<Pair<Int, Int>>, colorHex: String?): Table {
+            val newMatrix = deepCopyMatrix()
+            cells.forEach { (r, c) ->
+                if (r in newMatrix.indices && c in newMatrix[r].indices) {
+                    newMatrix[r][c].backgroundColorHex = colorHex
+                }
+            }
+            return copy(matrix = newMatrix)
+        }
+
         fun addRowAbove(targetRow: Int): Table {
             val newMatrix = deepCopyMatrix()
             val insertIndex = targetRow.coerceIn(0, newMatrix.size)
@@ -233,6 +244,16 @@ sealed interface NoteBlock {
             return updateCellText(r, c, "")
         }
 
+        fun clearCells(cells: Set<Pair<Int, Int>>): Table {
+            val newMatrix = deepCopyMatrix()
+            cells.forEach { (r, c) ->
+                if (r in newMatrix.indices && c in newMatrix[r].indices) {
+                    newMatrix[r][c].text = ""
+                }
+            }
+            return copy(matrix = newMatrix)
+        }
+
         fun clearTable(): Table {
             val newMatrix = deepCopyMatrix()
             newMatrix.forEach { row ->
@@ -245,6 +266,10 @@ sealed interface NoteBlock {
 
         fun toggleHeaderRow(): Table {
             return copy(hasHeaderRow = !hasHeaderRow)
+        }
+
+        fun toggleZebraStripes(): Table {
+            return copy(hasZebraStripes = !hasZebraStripes)
         }
     }
 }
