@@ -86,22 +86,165 @@ sealed interface NoteBlock {
         val pathData: String = ""
     ) : NoteBlock
 
+    enum class TableColorScope {
+        CELL,
+        ROW,
+        COLUMN,
+        TABLE
+    }
+
     data class Table(
         override val id: String = UUID.randomUUID().toString(),
         var rows: Int = 2,
         var cols: Int = 2,
-        var matrix: MutableList<MutableList<TableCell>> = mutableListOf()
+        var matrix: MutableList<MutableList<TableCell>> = mutableListOf(),
+        var hasHeaderRow: Boolean = false
     ) : NoteBlock {
         init {
-            if (matrix.isEmpty()) {
-                for (r in 0 until rows) {
-                    val rowList = mutableListOf<TableCell>()
-                    for (c in 0 until cols) {
-                        rowList.add(TableCell())
-                    }
-                    matrix.add(rowList)
+            ensureMatrixSize()
+        }
+
+        fun ensureMatrixSize() {
+            if (rows < 1) rows = 1
+            if (cols < 1) cols = 1
+            while (matrix.size < rows) {
+                val rowList = mutableListOf<TableCell>()
+                for (c in 0 until cols) {
+                    rowList.add(TableCell())
+                }
+                matrix.add(rowList)
+            }
+            if (matrix.size > rows) {
+                matrix = matrix.take(rows).toMutableList()
+            }
+            for (r in 0 until matrix.size) {
+                while (matrix[r].size < cols) {
+                    matrix[r].add(TableCell())
+                }
+                if (matrix[r].size > cols) {
+                    matrix[r] = matrix[r].take(cols).toMutableList()
                 }
             }
+        }
+
+        private fun deepCopyMatrix(): MutableList<MutableList<TableCell>> {
+            return matrix.map { row ->
+                row.map { cell -> TableCell(text = cell.text, backgroundColorHex = cell.backgroundColorHex) }.toMutableList()
+            }.toMutableList()
+        }
+
+        fun updateCellText(r: Int, c: Int, text: String): Table {
+            val newMatrix = deepCopyMatrix()
+            if (r in newMatrix.indices && c in newMatrix[r].indices) {
+                newMatrix[r][c].text = text
+            }
+            return copy(matrix = newMatrix)
+        }
+
+        fun applyColor(r: Int, c: Int, colorHex: String?, scope: TableColorScope): Table {
+            val newMatrix = deepCopyMatrix()
+            when (scope) {
+                TableColorScope.CELL -> {
+                    if (r in newMatrix.indices && c in newMatrix[r].indices) {
+                        newMatrix[r][c].backgroundColorHex = colorHex
+                    }
+                }
+                TableColorScope.ROW -> {
+                    if (r in newMatrix.indices) {
+                        newMatrix[r].forEach { it.backgroundColorHex = colorHex }
+                    }
+                }
+                TableColorScope.COLUMN -> {
+                    newMatrix.forEach { row ->
+                        if (c in row.indices) {
+                            row[c].backgroundColorHex = colorHex
+                        }
+                    }
+                }
+                TableColorScope.TABLE -> {
+                    newMatrix.forEach { row ->
+                        row.forEach { cell ->
+                            cell.backgroundColorHex = colorHex
+                        }
+                    }
+                }
+            }
+            return copy(matrix = newMatrix)
+        }
+
+        fun addRowAbove(targetRow: Int): Table {
+            val newMatrix = deepCopyMatrix()
+            val insertIndex = targetRow.coerceIn(0, newMatrix.size)
+            val newRow = MutableList(cols) { TableCell() }
+            newMatrix.add(insertIndex, newRow)
+            return copy(rows = newMatrix.size, matrix = newMatrix)
+        }
+
+        fun addRowBelow(targetRow: Int): Table {
+            val newMatrix = deepCopyMatrix()
+            val insertIndex = (targetRow + 1).coerceIn(0, newMatrix.size)
+            val newRow = MutableList(cols) { TableCell() }
+            newMatrix.add(insertIndex, newRow)
+            return copy(rows = newMatrix.size, matrix = newMatrix)
+        }
+
+        fun deleteRow(targetRow: Int): Table {
+            if (rows <= 1) return this
+            val newMatrix = deepCopyMatrix()
+            if (targetRow in newMatrix.indices) {
+                newMatrix.removeAt(targetRow)
+            }
+            return copy(rows = newMatrix.size, matrix = newMatrix)
+        }
+
+        fun addColumnLeft(targetCol: Int): Table {
+            val newMatrix = deepCopyMatrix()
+            val insertIndex = targetCol.coerceIn(0, cols)
+            newMatrix.forEach { row ->
+                row.add(insertIndex.coerceIn(0, row.size), TableCell())
+            }
+            val newCols = newMatrix.firstOrNull()?.size ?: cols
+            return copy(cols = newCols, matrix = newMatrix)
+        }
+
+        fun addColumnRight(targetCol: Int): Table {
+            val newMatrix = deepCopyMatrix()
+            val insertIndex = (targetCol + 1).coerceIn(0, cols)
+            newMatrix.forEach { row ->
+                row.add(insertIndex.coerceIn(0, row.size), TableCell())
+            }
+            val newCols = newMatrix.firstOrNull()?.size ?: cols
+            return copy(cols = newCols, matrix = newMatrix)
+        }
+
+        fun deleteColumn(targetCol: Int): Table {
+            if (cols <= 1) return this
+            val newMatrix = deepCopyMatrix()
+            newMatrix.forEach { row ->
+                if (targetCol in row.indices) {
+                    row.removeAt(targetCol)
+                }
+            }
+            val newCols = newMatrix.firstOrNull()?.size ?: cols
+            return copy(cols = newCols, matrix = newMatrix)
+        }
+
+        fun clearCell(r: Int, c: Int): Table {
+            return updateCellText(r, c, "")
+        }
+
+        fun clearTable(): Table {
+            val newMatrix = deepCopyMatrix()
+            newMatrix.forEach { row ->
+                row.forEach { cell ->
+                    cell.text = ""
+                }
+            }
+            return copy(matrix = newMatrix)
+        }
+
+        fun toggleHeaderRow(): Table {
+            return copy(hasHeaderRow = !hasHeaderRow)
         }
     }
 }

@@ -52,6 +52,7 @@ object NoteBlockSerializer {
                     obj.put("id", block.id)
                     obj.put("rows", block.rows)
                     obj.put("cols", block.cols)
+                    obj.put("hasHeaderRow", block.hasHeaderRow)
                     val matrixArray = JSONArray()
                     for (row in block.matrix) {
                         val rowArray = JSONArray()
@@ -210,7 +211,8 @@ object NoteBlockSerializer {
                             }
                             matrix.add(rowList)
                         }
-                        list.add(NoteBlock.Table(id = id, rows = rows, cols = cols, matrix = matrix))
+                        val hasHeaderRow = obj.optBoolean("hasHeaderRow", false)
+                        list.add(NoteBlock.Table(id = id, rows = rows, cols = cols, matrix = matrix, hasHeaderRow = hasHeaderRow))
                     }
                     "pdf" -> {
                         val filePath = obj.optString("filePath", "")

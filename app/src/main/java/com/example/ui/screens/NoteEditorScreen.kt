@@ -157,6 +157,7 @@ import com.example.ui.components.PaperBackground
 import com.example.ui.components.AudioRecorderDialog
 import com.example.ui.components.AudioBlockItem
 import com.example.ui.components.PdfBlockItem
+import com.example.ui.components.TableBlockItem
 import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
 import com.example.util.NoteBlockSerializer
@@ -852,13 +853,25 @@ fun NoteEditorScreen(
                                         val start = tfv.selection.min
                                         val end = tfv.selection.max
                                         val text = tfv.text
-                                        // Insertar '==' alrededor del texto seleccionado
-                                        val newText = text.substring(0, start) + "==" + text.substring(start, end) + "==" + text.substring(end)
-                                        // Mantener la selección en la misma palabra
-                                        val newSelection = TextRange(start, end + 4)
+                                        val selectedText = text.substring(start, end)
+
+                                        val (newText, newSelection) = if (selectedText.startsWith("==") && selectedText.endsWith("==") && selectedText.length >= 4) {
+                                            // Quitar resaltado
+                                            val unhighlighted = selectedText.substring(2, selectedText.length - 2)
+                                            val updated = text.substring(0, start) + unhighlighted + text.substring(end)
+                                            val sel = TextRange(start, start + unhighlighted.length)
+                                            Pair(updated, sel)
+                                        } else {
+                                            // Aplicar resaltado
+                                            val highlighted = "==$selectedText=="
+                                            val updated = text.substring(0, start) + highlighted + text.substring(end)
+                                            val sel = TextRange(start, start + highlighted.length)
+                                            Pair(updated, sel)
+                                        }
+
                                         val newTfv = tfv.copy(text = newText, selection = newSelection)
                                         blockTextFieldValues[currentId] = newTfv
-                                        
+
                                         // Actualizar el modelo
                                         val idx = blocks.indexOfFirst { it.id == currentId }
                                         if (idx != -1) {
@@ -869,7 +882,6 @@ fun NoteEditorScreen(
                                             else if (b is NoteBlock.CalloutBox) blocks[idx] = b.copy(content = newText)
                                         }
                                     } else {
-                                        // Si no hay texto seleccionado, actua como modo normal
                                         isHighlightActive = !isHighlightActive
                                     }
                                 } else {
@@ -1096,9 +1108,10 @@ fun NoteEditorScreen(
                             BasicTextField(
                                 value = tfv,
                                 onValueChange = { newValue ->
-                                    blockTextFieldValues[block.id] = newValue
-                                    if (newValue.text != block.content) {
-                                        blocks[index] = block.copy(content = newValue.text)
+                                    val sanitized = sanitizeTextFieldValue(newValue)
+                                    blockTextFieldValues[block.id] = sanitized
+                                    if (sanitized.text != block.content) {
+                                        blocks[index] = block.copy(content = sanitized.text)
                                     }
                                 },
                                 modifier = Modifier
@@ -1164,9 +1177,10 @@ fun NoteEditorScreen(
                                 BasicTextField(
                                     value = tfv,
                                     onValueChange = { newValue ->
-                                        blockTextFieldValues[block.id] = newValue
-                                        if (newValue.text != block.content) {
-                                            blocks[index] = block.copy(content = newValue.text)
+                                        val sanitized = sanitizeTextFieldValue(newValue)
+                                        blockTextFieldValues[block.id] = sanitized
+                                        if (sanitized.text != block.content) {
+                                            blocks[index] = block.copy(content = sanitized.text)
                                         }
                                     },
                                     modifier = Modifier
@@ -1245,9 +1259,10 @@ fun NoteEditorScreen(
                                 BasicTextField(
                                     value = tfv,
                                     onValueChange = { newValue ->
-                                        blockTextFieldValues[block.id] = newValue
-                                        if (newValue.text != block.content) {
-                                            blocks[index] = block.copy(content = newValue.text)
+                                        val sanitized = sanitizeTextFieldValue(newValue)
+                                        blockTextFieldValues[block.id] = sanitized
+                                        if (sanitized.text != block.content) {
+                                            blocks[index] = block.copy(content = sanitized.text)
                                         }
                                     },
                                     modifier = Modifier
@@ -1336,9 +1351,10 @@ fun NoteEditorScreen(
                                     BasicTextField(
                                         value = tfv,
                                         onValueChange = { newValue ->
-                                            blockTextFieldValues[block.id] = newValue
-                                            if (newValue.text != block.content) {
-                                                blocks[index] = block.copy(content = newValue.text)
+                                            val sanitized = sanitizeTextFieldValue(newValue)
+                                            blockTextFieldValues[block.id] = sanitized
+                                            if (sanitized.text != block.content) {
+                                                blocks[index] = block.copy(content = sanitized.text)
                                             }
                                         },
                                         modifier = Modifier
@@ -1485,299 +1501,16 @@ fun NoteEditorScreen(
                             }
                         }
                         is NoteBlock.Table -> {
-                            var selectedCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-                            var showTableMenu by remember { mutableStateOf(false) }
-                            var isEditingTable by remember { mutableStateOf(false) }
-
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 6.dp)
-                                    .focusRequester(focusRequester)
-                                    .testTag("table_block")
-                                    .combinedClickable(
-                                        onClick = { },
-                                        onLongClick = {
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            showTableMenu = true
-                                        }
-                                    ),
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp)
-                                ) {
-                                    if (isEditingTable) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(bottom = 8.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                TextButton(
-                                                    onClick = {
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        val insertIndex = selectedCell?.first?.let { it + 1 } ?: block.matrix.size
-                                                        val newRow = mutableListOf<TableCell>()
-                                                        for (c in 0 until block.cols) {
-                                                            newRow.add(TableCell())
-                                                        }
-                                                        block.matrix.add(insertIndex.coerceIn(0, block.matrix.size), newRow)
-                                                        block.rows = block.matrix.size
-                                                        blocks[index] = block.copy(rows = block.rows, matrix = block.matrix)
-                                                    }
-                                                ) {
-                                                    Text("+ Fila", fontSize = 12.sp, color = amber)
-                                                }
-                                                TextButton(
-                                                    onClick = {
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        val removeIndex = selectedCell?.first ?: (block.matrix.size - 1)
-                                                        if (block.matrix.size > 1 && removeIndex in block.matrix.indices) {
-                                                            block.matrix.removeAt(removeIndex)
-                                                            block.rows = block.matrix.size
-                                                            selectedCell = null
-                                                            blocks[index] = block.copy(rows = block.rows, matrix = block.matrix)
-                                                        }
-                                                    }
-                                                ) {
-                                                    Text("- Fila", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                                                }
-                                                TextButton(
-                                                    onClick = {
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        val insertCol = selectedCell?.second?.let { it + 1 } ?: block.cols
-                                                        block.matrix.forEach { row ->
-                                                            row.add(insertCol.coerceIn(0, row.size), TableCell())
-                                                        }
-                                                        block.cols = block.matrix.firstOrNull()?.size ?: block.cols
-                                                        blocks[index] = block.copy(cols = block.cols, matrix = block.matrix)
-                                                    }
-                                                ) {
-                                                    Text("+ Col", fontSize = 12.sp, color = amber)
-                                                }
-                                                TextButton(
-                                                    onClick = {
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        val removeCol = selectedCell?.second ?: (block.cols - 1)
-                                                        if (block.cols > 1) {
-                                                            block.matrix.forEach { row ->
-                                                                if (removeCol in row.indices) {
-                                                                    row.removeAt(removeCol)
-                                                                }
-                                                            }
-                                                            block.cols = block.matrix.firstOrNull()?.size ?: block.cols
-                                                            selectedCell = null
-                                                            blocks[index] = block.copy(cols = block.cols, matrix = block.matrix)
-                                                        }
-                                                    }
-                                                ) {
-                                                    Text("- Col", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                                                }
-                                            }
-                                            TextButton(onClick = { isEditingTable = false }) {
-                                                Text("Listo", fontSize = 12.sp, color = amber, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-
-                                    for (r in 0 until block.rows) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            for (c in 0 until block.cols) {
-                                                val cell = block.matrix.getOrNull(r)?.getOrNull(c) ?: TableCell()
-                                                val cellBg = if (!cell.backgroundColorHex.isNullOrBlank()) {
-                                                    runCatching { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)) }.getOrDefault(Color.Transparent)
-                                                } else {
-                                                    Color.Transparent
-                                                }
-                                                val isSelected = selectedCell == Pair(r, c)
-
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .padding(2.dp)
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                        .background(cellBg)
-                                                        .border(
-                                                            width = if (isSelected) 2.dp else 0.5.dp,
-                                                            color = if (isSelected) amber else MaterialTheme.colorScheme.outlineVariant,
-                                                            shape = RoundedCornerShape(4.dp)
-                                                        )
-                                                        .clickable {
-                                                            selectedCell = Pair(r, c)
-                                                        }
-                                                        .padding(8.dp),
-                                                    contentAlignment = Alignment.CenterStart
-                                                ) {
-                                                    BasicTextField(
-                                                        value = cell.text,
-                                                        onValueChange = { newTxt ->
-                                                            cell.text = newTxt
-                                                            blocks[index] = block.copy(matrix = block.matrix)
-                                                        },
-                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                                            color = MaterialTheme.colorScheme.onSurface,
-                                                            fontSize = 15.sp
-                                                        ),
-                                                        cursorBrush = SolidColor(amber),
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clickable { selectedCell = Pair(r, c) },
-                                                        decorationBox = { innerTextField ->
-                                                            if (cell.text.isEmpty()) {
-                                                                Text(
-                                                                    text = "",
-                                                                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), fontSize = 15.sp)
-                                                                )
-                                                            }
-                                                            innerTextField()
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        if (r < block.rows - 1) {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                        }
-                                    }
-
-                                    if (isEditingTable && selectedCell != null) {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("Celda [${selectedCell!!.first + 1}, ${selectedCell!!.second + 1}]", style = MaterialTheme.typography.bodySmall, color = amber)
-                                            TextButton(onClick = { selectedCell = null }) {
-                                                Text("Deseleccionar", fontSize = 11.sp)
-                                            }
-                                        }
-                                        val palette = listOf(
-                                            "Rojo" to "#EF4444",
-                                            "Azul" to "#3B82F6",
-                                            "Verde" to "#10B981",
-                                            "Amarillo" to "#F59E0B",
-                                            "Naranja" to "#F97316",
-                                            "Morado" to "#8B5CF6",
-                                            "Sin color" to null
-                                        )
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            items(palette.size) { idx ->
-                                                val (cName, hex) = palette[idx]
-                                                Surface(
-                                                    modifier = Modifier.clickable {
-                                                        val (r, c) = selectedCell!!
-                                                        block.matrix[r][c].backgroundColorHex = hex
-                                                        blocks[index] = block.copy(matrix = block.matrix)
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    },
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = if (hex != null) Color(android.graphics.Color.parseColor(hex)) else MaterialTheme.colorScheme.surfaceVariant
-                                                ) {
-                                                    Text("$cName (Celda)", modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp), fontSize = 10.sp, color = if (hex != null) Color.White else MaterialTheme.colorScheme.onSurface)
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            items(palette.size) { idx ->
-                                                val (cName, hex) = palette[idx]
-                                                Surface(
-                                                    modifier = Modifier.clickable {
-                                                        val (r, _) = selectedCell!!
-                                                        block.matrix[r].forEach { cellItem ->
-                                                            cellItem.backgroundColorHex = hex
-                                                        }
-                                                        blocks[index] = block.copy(matrix = block.matrix)
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    },
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = if (hex != null) Color(android.graphics.Color.parseColor(hex)) else MaterialTheme.colorScheme.surfaceVariant
-                                                ) {
-                                                    Text("$cName (Fila)", modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp), fontSize = 10.sp, color = if (hex != null) Color.White else MaterialTheme.colorScheme.onSurface)
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            items(palette.size) { idx ->
-                                                val (cName, hex) = palette[idx]
-                                                Surface(
-                                                    modifier = Modifier.clickable {
-                                                        val (_, c) = selectedCell!!
-                                                        block.matrix.forEach { rowItem ->
-                                                            if (c in rowItem.indices) {
-                                                                rowItem[c].backgroundColorHex = hex
-                                                            }
-                                                        }
-                                                        blocks[index] = block.copy(matrix = block.matrix)
-                                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    },
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = if (hex != null) Color(android.graphics.Color.parseColor(hex)) else MaterialTheme.colorScheme.surfaceVariant
-                                                ) {
-                                                    Text("$cName (Col)", modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp), fontSize = 10.sp, color = if (hex != null) Color.White else MaterialTheme.colorScheme.onSurface)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (showTableMenu) {
-                                AlertDialog(
-                                    onDismissRequest = { showTableMenu = false },
-                                    modifier = Modifier.testTag("menu_edit_table"),
-                                    title = { Text("Opciones de tabla") },
-                                    text = {
-                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            TextButton(
-                                                onClick = {
-                                                    showTableMenu = false
-                                                    isEditingTable = true
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("🎨 Editar tabla (Tamaño y Colores)", color = amber)
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    showTableMenu = false
-                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    removeBlock(index)
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("🗑️ Eliminar tabla completa", color = MaterialTheme.colorScheme.error)
-                                            }
-                                        }
-                                    },
-                                    confirmButton = {
-                                        TextButton(onClick = { showTableMenu = false }) {
-                                            Text("Cerrar")
-                                        }
-                                    }
-                                )
-                            }
+                            TableBlockItem(
+                                block = block,
+                                onUpdateBlock = { updatedTable ->
+                                    blocks[index] = updatedTable
+                                },
+                                onDeleteBlock = {
+                                    removeBlock(index)
+                                },
+                                modifier = Modifier.testTag("table_block_$index")
+                            )
                         }
                         is PdfBlock -> {
                             PdfBlockItem(
@@ -3055,6 +2788,84 @@ fun FormatOptionItem(
     }
 }
 
+private data class HighlightSpan(val rawStart: Int, val rawEnd: Int) {
+    val rawLength: Int get() = rawEnd - rawStart
+    val innerLength: Int get() = rawLength - 4
+}
+
+private fun sanitizeHighlightTags(text: String): String {
+    var result = text
+    // 1. Eliminar etiquetas vacías o triples como ==== o ===
+    result = result.replace(Regex("""==\s*==|====|==="""), "")
+
+    // 2. Corregir etiqueta rota al final: ==palabra=
+    result = result.replace(Regex("""==([^=\n]+)=(?![=])""")) {
+        it.groupValues[1]
+    }
+
+    // 3. Corregir etiqueta rota al inicio: =palabra==
+    result = result.replace(Regex("""(?<!=)=([^=\n]+)==""")) {
+        it.groupValues[1]
+    }
+
+    // 4. Corregir etiquetas únicas: =palabra=
+    result = result.replace(Regex("""(?<!=)=([^=\n]+)=(?![=])""")) {
+        it.groupValues[1]
+    }
+
+    return result
+}
+
+private fun sanitizeTextFieldValue(tfv: TextFieldValue): TextFieldValue {
+    val rawText = tfv.text
+    val sanitized = sanitizeHighlightTags(rawText)
+    if (sanitized == rawText) {
+        return tfv
+    }
+    val newCursor = tfv.selection.start.coerceIn(0, sanitized.length)
+    return tfv.copy(
+        text = sanitized,
+        selection = TextRange(newCursor)
+    )
+}
+
+private class HighlightOffsetMapping(private val spans: List<HighlightSpan>) : OffsetMapping {
+    override fun originalToTransformed(offset: Int): Int {
+        var totalRemoved = 0
+        for (span in spans) {
+            if (offset <= span.rawStart) {
+                break
+            } else if (offset <= span.rawStart + 2) {
+                totalRemoved += (offset - span.rawStart)
+            } else if (offset <= span.rawEnd - 2) {
+                totalRemoved += 2
+            } else if (offset <= span.rawEnd) {
+                totalRemoved += 2 + (offset - (span.rawEnd - 2))
+            } else {
+                totalRemoved += 4
+            }
+        }
+        return offset - totalRemoved
+    }
+
+    override fun transformedToOriginal(offset: Int): Int {
+        var totalAdded = 0
+        for (span in spans) {
+            val visualStart = span.rawStart - totalAdded
+            val visualEnd = visualStart + span.innerLength
+
+            if (offset <= visualStart) {
+                break
+            } else if (offset <= visualEnd) {
+                totalAdded += 2
+            } else {
+                totalAdded += 4
+            }
+        }
+        return offset + totalAdded
+    }
+}
+
 private fun markdownVisualTransformation(isDark: Boolean, amber: Color): VisualTransformation {
     val lightIndigo = Color(0xFF1A365D)
     val darkIndigo = Color(0xFF60A5FA)
@@ -3062,46 +2873,53 @@ private fun markdownVisualTransformation(isDark: Boolean, amber: Color): VisualT
 
     return VisualTransformation { text ->
         val fullText = text.text
-        val annotatedString = buildAnnotatedString {
-            // Regex to find hashtags AND highlights (==text==)
-            // Using a simple regex that matches either #tags or ==highlights==
-            val pattern = Regex("""(#([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+))|(==(.*?)==)""")
-            val matches = pattern.findAll(fullText).toList()
-            var lastIndex = 0
+        val highlightRegex = Regex("""==([^=\n]+)==""")
+        val highlightMatches = highlightRegex.findAll(fullText).toList()
 
-            for (match in matches) {
+        val spans = highlightMatches.map {
+            HighlightSpan(it.range.first, it.range.last + 1)
+        }
+
+        val annotatedString = buildAnnotatedString {
+            var lastIndex = 0
+            for (match in highlightMatches) {
                 val start = match.range.first
                 val end = match.range.last + 1
+
                 if (start > lastIndex) {
                     append(fullText.substring(lastIndex, start))
                 }
-                
-                if (match.value.startsWith("==")) {
-                    // Highlight
-                    withStyle(
-                        SpanStyle(
-                            background = amber.copy(alpha = 0.35f)
-                        )
-                    ) {
-                        append(fullText.substring(start, end))
-                    }
-                } else {
-                    // Hashtag
-                    withStyle(
-                        SpanStyle(
-                            color = tagColor,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    ) {
-                        append(fullText.substring(start, end))
-                    }
-                }
+
+                val innerText = match.groupValues[1]
+                val visualStart = length
+                append(innerText)
+                val visualEnd = length
+
+                addStyle(
+                    SpanStyle(background = amber.copy(alpha = 0.35f)),
+                    visualStart,
+                    visualEnd
+                )
+
                 lastIndex = end
             }
             if (lastIndex < fullText.length) {
                 append(fullText.substring(lastIndex))
             }
+
+            // Aplicar estilo de hashtags sobre el texto visual
+            val visualString = toAnnotatedString().text
+            val hashtagRegex = Regex("""#([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)""")
+            for (m in hashtagRegex.findAll(visualString)) {
+                addStyle(
+                    SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold),
+                    m.range.first,
+                    m.range.last + 1
+                )
+            }
         }
-        TransformedText(annotatedString, OffsetMapping.Identity)
+
+        val offsetMapping = if (spans.isEmpty()) androidx.compose.ui.text.input.OffsetMapping.Identity else HighlightOffsetMapping(spans)
+        TransformedText(annotatedString, offsetMapping)
     }
 }
