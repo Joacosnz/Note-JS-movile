@@ -13,7 +13,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.auranotes.kxmpzq"
+    applicationId = "com.aistudio.NotasJS.kxmpzq"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
@@ -67,6 +67,20 @@ android {
     includeInApk = false
     includeInBundle = true
   }
+  packaging {
+    resources {
+      excludes += listOf(
+        "META-INF/DEPENDENCIES",
+        "META-INF/LICENSE",
+        "META-INF/LICENSE.txt",
+        "META-INF/license.txt",
+        "META-INF/NOTICE",
+        "META-INF/NOTICE.txt",
+        "META-INF/notice.txt",
+        "META-INF/ASL2.0"
+      )
+    }
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -84,6 +98,7 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
+  implementation(platform("io.grpc:grpc-bom:1.65.1"))
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
   // implementation(libs.androidx.camera.camera2)
@@ -104,18 +119,19 @@ dependencies {
   // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  // implementation(libs.coil.compose)
+  implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
+  implementation(libs.firebase.firestore)
+  implementation(libs.firebase.storage)
 
   // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
   // Sign-In via Credential Manager:
-  // implementation(libs.firebase.auth)
-  // implementation(libs.androidx.credentials)
-  // implementation(libs.androidx.credentials.play.services)
-  // implementation(libs.googleid)
+  implementation(libs.firebase.auth)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services)
+  implementation(libs.googleid)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.firebase.appcheck.debug)
   implementation(libs.kotlinx.coroutines.android)
@@ -125,6 +141,25 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  // implementation("com.k2-fsa:sherpa-onnx:1.10.30")
+  implementation("androidx.media3:media3-exoplayer:1.3.0")
+  implementation("androidx.media3:media3-common:1.3.0")
+  implementation("com.google.mlkit:text-recognition:16.0.1")
+  implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+  implementation("com.github.TomRoush:PdfBox-Android:2.0.7.0")
+
+  // WorkManager
+  implementation(libs.androidx.work.runtime.ktx)
+
+  // Jetpack Glance AppWidgets
+  implementation(libs.androidx.glance.appwidget)
+  implementation(libs.androidx.glance.material3)
+
+  // Google Drive REST API & Google Auth
+  implementation(libs.google.api.services.drive)
+  implementation(libs.google.api.client.android)
+  implementation(libs.google.http.client.gson)
+  implementation(libs.play.services.auth)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

@@ -1,6 +1,6 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,16 +33,18 @@ fun AppleNotesTopBar(
     title: String,
     query: String,
     onQueryChange: (String) -> Unit,
-    onMoreOptionsClick: () -> Unit,
     modifier: Modifier = Modifier,
     isSelectionMode: Boolean = false,
     selectedCount: Int = 0,
     totalCount: Int = 0,
     onExitSelectionMode: () -> Unit = {},
     onSelectAll: () -> Unit = {},
-    onDeselectAll: () -> Unit = {}
+    onDeselectAll: () -> Unit = {},
+    onOpenSettings: (() -> Unit)? = null,
+    isGridView: Boolean = true,
+    onToggleGridView: (() -> Unit)? = null
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
 
     Column(
@@ -101,41 +105,58 @@ fun AppleNotesTopBar(
                 }
             }
         } else {
-            // Normal header (minimalist: only More Options on the right)
+            // Apple Large Title
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onMoreOptionsClick,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag("apple_more_options"),
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.5).sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreHoriz,
-                        contentDescription = "Más opciones",
-                        tint = amber,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    if (onToggleGridView != null) {
+                        IconButton(
+                            onClick = onToggleGridView,
+                            modifier = Modifier.testTag("btn_toggle_grid_view")
+                        ) {
+                            Icon(
+                                imageVector = if (isGridView) Icons.Default.ViewAgenda else Icons.Default.GridView,
+                                contentDescription = if (isGridView) "Ver como lista" else "Ver como cuadrícula",
+                                tint = amber,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+
+                    if (onOpenSettings != null) {
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.testTag("btn_open_settings")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Ajustes",
+                                tint = amber,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
                 }
             }
-
-            // Apple Large Title
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp,
-                ),
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
 
             // Apple Search Bar
             Spacer(modifier = Modifier.height(10.dp))

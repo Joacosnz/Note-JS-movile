@@ -30,9 +30,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AudioBlock
+import com.example.util.GeminiAudioTranscriber
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.io.File
@@ -54,11 +56,32 @@ fun AudioBlockItem(
     var currentPosition by remember { mutableFloatStateOf(0f) }
     val maxPosition = block.durationMs.toFloat().coerceAtLeast(1f)
 
-    // Manage MediaPlayer lifecycle
-    DisposableEffect(block.filePath) {
-        val file = File(block.filePath)
-        if (file.exists()) {
+    var isTranscribingState by remember(block.id, block.isTranscribing) { mutableStateOf(block.isTranscribing) }
+    var transcriptionState by remember(block.id, block.transcription) { mutableStateOf(block.transcription) }
+
+    LaunchedEffect(block.id, block.filePath) {
+        if (isTranscribingState && transcriptionState.isBlank()) {
             try {
+                val file = File(block.filePath)
+                if (file.exists()) {
+                    val result = GeminiAudioTranscriber.transcribeAudio(file)
+                    block.transcription = result
+                    transcriptionState = result
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                block.isTranscribing = false
+                isTranscribingState = false
+            }
+        }
+    }
+
+    // Manage MediaPlayer lifecycle
+    DisposableEffect(block.filePath, block.remoteUrl) {
+        val file = File(block.filePath)
+        try {
+            if (file.exists()) {
                 mediaPlayer = MediaPlayer().apply {
                     setDataSource(file.absolutePath)
                     prepare()
@@ -68,10 +91,25 @@ fun AudioBlockItem(
                         it.seekTo(0)
                     }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } else if (block.remoteUrl.isNotBlank()) {
+                // Fallback: si el archivo aún no se descargó o la ruta local se corrompió, hacer streaming desde Firebase
+                mediaPlayer = MediaPlayer().apply {
+                    setDataSource(block.remoteUrl)
+                    prepareAsync() // Usar prepareAsync para URLs remotas
+                    setOnPreparedListener {
+                        // Listo para reproducir
+                    }
+                    setOnCompletionListener {
+                        isPlaying = false
+                        currentPosition = 0f
+                        it.seekTo(0)
+                    }
+                }
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+        
         onDispose {
             mediaPlayer?.release()
             mediaPlayer = null
@@ -211,7 +249,7 @@ fun AudioBlockItem(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (block.isTranscribing) {
+                if (isTranscribingState) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -229,7 +267,7 @@ fun AudioBlockItem(
             }
 
             AnimatedVisibility(
-                visible = block.isTranscriptionVisible && !block.isTranscribing,
+                visible = block.isTranscriptionVisible && !isTranscribingState,
                 enter = fadeIn(animationSpec = tween(300)) + expandVertically(animationSpec = tween(300)),
                 exit = fadeOut(animationSpec = tween(300)) + shrinkVertically(animationSpec = tween(300))
             ) {
@@ -241,21 +279,23 @@ fun AudioBlockItem(
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(12.dp)
                 ) {
-                    Text(
-                        text = block.transcription.ifBlank { "No se pudo transcribir el audio." },
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            lineHeight = 22.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                    SelectionContainer {
+                        Text(
+                            text = transcriptionState.ifBlank { "No se pudo transcribir el audio." },
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                lineHeight = 22.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         )
-                    )
-                    if (block.transcription.isNotBlank()) {
+                    }
+                    if (transcriptionState.isNotBlank()) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
                             TextButton(
                                 onClick = {
-                                    clipboardManager.setText(AnnotatedString(block.transcription))
+                                    clipboardManager.setText(AnnotatedString(transcriptionState))
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)

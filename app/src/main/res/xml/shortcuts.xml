@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:targetApi="25">
+    <shortcut
+        android:shortcutId="new_note"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_input_add"
+        android:shortcutShortLabel="@string/shortcut_new_note_short"
+        android:shortcutLongLabel="@string/shortcut_new_note_long">
+        <intent
+            android:action="com.example.ACTION_NEW_NOTE"
+            android:targetPackage="com.aistudio.NotasJS.kxmpzq"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="voice_note"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_btn_speak_now"
+        android:shortcutShortLabel="@string/shortcut_voice_note_short"
+        android:shortcutLongLabel="@string/shortcut_voice_note_long">
+        <intent
+            android:action="com.example.ACTION_VOICE_NOTE"
+            android:targetPackage="com.aistudio.NotasJS.kxmpzq"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="scan_document"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_camera"
+        android:shortcutShortLabel="@string/shortcut_scan_document_short"
+        android:shortcutLongLabel="@string/shortcut_scan_document_long">
+        <intent
+            android:action="com.example.ACTION_SCAN_DOCUMENT"
+            android:targetPackage="com.aistudio.NotasJS.kxmpzq"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+</shortcuts>

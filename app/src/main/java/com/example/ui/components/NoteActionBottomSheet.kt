@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Unarchive
@@ -59,7 +60,8 @@ fun NoteActionBottomSheet(
     onColorChanged: (Int) -> Unit,
     onPaperStyleChanged: (PaperStyle) -> Unit,
     onLockToggle: () -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    onReminder: () -> Unit = {}
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -170,6 +172,15 @@ fun NoteActionBottomSheet(
                 text = if (note.isLocked) "Quitar protección PIN" else "Proteger con PIN",
                 onClick = {
                     onLockToggle()
+                    onDismiss()
+                }
+            )
+
+            ActionRowItem(
+                icon = Icons.Default.Notifications,
+                text = if (note.reminderTimestamp != null) "Editar recordatorio" else "Programar recordatorio",
+                onClick = {
+                    onReminder()
                     onDismiss()
                 }
             )

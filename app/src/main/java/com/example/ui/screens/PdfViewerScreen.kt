@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -46,8 +48,11 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.example.util.PdfHelper
+import com.example.util.PdfModifierUtil
+import com.example.util.SignatureHelper
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -89,13 +94,18 @@ fun PdfViewerScreen(
     pdfPath: String,
     viewModel: NotesViewModel
 ) {
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+    val pdfLastModified by viewModel.pdfLastModified.collectAsState()
 
     val file = remember(pdfPath) { File(pdfPath) }
     var pageCount by remember { mutableIntStateOf(1) }
     var currentPageIndex by remember { mutableIntStateOf(0) }
     var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    var isProcessingPdf by remember { mutableStateOf(false) }
+    var showPageMenu by remember { mutableStateOf(false) }
 
     // Color palette options
     val colorOptions = remember {
@@ -139,9 +149,12 @@ fun PdfViewerScreen(
     var showSignatureDialog by remember { mutableStateOf(false) }
 
     // Load PDF page count and initial annotations from DB
-    LaunchedEffect(pdfPath, noteId) {
+    LaunchedEffect(pdfPath, noteId, pdfLastModified) {
         if (file.exists()) {
             pageCount = PdfHelper.getPageCount(file).coerceAtLeast(1)
+            if (currentPageIndex >= pageCount) {
+                currentPageIndex = (pageCount - 1).coerceAtLeast(0)
+            }
             val note = viewModel.getNote(noteId)
             if (note != null && note.pdfAnnotationData.isNotBlank()) {
                 val (loadedStrokes, loadedSigs) = deserializeAnnotations(note.pdfAnnotationData)
@@ -152,7 +165,7 @@ fun PdfViewerScreen(
     }
 
     // Load Bitmap for currentPageIndex
-    LaunchedEffect(currentPageIndex, pdfPath) {
+    LaunchedEffect(currentPageIndex, pdfPath, pdfLastModified) {
         if (file.exists()) {
             isLoading = true
             pageBitmap = PdfHelper.renderPdfPage(file, currentPageIndex, targetWidth = 1080)
@@ -320,6 +333,123 @@ fun PdfViewerScreen(
                         enabled = scale < 5f
                     ) {
                         Icon(Icons.Default.ZoomIn, contentDescription = "Acercar")
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            isProcessingPdf = true
+                            coroutineScope.launch {
+                                PdfModifierUtil.flattenAndSharePdf(
+                                    context = context,
+                                    originalFile = file,
+                                    strokesMap = pageStrokesMap,
+                                    signaturesMap = pageSignaturesMap
+                                )
+                                isProcessingPdf = false
+                            }
+                        },
+                        enabled = !isProcessingPdf,
+                        modifier = Modifier.testTag("btn_pdf_share")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Compartir PDF"
+                        )
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = {
+                                showPageMenu = true
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            modifier = Modifier.testTag("btn_pdf_page_options")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Opciones de Página"
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showPageMenu,
+                            onDismissRequest = { showPageMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("🔄  Rotar 90°") },
+                                onClick = {
+                                    showPageMenu = false
+                                    isProcessingPdf = true
+                                    viewModel.rotatePdfPage(context, file, currentPageIndex) {
+                                        isProcessingPdf = false
+                                    }
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("➕  Insertar página en blanco") },
+                                onClick = {
+                                    showPageMenu = false
+                                    isProcessingPdf = true
+                                    val targetIndex = currentPageIndex
+                                    viewModel.insertPdfPage(context, file, targetIndex) { success ->
+                                        if (success) {
+                                            pageStrokesMap = pageStrokesMap.mapKeys { (idx, _) ->
+                                                if (idx > targetIndex) idx + 1 else idx
+                                            }
+                                            pageSignaturesMap = pageSignaturesMap.mapKeys { (idx, _) ->
+                                                if (idx > targetIndex) idx + 1 else idx
+                                            }
+                                            currentPageIndex = targetIndex + 1
+                                        }
+                                        isProcessingPdf = false
+                                    }
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "🗑️  Eliminar página",
+                                        color = if (pageCount > 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                    )
+                                },
+                                enabled = pageCount > 1,
+                                onClick = {
+                                    showPageMenu = false
+                                    if (pageCount > 1) {
+                                        isProcessingPdf = true
+                                        val pageToDelete = currentPageIndex
+                                        viewModel.deletePdfPage(context, file, pageToDelete) { success ->
+                                            if (success) {
+                                                pageStrokesMap = pageStrokesMap.mapNotNull { (idx, strokes) ->
+                                                    when {
+                                                        idx < pageToDelete -> idx to strokes
+                                                        idx == pageToDelete -> null
+                                                        else -> (idx - 1) to strokes
+                                                    }
+                                                }.toMap()
+                                                pageSignaturesMap = pageSignaturesMap.mapNotNull { (idx, sigs) ->
+                                                    when {
+                                                        idx < pageToDelete -> idx to sigs
+                                                        idx == pageToDelete -> null
+                                                        else -> (idx - 1) to sigs
+                                                    }
+                                                }.toMap()
+
+                                                if (currentPageIndex >= pageCount - 1 && currentPageIndex > 0) {
+                                                    currentPageIndex--
+                                                }
+                                            }
+                                            isProcessingPdf = false
+                                        }
+                                    }
+                                }
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(6.dp))
@@ -545,8 +675,22 @@ fun PdfViewerScreen(
             contentAlignment = Alignment.Center
         ) {
             when {
-                isLoading -> {
-                    CircularProgressIndicator(color = Color.White)
+                isLoading || isProcessingPdf -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(color = Color.White)
+                        if (isProcessingPdf) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Procesando página PDF...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
                 pageBitmap != null -> {
                     val imgBitmap = pageBitmap!!.asImageBitmap()
@@ -767,6 +911,8 @@ fun PdfViewerScreen(
 
     // Digital Signature Modal Dialog
     if (showSignatureDialog) {
+        val vaultSigs by viewModel.savedSignatures.collectAsState()
+
         Dialog(onDismissRequest = { showSignatureDialog = false }) {
             var signaturePoints by remember { mutableStateOf<List<DrawingPoint>>(emptyList()) }
 
@@ -783,6 +929,94 @@ fun PdfViewerScreen(
                         .padding(20.dp)
                         .fillMaxWidth()
                 ) {
+                    if (vaultSigs.isNotEmpty()) {
+                        Text(
+                            text = "Bóveda de Firmas Guardadas",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        ) {
+                            items(vaultSigs, key = { it.id }) { sigEntity ->
+                                val points = remember(sigEntity.pointsJson) {
+                                    SignatureHelper.deserializePoints(sigEntity.pointsJson)
+                                }
+                                val sigColor = MaterialTheme.colorScheme.onSurface
+                                Card(
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    ),
+                                    modifier = Modifier
+                                        .width(110.dp)
+                                        .height(65.dp)
+                                        .clickable {
+                                            if (points.isNotEmpty()) {
+                                                val newSig = DigitalSignature(
+                                                    points = points,
+                                                    normalizedX = 0.30f,
+                                                    normalizedY = 0.70f,
+                                                    scale = 1.0f
+                                                )
+                                                pageSignaturesMap = pageSignaturesMap + (currentPageIndex to (currentSignatures + newSig))
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                showSignatureDialog = false
+                                            }
+                                        }
+                                ) {
+                                    Box(modifier = Modifier.fillMaxSize()) {
+                                        Canvas(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(8.dp)
+                                        ) {
+                                            if (points.isNotEmpty()) {
+                                                val path = Path()
+                                                path.moveTo(
+                                                    points.first().x * size.width,
+                                                    points.first().y * size.height
+                                                )
+                                                for (i in 1 until points.size) {
+                                                    path.lineTo(
+                                                        points[i].x * size.width,
+                                                        points[i].y * size.height
+                                                    )
+                                                }
+                                                drawPath(
+                                                    path = path,
+                                                    color = sigColor,
+                                                    style = Stroke(width = 3f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.deleteSignatureFromVault(sigEntity.id)
+                                            },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .size(20.dp)
+                                                .padding(2.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Eliminar firma",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -896,6 +1130,7 @@ fun PdfViewerScreen(
                                         scale = 1.0f
                                     )
                                     pageSignaturesMap = pageSignaturesMap + (currentPageIndex to (currentSignatures + newSig))
+                                    viewModel.saveSignatureToVault(signaturePoints)
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 }
                                 showSignatureDialog = false

@@ -1,14 +1,21 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,9 +29,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -47,7 +56,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.local.entity.NoteEntity
 import com.example.ui.components.AppleBottomToolbar
+import com.example.ui.components.NoteReminderBottomSheet
+import androidx.compose.ui.platform.LocalContext
 import com.example.viewmodel.NavTab
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
@@ -59,40 +71,41 @@ fun FoldersScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
+    var noteForReminder by remember { mutableStateOf<NoteEntity?>(null) }
+
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            viewModel.createNoteWithPdf(it) { newNoteId ->
+                viewModel.navigateTo(Screen.Editor(noteId = newNoteId))
+            }
+        }
+    }
 
     BackHandler {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         viewModel.navigateTo(Screen.Home)
     }
 
-    Scaffold(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .testTag("folders_screen"),
-        bottomBar = {
-            AppleBottomToolbar(
-                onNewNote = {
-                    viewModel.navigateTo(Screen.Editor())
-                },
-                isHomeActive = false,
-                isFoldersActive = true,
-                onHomeClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    viewModel.navigateTo(Screen.Home)
-                },
-                onFoldersClick = {}
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp)
-        ) {
+            .testTag("folders_screen")
+    ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 20.dp)
+            ) {
             Spacer(modifier = Modifier.height(16.dp))
 
             // Header with Title and "+ Nueva carpeta"
@@ -110,24 +123,41 @@ fun FoldersScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                TextButton(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        newFolderName = ""
-                        showNewFolderDialog = true
-                    },
-                    modifier = Modifier.testTag("btn_new_folder")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Nueva carpeta",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.navigateTo(Screen.Settings)
+                        },
+                        modifier = Modifier.testTag("btn_settings_folders")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Ajustes",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    TextButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            newFolderName = ""
+                            showNewFolderDialog = true
+                        },
+                        modifier = Modifier.testTag("btn_new_folder")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Nueva carpeta",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                    }
                 }
             }
 
@@ -137,6 +167,7 @@ fun FoldersScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
+                contentPadding = PaddingValues(bottom = 100.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Sección Principal
@@ -154,7 +185,7 @@ fun FoldersScreen(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 2.dp,
+                        tonalElevation = 0.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column {
@@ -222,7 +253,7 @@ fun FoldersScreen(
                         Surface(
                             shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 2.dp,
+                            tonalElevation = 0.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column {
@@ -269,7 +300,7 @@ fun FoldersScreen(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 2.dp,
+                        tonalElevation = 0.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column {
@@ -325,6 +356,43 @@ fun FoldersScreen(
                 }
             }
         }
+    }
+
+        AppleBottomToolbar(
+            onNewNote = {
+                viewModel.navigateTo(Screen.Editor())
+            },
+            isHomeActive = false,
+            isFoldersActive = true,
+            onHomeClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                viewModel.navigateTo(Screen.Home)
+            },
+            onFoldersClick = {},
+            onVoiceNote = {
+                viewModel.navigateTo(Screen.Editor(0L, openVoiceDictation = true))
+            },
+            onReadPdf = {
+                pdfPickerLauncher.launch(arrayOf("application/pdf"))
+            },
+            onReminder = {
+                noteForReminder = NoteEntity()
+            },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+
+    noteForReminder?.let { note ->
+        NoteReminderBottomSheet(
+            note = note,
+            onDismiss = { noteForReminder = null },
+            onSaveReminder = { timestamp, updatedTitle, updatedContent, offsets ->
+                viewModel.setReminder(context, note.id, timestamp, updatedTitle, updatedContent, offsets)
+            },
+            onCancelReminder = {
+                viewModel.cancelReminder(context, note.id)
+            }
+        )
     }
 
     // New Folder Dialog

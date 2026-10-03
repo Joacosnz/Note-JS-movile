@@ -22,6 +22,8 @@ object NoteBlockSerializer {
                     obj.put("id", block.id)
                     obj.put("content", block.content)
                     obj.put("style", block.style.name)
+                    obj.put("isCollapsed", block.isCollapsed)
+                    obj.put("isIndented", block.isIndented)
                 }
                 is NoteBlock.Checklist -> {
                     obj.put("type", "checklist")
@@ -71,6 +73,7 @@ object NoteBlockSerializer {
                     obj.put("type", "pdf")
                     obj.put("id", block.id)
                     obj.put("filePath", block.filePath)
+                    obj.put("remoteUrl", block.remoteUrl)
                     obj.put("fileName", block.fileName)
                     obj.put("fileSizeFormatted", block.fileSizeFormatted)
                     obj.put("pageCount", block.pageCount)
@@ -124,10 +127,24 @@ object NoteBlockSerializer {
                     }
                     obj.put("signaturesPerPage", signaturesObj)
                 }
+                is NoteBlock.ImageBlock -> {
+                    obj.put("type", "image")
+                    obj.put("id", block.id)
+                    obj.put("localUri", block.localUri)
+                    obj.put("remoteUrl", block.remoteUrl)
+                }
+                is NoteBlock.Image -> {
+                    obj.put("type", "image")
+                    obj.put("id", block.id)
+                    obj.put("filePath", block.filePath)
+                    obj.put("remoteUrl", block.remoteUrl)
+                    obj.put("fileName", block.fileName)
+                }
                 is AudioBlock -> {
                     obj.put("type", "audio")
                     obj.put("id", block.id)
                     obj.put("filePath", block.filePath)
+                    obj.put("remoteUrl", block.remoteUrl)
                     obj.put("durationMs", block.durationMs)
                     obj.put("transcription", block.transcription)
                     obj.put("isTranscribing", block.isTranscribing)
@@ -160,7 +177,9 @@ object NoteBlockSerializer {
                         val content = obj.optString("content", "")
                         val styleName = obj.optString("style", "BODY")
                         val style = runCatching { TextStyleType.valueOf(styleName) }.getOrDefault(TextStyleType.BODY)
-                        list.add(NoteBlock.Text(id = id, content = content, style = style))
+                        val isCollapsed = obj.optBoolean("isCollapsed", false)
+                        val isIndented = obj.optBoolean("isIndented", true)
+                        list.add(NoteBlock.Text(id = id, content = content, style = style, isCollapsed = isCollapsed, isIndented = isIndented))
                     }
                     "checklist" -> {
                         val content = obj.optString("content", "")
@@ -218,6 +237,7 @@ object NoteBlockSerializer {
                     }
                     "pdf" -> {
                         val filePath = obj.optString("filePath", "")
+                        val remoteUrl = obj.optString("remoteUrl", "")
                         val fileName = obj.optString("fileName", "Documento.pdf")
                         val fileSizeFormatted = obj.optString("fileSizeFormatted", "")
                         val pageCount = obj.optInt("pageCount", 1)
@@ -275,18 +295,31 @@ object NoteBlockSerializer {
                             }
                         }
 
-                        list.add(PdfBlock(id = id, filePath = filePath, fileName = fileName, fileSizeFormatted = fileSizeFormatted, pageCount = pageCount, currentPageIndex = currentPageIndex, isExpanded = isExpanded, annotationsPerPage = annotationsPerPage, signaturesPerPage = signaturesPerPage, indexedText = indexedText))
+                        list.add(PdfBlock(id = id, filePath = filePath, remoteUrl = remoteUrl, fileName = fileName, fileSizeFormatted = fileSizeFormatted, pageCount = pageCount, currentPageIndex = currentPageIndex, isExpanded = isExpanded, annotationsPerPage = annotationsPerPage, signaturesPerPage = signaturesPerPage, indexedText = indexedText))
+                    }
+                    "image" -> {
+                        val localUri = obj.optString("localUri", obj.optString("filePath", ""))
+                        val remoteUrl = obj.optString("remoteUrl", "")
+                        val fileName = obj.optString("fileName", "")
+                        if (obj.has("localUri") || fileName.isEmpty()) {
+                            list.add(NoteBlock.ImageBlock(id = id, localUri = localUri, remoteUrl = remoteUrl))
+                        } else {
+                            list.add(NoteBlock.Image(id = id, filePath = localUri, remoteUrl = remoteUrl, fileName = fileName))
+                        }
                     }
                     "audio" -> {
                         val filePath = obj.optString("filePath", "")
+                        val remoteUrl = obj.optString("remoteUrl", "")
                         val durationMs = obj.optLong("durationMs", 0L)
                         val transcription = obj.optString("transcription", "")
                         val isTranscribing = obj.optBoolean("isTranscribing", false)
                         val isTranscriptionVisible = obj.optBoolean("isTranscriptionVisible", false)
-                        list.add(AudioBlock(id = id, filePath = filePath, durationMs = durationMs, transcription = transcription, isTranscribing = isTranscribing, isTranscriptionVisible = isTranscriptionVisible))
+                        list.add(AudioBlock(id = id, filePath = filePath, remoteUrl = remoteUrl, durationMs = durationMs, transcription = transcription, isTranscribing = isTranscribing, isTranscriptionVisible = isTranscriptionVisible))
                     }
                     else -> {
-                        list.add(NoteBlock.Text(id = id, content = obj.optString("content", ""), style = TextStyleType.BODY))
+                        val isCollapsed = obj.optBoolean("isCollapsed", false)
+                        val isIndented = obj.optBoolean("isIndented", true)
+                        list.add(NoteBlock.Text(id = id, content = obj.optString("content", ""), style = TextStyleType.BODY, isCollapsed = isCollapsed, isIndented = isIndented))
                     }
                 }
             }

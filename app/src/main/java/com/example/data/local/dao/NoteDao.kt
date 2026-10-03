@@ -14,10 +14,16 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE isTrashed = 0 AND isArchived = 0 ORDER BY isPinned DESC, updatedAt DESC")
     fun getActiveNotes(): Flow<List<NoteEntity>>
 
+    @Query("SELECT * FROM notes WHERE isTrashed = 0 AND isArchived = 0 ORDER BY isPinned DESC, updatedAt DESC LIMIT 20")
+    suspend fun getActiveNotesList(): List<NoteEntity>
+
+    @Query("SELECT * FROM notes WHERE isTrashed = 0 AND isArchived = 0 ORDER BY isPinned DESC, updatedAt DESC LIMIT 1")
+    suspend fun getLatestActiveNote(): NoteEntity?
+
     @Query("SELECT * FROM notes WHERE isTrashed = 0 AND isArchived = 1 ORDER BY updatedAt DESC")
     fun getArchivedNotes(): Flow<List<NoteEntity>>
 
-    @Query("SELECT * FROM notes WHERE (content LIKE '%' || :query || '%' OR title LIKE '%' || :query || '%') AND isTrashed = 0 ORDER BY isPinned DESC, updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE (content LIKE '%' || :query || '%' OR title LIKE '%' || :query || '%' OR pdfExtractedText LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%') AND isTrashed = 0 ORDER BY isPinned DESC, updatedAt DESC")
     fun searchNotes(query: String): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE isTrashed = 1 ORDER BY updatedAt DESC")
@@ -25,6 +31,9 @@ interface NoteDao {
 
     @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
     suspend fun getNoteById(id: Long): NoteEntity?
+
+    @Query("SELECT * FROM notes WHERE remoteUuid = :remoteUuid LIMIT 1")
+    suspend fun getNoteByRemoteUuid(remoteUuid: String): NoteEntity?
 
     @Query("SELECT * FROM notes WHERE id IN (:ids)")
     suspend fun getNotesByIds(ids: List<Long>): List<NoteEntity>

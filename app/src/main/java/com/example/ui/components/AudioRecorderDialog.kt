@@ -201,6 +201,8 @@ private fun AudioRecorderContent(
                                     setAudioSource(MediaRecorder.AudioSource.MIC)
                                     setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                                     setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                                    setAudioSamplingRate(44100)
+                                    setAudioEncodingBitRate(128000)
                                     setOutputFile(audioFile?.absolutePath)
                                     try {
                                         prepare()

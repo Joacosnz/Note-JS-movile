@@ -17,7 +17,7 @@ object GeminiAudioTranscriber {
     private val client = OkHttpClient()
 
     // Este es un ejemplo de integración genérica con la API REST de Gemini.
-    suspend fun transcribeAudio(file: File): String = withContext(Dispatchers.IO) {
+    suspend fun transcribeAudio(file: File, userApiKey: String = ""): String = withContext(Dispatchers.IO) {
         if (!file.exists()) throw Exception("El archivo de audio no existe.")
 
         val fileBytes = file.readBytes()
@@ -45,12 +45,9 @@ object GeminiAudioTranscriber {
             })
         }
 
-        // Aquí se requiere una clave API válida de Gemini. Como mock para el desarrollo, 
-        // puedes usar tu propia API key de Google AI Studio y el modelo "gemini-1.5-flash" (o el que corresponda).
-        // El requerimiento dice que usemos "gemini-3.5-transcribe" conceptualmente.
-        val apiKey = "DUMMY_API_KEY_OR_FETCH_FROM_BUILD_CONFIG" 
-        val model = "gemini-3.5-transcribe" // gemini-1.5-flash-8b
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/\$model:generateContent?key=\$apiKey"
+        val apiKey = userApiKey.ifBlank { "DUMMY_API_KEY_OR_FETCH_FROM_BUILD_CONFIG" }
+        val model = "gemini-1.5-flash"
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
 
         val request = Request.Builder()
             .url(url)

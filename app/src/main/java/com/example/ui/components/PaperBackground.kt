@@ -1,7 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -13,7 +13,7 @@ import com.example.model.PaperStyle
 fun PaperBackground(
     paperStyle: PaperStyle,
     modifier: Modifier = Modifier,
-    isDark: Boolean = isSystemInDarkTheme()
+    isDark: Boolean = isAppInDarkTheme()
 ) {
     if (paperStyle == PaperStyle.BLANK) return
 

@@ -1,12 +1,17 @@
 package com.example.data.local.entity
 
+import android.net.Uri
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.util.UUID
 
 @Entity(tableName = "notes")
 data class NoteEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
+    val remoteUuid: String = UUID.randomUUID().toString(),
+    val isSynced: Boolean = false,
+    val updatedAtServer: Long = 0L,
     val title: String = "",
     val content: String = "",
     val noteType: String = "TEXT", // TEXT, CHECKLIST, DRAWING, MATH
@@ -28,4 +33,7 @@ data class NoteEntity(
     val isReminderDone: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
+    val imageUri: Uri? = null, // <- Añadido para guardar el URI de Photo Picker
+    val pdfExtractedText: String? = null, // <- Para Búsqueda Profunda (Deep Search) en PDFs
+    val remoteUrl: String = "" // <- URL remota del archivo adjunto en Firebase Cloud Storage
 )

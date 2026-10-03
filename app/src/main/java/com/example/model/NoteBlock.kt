@@ -30,10 +30,12 @@ data class SignatureStamp(
 )
 
 typealias PdfBlock = NoteBlock.Pdf
+typealias ImageBlock = NoteBlock.ImageBlock
 
 data class AudioBlock(
     override val id: String = UUID.randomUUID().toString(),
     val filePath: String,                   // Ruta absoluta local en filesDir
+    var remoteUrl: String = "",             // URL de descarga de Firebase Cloud Storage
     val durationMs: Long,                   // Duración total en milisegundos
     var transcription: String = "",         // Texto transcrito
     var isTranscribing: Boolean = false,    // true mientras se procesa el audio
@@ -46,6 +48,7 @@ sealed interface NoteBlock {
     data class Pdf(
         override val id: String = UUID.randomUUID().toString(),
         val filePath: String,              // Ruta local absoluta en filesDir
+        var remoteUrl: String = "",        // URL de descarga de Firebase Cloud Storage
         val fileName: String,              // Nombre del archivo (ej. "Contrato.pdf")
         val fileSizeFormatted: String = "",// Format: "2.4 MB"
         val pageCount: Int,                // Total de páginas del PDF
@@ -56,10 +59,25 @@ sealed interface NoteBlock {
         var indexedText: String = ""       // Texto extraído del documento para el motor de búsqueda
     ) : NoteBlock
 
+    data class ImageBlock(
+        override val id: String = UUID.randomUUID().toString(),
+        val localUri: String = "",
+        val remoteUrl: String = ""
+    ) : NoteBlock
+
+    data class Image(
+        override val id: String = UUID.randomUUID().toString(),
+        val filePath: String,              // Ruta local absoluta
+        var remoteUrl: String = "",        // URL de descarga de Firebase Cloud Storage
+        val fileName: String = ""          // Nombre del archivo de imagen
+    ) : NoteBlock
+
     data class Text(
         override val id: String = UUID.randomUUID().toString(),
         var content: String = "",
-        val style: TextStyleType = TextStyleType.BODY
+        val style: TextStyleType = TextStyleType.BODY,
+        var isCollapsed: Boolean = false,
+        var isIndented: Boolean = true
     ) : NoteBlock
 
     data class Checklist(

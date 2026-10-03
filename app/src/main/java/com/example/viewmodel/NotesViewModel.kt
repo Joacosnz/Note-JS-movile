@@ -1,15 +1,25 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.NoteEntity
+import com.example.data.local.entity.SignatureEntity
+import com.example.data.remote.FirebaseStorageManager
+import com.example.data.remote.FirestoreManager
 import com.example.data.repository.NoteRepository
+import com.example.ui.screens.DrawingPoint
+import com.example.util.SignatureHelper
 import com.example.model.ChecklistItem
 import com.example.model.NoteBlock
 import com.example.model.NoteType
@@ -17,11 +27,17 @@ import com.example.model.PdfBlock
 import com.example.model.AudioBlock
 import com.example.util.MathEvaluator
 import com.example.util.NoteBlockSerializer
+import com.example.util.PdfModifierUtil
 import com.example.util.PdfRenderUtil
+import com.example.util.PdfTextExtractor
 import com.example.util.ReminderScheduler
+import com.example.util.SettingsManager
+import com.example.util.ThemeMode
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,9 +68,15 @@ enum class SortOption(val title: String) {
 sealed class Screen {
     data object Home : Screen()
     data object Folders : Screen()
-    data class Editor(val noteId: Long = 0, val initialType: NoteType = NoteType.TEXT) : Screen()
+    data class Editor(
+        val noteId: Long = 0,
+        val initialType: NoteType = NoteType.TEXT,
+        val openVoiceDictation: Boolean = false,
+        val openDocumentScanner: Boolean = false
+    ) : Screen()
     data class Drawing(val noteId: Long = 0) : Screen()
     data class PdfViewer(val noteId: Long = 0, val pdfPath: String = "") : Screen()
+    data object Settings : Screen()
 }
 
 data class NotesUiState(
@@ -81,7 +103,11 @@ data class NotesUiState(
     val archivedCount: Int = 0,
     val trashedCount: Int = 0,
     val folderNoteCounts: Map<String, Int> = emptyMap(),
-    val tagNoteCounts: Map<String, Int> = emptyMap()
+    val tagNoteCounts: Map<String, Int> = emptyMap(),
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val defaultPaperStyle: String = "BLANK",
+    val geminiApiKey: String = "",
+    val defaultLockPin: String = "1234"
 )
 
 private data class RawData(
@@ -111,9 +137,17 @@ private data class SelectionState(
     val selectedIds: Set<Long>
 )
 
+private data class SettingsState(
+    val themeMode: ThemeMode,
+    val defaultPaperStyle: String,
+    val geminiApiKey: String,
+    val defaultLockPin: String
+)
+
 class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository: NoteRepository
+    val repository: NoteRepository
+    val settingsManager = SettingsManager(application)
     val currentScreen = MutableStateFlow<Screen>(Screen.Home)
 
     private val _searchQuery = MutableStateFlow("")
@@ -127,10 +161,36 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val _pendingUndoNote = MutableStateFlow<NoteEntity?>(null)
     private val _isSelectionMode = MutableStateFlow(false)
     private val _selectedNoteIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val _pdfLastModified = MutableStateFlow<Long>(System.currentTimeMillis())
+    val pdfLastModified: StateFlow<Long> = _pdfLastModified.asStateFlow()
+
+    val savedSignatures: StateFlow<List<SignatureEntity>>
 
     init {
         val database = AppDatabase.getDatabase(application)
-        repository = NoteRepository(database.noteDao(), database.folderDao())
+        val firestoreManager = FirestoreManager()
+        val firebaseStorageManager = FirebaseStorageManager()
+        repository = NoteRepository(
+            noteDao = database.noteDao(),
+            folderDao = database.folderDao(),
+            signatureDao = database.signatureDao(),
+            firestoreManager = firestoreManager,
+            firebaseStorageManager = firebaseStorageManager,
+            context = application.applicationContext
+        )
+
+        val currentUser = try { FirebaseAuth.getInstance().currentUser } catch (_: Exception) { null }
+        if (currentUser != null) {
+            repository.startListeningToCloud(currentUser.uid)
+        }
+        _isGridView.value = settingsManager.isGridViewDefault()
+        _sortOption.value = settingsManager.getDefaultSortOption()
+        savedSignatures = repository.signatures
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
     }
 
     private val rawNotesFlow = combine(
@@ -193,12 +253,22 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         SelectionState(isSel, ids)
     }
 
+    private val settingsStateFlow = combine(
+        settingsManager.themeMode,
+        settingsManager.defaultPaperStyle,
+        settingsManager.geminiApiKey,
+        settingsManager.defaultLockPin
+    ) { mode, paper, apiKey, pin ->
+        SettingsState(mode, paper, apiKey, pin)
+    }
+
     val uiState: StateFlow<NotesUiState> = combine(
         rawDataFlow,
         filterFlow,
         extraStateFlow,
-        selectionStateFlow
-    ) { raw, filter, extra, selection ->
+        selectionStateFlow,
+        settingsStateFlow
+    ) { raw, filter, extra, selection, settings ->
         val tagsSet = linkedSetOf<String>()
         val foldersSet = linkedSetOf("Notas")
         (raw.active + raw.archived + raw.trashed).forEach { note ->
@@ -224,7 +294,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 filtered = filtered.filter {
                     it.title.lowercase(Locale.getDefault()).contains(q) ||
                             it.content.lowercase(Locale.getDefault()).contains(q) ||
-                            it.tags.lowercase(Locale.getDefault()).contains(q)
+                            it.tags.lowercase(Locale.getDefault()).contains(q) ||
+                            (it.pdfExtractedText?.lowercase(Locale.getDefault())?.contains(q) == true)
                 }
             }
             if (filter.tag != null && filter.tag != "Todas") {
@@ -282,7 +353,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             archivedCount = raw.archived.size,
             trashedCount = raw.trashed.size,
             folderNoteCounts = folderCounts,
-            tagNoteCounts = tagCounts
+            tagNoteCounts = tagCounts,
+            themeMode = settings.themeMode,
+            defaultPaperStyle = settings.defaultPaperStyle,
+            geminiApiKey = settings.geminiApiKey,
+            defaultLockPin = settings.defaultLockPin
         )
     }.stateIn(
         scope = viewModelScope,
@@ -338,11 +413,42 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleViewMode() {
-        _isGridView.value = !_isGridView.value
+        val newMode = !_isGridView.value
+        _isGridView.value = newMode
+        settingsManager.setGridViewDefault(newMode)
+    }
+
+    fun setGridViewDefault(isGrid: Boolean) {
+        _isGridView.value = isGrid
+        settingsManager.setGridViewDefault(isGrid)
     }
 
     fun setSortOption(option: SortOption) {
         _sortOption.value = option
+        settingsManager.setDefaultSortOption(option)
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        settingsManager.setThemeMode(mode)
+    }
+
+    fun setDefaultPaperStyle(style: String) {
+        settingsManager.setDefaultPaperStyle(style)
+    }
+
+    fun setDefaultSortOption(option: SortOption) {
+        _sortOption.value = option
+        settingsManager.setDefaultSortOption(option)
+    }
+
+    fun setGeminiApiKey(key: String) {
+        settingsManager.setGeminiApiKey(key)
+        _snackbarMessage.value = "Clave API de Gemini guardada"
+    }
+
+    fun setDefaultLockPin(pin: String) {
+        settingsManager.setDefaultLockPin(pin)
+        _snackbarMessage.value = "PIN por defecto actualizado"
     }
 
     fun setActiveTab(tab: NavTab) {
@@ -454,14 +560,14 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deletePermanently(note: NoteEntity) {
         viewModelScope.launch {
-            repository.delete(note)
+            repository.deletePermanently(note)
             _snackbarMessage.value = "Nota eliminada definitivamente"
         }
     }
 
     fun emptyTrash() {
         viewModelScope.launch {
-            repository.emptyTrash()
+            repository.emptyTrash(uiState.value.trashedNotes)
             _snackbarMessage.value = "Papelera vaciada"
         }
     }
@@ -483,13 +589,26 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         return repository.getNoteById(id)
     }
 
-    fun setReminder(context: Context, noteId: Long, timestamp: Long, title: String, content: String) {
+    fun setReminder(
+        context: Context,
+        noteId: Long,
+        timestamp: Long,
+        title: String,
+        content: String,
+        offsetsMinutes: List<Int> = listOf(0, 15)
+    ) {
         viewModelScope.launch {
             val note = repository.getNoteById(noteId)
             if (note != null) {
-                val updated = note.copy(reminderTimestamp = timestamp, isReminderDone = false, updatedAt = System.currentTimeMillis())
+                val updated = note.copy(
+                    title = title,
+                    content = content,
+                    reminderTimestamp = timestamp,
+                    isReminderDone = false,
+                    updatedAt = System.currentTimeMillis()
+                )
                 repository.update(updated)
-                ReminderScheduler.scheduleReminder(context, noteId, timestamp, title, content)
+                ReminderScheduler.scheduleReminder(context, noteId, timestamp, title, content, offsetsMinutes)
                 _snackbarMessage.value = "Recordatorio programado"
             }
         }
@@ -507,6 +626,12 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val keepImageUri: Uri = Uri.parse("aura_notes://keep_image_uri")
+    private val keepReminderTimestamp: Long = Long.MIN_VALUE
+    private val keepPdfPath: String = "\u0000KEEP_PDF_PATH\u0000"
+    private val keepPdfAnnotationData: String = "\u0000KEEP_PDF_ANNOTATION_DATA\u0000"
+    private val keepDrawingData: String = "\u0000KEEP_DRAWING_DATA\u0000"
+
     fun saveNote(
         id: Long = 0,
         title: String,
@@ -519,15 +644,28 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         tags: String = "",
         folder: String = "Notas",
         checklistItems: List<ChecklistItem> = emptyList(),
-        drawingData: String = "",
-        pdfPath: String = "",
-        pdfAnnotationData: String = "",
+        drawingData: String = keepDrawingData,
+        pdfPath: String = keepPdfPath,
+        pdfAnnotationData: String = keepPdfAnnotationData,
         isLocked: Boolean = false,
         lockPin: String = "",
-        reminderTimestamp: Long? = null,
+        reminderTimestamp: Long? = keepReminderTimestamp,
+        imageUri: Uri? = keepImageUri,
         onSaved: (Long) -> Unit = {}
     ) {
         viewModelScope.launch {
+            val context = getApplication<Application>()
+            
+            // 1. Asegurar la persistencia de los permisos de lectura del URI
+            if (imageUri != null && imageUri !== keepImageUri) {
+                try {
+                    val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    context.contentResolver.takePersistableUriPermission(imageUri, takeFlags)
+                } catch (e: SecurityException) {
+                    e.printStackTrace()
+                }
+            }
+            
             val now = System.currentTimeMillis()
             val jsonChecklist = if (checklistItems.isNotEmpty()) {
                 val array = JSONArray()
@@ -553,10 +691,58 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             val finalTagsString = (extractedTags + paramTags).distinct().joinToString(",")
 
             val existing = if (id > 0) repository.getNoteById(id) else null
-            val finalReminderTimestamp = reminderTimestamp ?: existing?.reminderTimestamp
+            val finalReminderTimestamp = if (reminderTimestamp == keepReminderTimestamp) {
+                existing?.reminderTimestamp
+            } else {
+                reminderTimestamp
+            }
 
-            val finalPdfPath = if (pdfPath.isNotEmpty()) pdfPath else (existing?.pdfPath ?: "")
-            val finalPdfAnnotationData = if (pdfAnnotationData.isNotEmpty()) pdfAnnotationData else (existing?.pdfAnnotationData ?: "")
+            val finalPdfPath = if (pdfPath == keepPdfPath) {
+                existing?.pdfPath ?: ""
+            } else {
+                pdfPath
+            }
+
+            val finalPdfAnnotationData = if (pdfAnnotationData == keepPdfAnnotationData) {
+                existing?.pdfAnnotationData ?: ""
+            } else {
+                pdfAnnotationData
+            }
+
+            val finalDrawingData = if (drawingData == keepDrawingData) {
+                existing?.drawingData ?: ""
+            } else {
+                drawingData
+            }
+
+            val finalImageUri = if (imageUri === keepImageUri) {
+                existing?.imageUri
+            } else {
+                imageUri
+            }
+
+            val blocksPdfText = try {
+                NoteBlockSerializer.deserialize(processedContent)
+                    .filterIsInstance<PdfBlock>()
+                    .mapNotNull { block ->
+                        if (block.indexedText.isNotBlank()) block.indexedText
+                        else if (block.filePath.isNotBlank()) {
+                            val f = File(block.filePath)
+                            if (f.exists()) PdfTextExtractor.extractTextFromPdf(context, f) else null
+                        } else null
+                    }.joinToString("\n")
+            } catch (_: Exception) { "" }
+
+            val extractedPdfText = if (blocksPdfText.isNotBlank()) {
+                blocksPdfText.take(30000)
+            } else if (finalPdfPath.isNotEmpty()) {
+                existing?.pdfExtractedText ?: withContext(Dispatchers.IO) {
+                    val pdfFile = File(finalPdfPath)
+                    if (pdfFile.exists()) PdfTextExtractor.extractTextFromPdf(context, pdfFile) else null
+                }
+            } else {
+                existing?.pdfExtractedText
+            }
 
             val entity = if (existing != null) {
                 existing.copy(
@@ -570,13 +756,15 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     tags = finalTagsString,
                     folder = folder,
                     checklistData = jsonChecklist,
-                    drawingData = if (drawingData.isNotEmpty()) drawingData else existing.drawingData,
+                    drawingData = finalDrawingData,
                     pdfPath = finalPdfPath,
                     pdfAnnotationData = finalPdfAnnotationData,
                     isLocked = isLocked,
                     lockPin = lockPin,
                     reminderTimestamp = finalReminderTimestamp,
-                    updatedAt = now
+                    updatedAt = now,
+                    imageUri = finalImageUri,
+                    pdfExtractedText = extractedPdfText
                 )
             } else {
                 NoteEntity(
@@ -590,14 +778,16 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     tags = finalTagsString,
                     folder = folder,
                     checklistData = jsonChecklist,
-                    drawingData = drawingData,
+                    drawingData = finalDrawingData,
                     pdfPath = finalPdfPath,
                     pdfAnnotationData = finalPdfAnnotationData,
                     isLocked = isLocked,
                     lockPin = lockPin,
                     reminderTimestamp = finalReminderTimestamp,
                     createdAt = now,
-                    updatedAt = now
+                    updatedAt = now,
+                    imageUri = finalImageUri,
+                    pdfExtractedText = extractedPdfText
                 )
             }
 
@@ -640,7 +830,63 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
 
-    fun insertPdfBlock(uri: Uri, onBlockCreated: (PdfBlock) -> Unit = {}) {
+    fun insertPdfBlock(
+        uri: Uri,
+        customFileName: String? = null,
+        onBlockCreated: (PdfBlock) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                val context = getApplication<Application>()
+                val pdfsDir = File(context.filesDir, "pdfs")
+                if (!pdfsDir.exists()) pdfsDir.mkdirs()
+
+                val formattedCustomName = if (!customFileName.isNullOrBlank()) {
+                    val trimmed = customFileName.trim()
+                    if (trimmed.endsWith(".pdf", ignoreCase = true)) trimmed else "$trimmed.pdf"
+                } else null
+
+                val localFileName = formattedCustomName ?: "${UUID.randomUUID()}.pdf"
+                val destFile = File(pdfsDir, localFileName)
+
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                val pageCount = PdfRenderUtil.getPageCount(destFile)
+                val fileName = formattedCustomName ?: (getFileNameFromUri(context, uri) ?: "Documento.pdf")
+
+                val fileSize = destFile.length()
+                val fileSizeFormatted = if (fileSize < 1024 * 1024) {
+                    "${fileSize / 1024} KB"
+                } else {
+                    String.format(Locale.getDefault(), "%.1f MB", fileSize / (1024.0 * 1024.0))
+                }
+
+                val indexedText = withContext(Dispatchers.IO) {
+                    PdfTextExtractor.extractTextFromPdf(context, destFile)
+                } ?: ""
+
+                val pdfBlock = PdfBlock(
+                    filePath = destFile.absolutePath,
+                    fileName = fileName,
+                    fileSizeFormatted = fileSizeFormatted,
+                    pageCount = pageCount,
+                    indexedText = indexedText
+                )
+
+
+                onBlockCreated(pdfBlock)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _snackbarMessage.value = "Error al adjuntar PDF"
+            }
+        }
+    }
+
+    fun createNoteWithPdf(uri: Uri, onCreated: (Long) -> Unit = {}) {
         viewModelScope.launch {
             try {
                 val context = getApplication<Application>()
@@ -665,8 +911,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val indexedText = withContext(Dispatchers.IO) {
-                    PdfRenderUtil.extractTextFromPdf(destFile)
-                }
+                    PdfTextExtractor.extractTextFromPdf(context, destFile)
+                } ?: ""
 
                 val pdfBlock = PdfBlock(
                     filePath = destFile.absolutePath,
@@ -676,11 +922,63 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     indexedText = indexedText
                 )
 
+                val serializedBlocks = NoteBlockSerializer.serialize(listOf(pdfBlock))
+                val now = System.currentTimeMillis()
+                val titleName = if (fileName.endsWith(".pdf", ignoreCase = true)) {
+                    fileName.dropLast(4)
+                } else fileName
 
-                onBlockCreated(pdfBlock)
+                val newNote = NoteEntity(
+                    id = 0,
+                    title = titleName,
+                    content = serializedBlocks,
+                    noteType = NoteType.TEXT.name,
+                    pdfPath = destFile.absolutePath,
+                    pdfExtractedText = indexedText,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                val insertedId = repository.insert(newNote)
+                _snackbarMessage.value = "PDF cargado correctamente"
+                onCreated(insertedId)
             } catch (e: Exception) {
                 e.printStackTrace()
-                _snackbarMessage.value = "Error al adjuntar PDF"
+                _snackbarMessage.value = "Error al cargar PDF"
+            }
+        }
+    }
+
+    fun savePdfToDownloads(context: Context, sourceUri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val contentResolver = context.contentResolver
+                val collection = MediaStore.Files.getContentUri("external")
+
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "Escaneo_Aura_${System.currentTimeMillis()}.pdf")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(
+                            MediaStore.MediaColumns.RELATIVE_PATH,
+                            Environment.DIRECTORY_DOWNLOADS + "/AuraNotes"
+                        )
+                    }
+                }
+
+                val newUri = contentResolver.insert(collection, contentValues)
+                if (newUri != null) {
+                    contentResolver.openInputStream(sourceUri)?.use { input ->
+                        contentResolver.openOutputStream(newUri)?.use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    _snackbarMessage.value = "Guardado en Descargas/AuraNotes"
+                } else {
+                    _snackbarMessage.value = "Error al guardar en Descargas"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _snackbarMessage.value = "Error al guardar en Descargas"
             }
         }
     }
@@ -703,6 +1001,63 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return name
+    }
+
+    fun rotatePdfPage(context: Context, file: File, pageIndex: Int, onResult: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val success = PdfModifierUtil.rotatePage(context, file, pageIndex)
+            if (success) {
+                _pdfLastModified.value = System.currentTimeMillis()
+                _snackbarMessage.value = "Página rotada 90°"
+            } else {
+                _snackbarMessage.value = "Error al rotar la página"
+            }
+            onResult(success)
+        }
+    }
+
+    fun deletePdfPage(context: Context, file: File, pageIndex: Int, onResult: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val success = PdfModifierUtil.deletePage(context, file, pageIndex)
+            if (success) {
+                _pdfLastModified.value = System.currentTimeMillis()
+                _snackbarMessage.value = "Página eliminada"
+            } else {
+                _snackbarMessage.value = "Error al eliminar la página"
+            }
+            onResult(success)
+        }
+    }
+
+    fun insertPdfPage(context: Context, file: File, pageIndex: Int, onResult: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val success = PdfModifierUtil.insertBlankPage(context, file, pageIndex)
+            if (success) {
+                _pdfLastModified.value = System.currentTimeMillis()
+                _snackbarMessage.value = "Página en blanco insertada"
+            } else {
+                _snackbarMessage.value = "Error al insertar la página"
+            }
+            onResult(success)
+        }
+    }
+
+    fun saveSignatureToVault(points: List<DrawingPoint>) {
+        if (points.isEmpty()) return
+        viewModelScope.launch {
+            val json = SignatureHelper.serializePoints(points)
+            val entity = SignatureEntity(
+                pointsJson = json,
+                createdAt = System.currentTimeMillis()
+            )
+            repository.insertSignature(entity)
+        }
+    }
+
+    fun deleteSignatureFromVault(signatureId: Long) {
+        viewModelScope.launch {
+            repository.deleteSignatureById(signatureId)
+        }
     }
 }
 
@@ -729,6 +1084,13 @@ private fun extractNotePlainText(title: String, content: String): String {
                         }
                     }
                     is PdfBlock -> {
+                        append(block.fileName).append(" ")
+                        if (block.indexedText.isNotBlank()) {
+                            append(block.indexedText).append(" ")
+                        }
+                    }
+                    is NoteBlock.ImageBlock -> {}
+                    is NoteBlock.Image -> {
                         append(block.fileName).append(" ")
                     }
                     is AudioBlock -> {

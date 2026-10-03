@@ -1,86 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Soft ambient drop shadow -->
+    <!-- Subtle Ambient Drop Shadow -->
     <path
-        android:fillColor="#33000000"
-        android:pathData="M31,29h42c4.4,0 8,3.6 8,8v42c0,4.4 -3.6,8 -8,8H31c-4.4,0 -8,-3.6 -8,-8V37c0,-4.4 3.6,-8 8,-8z" />
+        android:fillColor="#1F000000"
+        android:pathData="M39,28.5h30a10,10 0 0,1 10,10v34a10,10 0 0,1 -10,10h-30a10,10 0 0,1 -10,-10v-34a10,10 0 0,1 10,-10z" />
 
-    <!-- Main Note Surface with clean gradient -->
+    <!-- Notebook Paper Body -->
     <path
-        android:pathData="M30,27h42c4.4,0 8,3.6 8,8v42c0,4.4 -3.6,8 -8,8H30c-4.4,0 -8,-3.6 -8,-8V35c0,-4.4 3.6,-8 8,-8z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="30"
-                android:startY="27"
-                android:endX="80"
-                android:endY="85"
-                android:type="linear">
-                <item android:offset="0.0" android:color="#FFFFFF" />
-                <item android:offset="1.0" android:color="#F1F5F9" />
-            </gradient>
-        </aapt:attr>
-    </path>
+        android:fillColor="#F6F6F4"
+        android:strokeColor="#C8C8C8"
+        android:strokeWidth="0.8"
+        android:pathData="M39,27h30a10,10 0 0,1 10,10v34a10,10 0 0,1 -10,10h-30a10,10 0 0,1 -10,-10v-34a10,10 0 0,1 10,-10z" />
 
-    <!-- Top decorative header stripe -->
+    <!-- Yellow Header -->
     <path
-        android:pathData="M30,27h42c4.4,0 8,3.6 8,8v6H22v-6c0,-4.4 3.6,-8 8,-8z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="22"
-                android:startY="27"
-                android:endX="80"
-                android:endY="41"
-                android:type="linear">
-                <item android:offset="0.0" android:color="#6366F1" />
-                <item android:offset="1.0" android:color="#A855F7" />
-            </gradient>
-        </aapt:attr>
-    </path>
+        android:fillColor="#F8CB2E"
+        android:pathData="M39,27h30a10,10 0 0,1 10,10v6.5h-50v-6.5a10,10 0 0,1 10,-10z" />
 
-    <!-- Note lines / Checklist items -->
-    <!-- Line 1: Checkbox & Line -->
+    <!-- Header Bottom Line -->
     <path
-        android:fillColor="#6366F1"
-        android:pathData="M30,48h5v5h-5z" />
-    <path
-        android:fillColor="#94A3B8"
-        android:pathData="M39,49.5h28c0.8,0 1.5,0.7 1.5,1.5s-0.7,1.5 -1.5,1.5H39c-0.8,0 -1.5,-0.7 -1.5,-1.5s0.7,-1.5 1.5,-1.5z" />
+        android:strokeColor="#DCB020"
+        android:strokeWidth="0.8"
+        android:pathData="M29,43.5h50" />
 
-    <!-- Line 2: Checkbox & Line -->
+    <!-- Perforation Hole Row -->
     <path
-        android:fillColor="#A855F7"
-        android:pathData="M30,58h5v5h-5z" />
-    <path
-        android:fillColor="#94A3B8"
-        android:pathData="M39,59.5h24c0.8,0 1.5,0.7 1.5,1.5s-0.7,1.5 -1.5,1.5H39c-0.8,0 -1.5,-0.7 -1.5,-1.5s0.7,-1.5 1.5,-1.5z" />
+        android:fillColor="#787878"
+        android:pathData="M32.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M35.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M37.6,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M40.2,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M42.8,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M45.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M48.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M50.6,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M53.2,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M55.8,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M58.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M61.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M63.6,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M66.2,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M68.8,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M71.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M74.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z" />
 
-    <!-- Line 3: Text line -->
+    <!-- Notebook Ruled Lines -->
     <path
-        android:fillColor="#CBD5E1"
-        android:pathData="M30,69.5h33c0.8,0 1.5,0.7 1.5,1.5s-0.7,1.5 -1.5,1.5H30c-0.8,0 -1.5,-0.7 -1.5,-1.5s0.7,-1.5 1.5,-1.5z" />
-
-    <!-- Stylus / Floating Creative Pen -->
-    <path
-        android:pathData="M78,63l-18,18 -5,-1 1,-5 18,-18c1.2,-1.2 3.1,-1.2 4.2,0l0,0c1.2,1.2 1.2,3.1 0,4.2z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="55"
-                android:startY="75"
-                android:endX="78"
-                android:endY="58"
-                android:type="linear">
-                <item android:offset="0.0" android:color="#F59E0B" />
-                <item android:offset="1.0" android:color="#EC4899" />
-            </gradient>
-        </aapt:attr>
-    </path>
-    <path
-        android:fillColor="#312E81"
-        android:pathData="M55,80l-2,4 4,-2z" />
+        android:strokeColor="#B5B8BC"
+        android:strokeWidth="0.8"
+        android:pathData="M32,54h44 M32,62h44 M32,70h44" />
 </vector>

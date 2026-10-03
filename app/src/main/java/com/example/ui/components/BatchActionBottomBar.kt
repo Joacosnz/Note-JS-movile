@@ -25,7 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 
 @Composable
 fun BatchActionBottomBar(
@@ -35,7 +35,7 @@ fun BatchActionBottomBar(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
 
     Surface(
@@ -45,7 +45,7 @@ fun BatchActionBottomBar(
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .testTag("batch_action_bottom_bar"),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
         tonalElevation = 8.dp,
         shadowElevation = 8.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))

@@ -4,7 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,7 +74,7 @@ fun NoteCard(
     isSelected: Boolean = false,
     onSelectToggle: () -> Unit = {}
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
     val haptics = LocalHapticFeedback.current
 
@@ -110,6 +110,8 @@ fun NoteCard(
                 is NoteBlock.Drawing -> ""
                 is NoteBlock.Table -> block.matrix.joinToString(" ") { row -> row.joinToString(" ") { it.text } }
                 is PdfBlock -> "[PDF: ${block.fileName}]"
+                is NoteBlock.ImageBlock -> "[Imagen]"
+                is NoteBlock.Image -> "[Imagen: ${block.fileName}]"
                 is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
             }
         }
@@ -145,6 +147,7 @@ fun NoteCard(
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onSelectToggle()
                     } else {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         onLongClick()
                     }
                 }
@@ -189,8 +192,8 @@ fun NoteCard(
                         Text(
                             text = note.title.ifBlank { "Nota sin título" },
                             style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 16.sp
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
                             ),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -249,7 +252,7 @@ fun NoteCard(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = "Nota protegida con código",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
@@ -258,7 +261,7 @@ fun NoteCard(
                     if (totalChecklist > 0) {
                         Text(
                             text = "☑️ $completedCount/$totalChecklist tareas completadas",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
                             color = amber
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -273,13 +276,13 @@ fun NoteCard(
                                     imageVector = if (item.isChecked) Icons.Default.CheckCircle else Icons.Outlined.Circle,
                                     contentDescription = null,
                                     tint = if (item.isChecked) amber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = sanitizeNoteSnippet(item.content),
                                     style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontSize = 12.sp,
+                                        fontSize = 14.sp,
                                         textDecoration = if (item.isChecked) TextDecoration.LineThrough else TextDecoration.None
                                     ),
                                     color = if (item.isChecked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
@@ -291,7 +294,7 @@ fun NoteCard(
                     } else if (snippetText.isNotBlank()) {
                         Text(
                             text = snippetText,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis
@@ -308,17 +311,20 @@ fun NoteCard(
                 ) {
                     Text(
                         text = dateFormatted,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
 
                     if (note.tags.isNotBlank()) {
                         Text(
                             text = "#${note.tags.split(",").firstOrNull()?.trim() ?: ""}",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
                             color = amber,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 8.dp)
                         )
                     }
                 }

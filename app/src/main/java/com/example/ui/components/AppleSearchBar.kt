@@ -4,7 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,12 +50,12 @@ fun AppleSearchBar(
     modifier: Modifier = Modifier,
     placeholderText: String = "Buscar en notas...",
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val haptic = LocalHapticFeedback.current
 
     // Colores Liquid Glass
     val backgroundColor = if (isDark) Color(0xFF141416).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.82f)
-    val searchIconColor = if (isDark) Color(0xFF60A5FA) else Color(0xFF1A365D)
+    val searchIconColor = Color(0xFFEAB308)
     val textColor = if (isDark) Color.White else Color(0xFF111827)
     val placeholderColor = Color(0xFF71717A) // Gris mineral neutro
 

@@ -10,7 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,7 +106,7 @@ fun AppleFoldersDrawer(
                 ),
                 modifier = Modifier.fillMaxHeight()
             ) {
-                val isDark = isSystemInDarkTheme()
+                val isDark = isAppInDarkTheme()
                 val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
 
                 Surface(

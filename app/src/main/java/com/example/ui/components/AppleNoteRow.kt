@@ -1,8 +1,10 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.combinedClickable
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,18 +49,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppleNoteRow(
     note: NoteEntity,
     isUnlocked: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     onSelectToggle: () -> Unit = {}
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
     val haptics = LocalHapticFeedback.current
     val isLockedNote = note.isLocked && !isUnlocked
@@ -100,6 +104,8 @@ fun AppleNoteRow(
                     is NoteBlock.Drawing -> "[Boceto]"
                     is NoteBlock.Table -> block.matrix.joinToString(" ") { row -> row.joinToString(" ") { it.text } }
                     is PdfBlock -> "[PDF: ${block.fileName}]"
+                    is NoteBlock.ImageBlock -> "[Imagen]"
+                    is NoteBlock.Image -> "[Imagen: ${block.fileName}]"
                     is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
                 }
             }
@@ -111,14 +117,22 @@ fun AppleNoteRow(
         modifier = modifier
             .fillMaxWidth()
             .background(rowBg)
-            .clickable {
-                if (isSelectionMode) {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onSelectToggle()
-                } else {
-                    onClick()
+            .combinedClickable(
+                onClick = {
+                    if (isSelectionMode) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelectToggle()
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = {
+                    if (!isSelectionMode) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    }
                 }
-            }
+            )
             .testTag("apple_note_row_${note.id}")
     ) {
         Row(
@@ -149,8 +163,8 @@ fun AppleNoteRow(
                     Text(
                         text = note.title.ifBlank { "Nota sin título" },
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 16.sp
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -166,7 +180,7 @@ fun AppleNoteRow(
                                 imageVector = Icons.Default.Notifications,
                                 contentDescription = null,
                                 tint = amber,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                         if (note.isLocked) {
@@ -174,7 +188,7 @@ fun AppleNoteRow(
                                 imageVector = Icons.Default.Lock,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                         if (note.isPinned) {
@@ -182,22 +196,22 @@ fun AppleNoteRow(
                                 imageVector = Icons.Default.PushPin,
                                 contentDescription = null,
                                 tint = amber,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                         Text(
                             text = formattedDate,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
                 Text(
                     text = snippetText.ifBlank { "Sin contenido adicional" },
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

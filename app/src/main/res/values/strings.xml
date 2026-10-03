@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">AuraNotes</string>
+    <string name="default_web_client_id">914458922626-kmk2frhfekcfje0hdk013tped5hmh9u1.apps.googleusercontent.com</string>
+
+    <string name="shortcut_new_note_short">Crear Nota</string>
+    <string name="shortcut_new_note_long">Crear una nueva nota</string>
+    <string name="shortcut_voice_note_short">Nota de Voz</string>
+    <string name="shortcut_voice_note_long">Crear nota de voz</string>
+    <string name="shortcut_scan_document_short">Escanear Documento</string>
+    <string name="shortcut_scan_document_long">Escanear un documento</string>
 </resources>

@@ -2,7 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,8 +34,8 @@ fun LiquidGlassContainer(
     shape: Shape = RoundedCornerShape(20.dp),
     borderWidth: Dp = 1.dp,
     elevation: Dp = 10.dp,
-    isDark: Boolean = isSystemInDarkTheme(),
-    glassAlpha: Float = 0.85f,
+    isDark: Boolean = isAppInDarkTheme(),
+    glassAlpha: Float = 0.55f,
     contentAlignment: Alignment = Alignment.Center,
     content: @Composable BoxScope.() -> Unit
 ) {

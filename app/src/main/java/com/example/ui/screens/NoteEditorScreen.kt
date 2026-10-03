@@ -1,16 +1,22 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.ui.unit.IntOffset
+
 import androidx.compose.ui.window.Popup
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,29 +29,35 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -55,6 +67,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -93,6 +116,9 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.runtime.derivedStateOf
 import com.example.ui.components.LiquidGlassContainer
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
@@ -101,9 +127,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -153,9 +183,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.example.model.NoteBlock
+import com.example.model.ImageBlock
 import com.example.model.NoteColors
 import com.example.model.NoteType
 import com.example.model.PaperStyle
@@ -169,10 +201,16 @@ import com.example.ui.components.AudioRecorderDialog
 import com.example.ui.components.AudioBlockItem
 import com.example.ui.components.PdfBlockItem
 import com.example.ui.components.TableBlockItem
+import com.example.ui.components.ImageBlockItem
 import com.example.ui.components.CreateTableBottomSheet
+import com.example.ui.components.REMINDER_OFFSET_OPTIONS
+import androidx.core.content.FileProvider
 import com.example.ui.theme.AppleNotesAmber
 import com.example.ui.theme.AppleNotesAmberDark
+import com.example.util.ImageHelper
 import com.example.util.NoteBlockSerializer
+import com.example.util.NotePdfExporter
+import com.example.util.isValidNoteForSync
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
 import java.io.File
@@ -182,20 +220,39 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
+private data class ActiveHashtagInfo(
+    val targetId: String,
+    val textFieldValue: TextFieldValue,
+    val hashIndex: Int,
+    val rawQuery: String
+)
+
+private data class SmartTagItem(
+    val tag: String,
+    val count: Int,
+    val isNew: Boolean
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NoteEditorScreen(
     noteId: Long,
     initialType: NoteType,
     viewModel: NotesViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialOpenVoiceDictation: Boolean = false,
+    initialOpenDocumentScanner: Boolean = false
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme()
     val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val uiState by viewModel.uiState.collectAsState()
 
     var title by remember { mutableStateOf("") }
+    var titleTextFieldValue by remember { mutableStateOf(TextFieldValue(title)) }
     val blocks = remember { mutableStateListOf<NoteBlock>() }
     var noteType by remember { mutableStateOf(initialType) }
     var colorIndex by remember { mutableIntStateOf(0) }
@@ -205,6 +262,7 @@ fun NoteEditorScreen(
     var isLocked by remember { mutableStateOf(false) }
     var lockPin by remember { mutableStateOf("") }
     var reminderTimestamp by remember { mutableStateOf<Long?>(null) }
+    var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
 
     var createdAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var updatedAt by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -213,6 +271,173 @@ fun NoteEditorScreen(
     val focusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     var focusedBlockId by remember { mutableStateOf<String?>(null) }
     val blockTextFieldValues = remember { mutableStateMapOf<String, TextFieldValue>() }
+    val lazyListState = rememberLazyListState()
+
+    val activeHashtagInfo by remember {
+        derivedStateOf {
+            val currentFocusId = focusedBlockId ?: return@derivedStateOf null
+            val tfv = if (currentFocusId == "TITLE") {
+                titleTextFieldValue
+            } else {
+                blockTextFieldValues[currentFocusId]
+            } ?: return@derivedStateOf null
+
+            val cursorIndex = tfv.selection.max
+            val text = tfv.text
+
+            if (cursorIndex < 0 || cursorIndex > text.length) return@derivedStateOf null
+            val textBeforeCursor = text.substring(0, cursorIndex)
+            val lastHashIndex = textBeforeCursor.lastIndexOf('#')
+            if (lastHashIndex == -1) return@derivedStateOf null
+
+            val queryCandidate = textBeforeCursor.substring(lastHashIndex + 1)
+            if (queryCandidate.any { it.isWhitespace() || it == '\n' || it == ',' || it == '.' || it == '!' || it == '?' }) {
+                return@derivedStateOf null
+            }
+
+            if (lastHashIndex > 0) {
+                val prevChar = textBeforeCursor[lastHashIndex - 1]
+                if (!prevChar.isWhitespace() && prevChar != '\n') {
+                    return@derivedStateOf null
+                }
+            }
+
+            ActiveHashtagInfo(
+                targetId = currentFocusId,
+                textFieldValue = tfv,
+                hashIndex = lastHashIndex,
+                rawQuery = queryCandidate
+            )
+        }
+    }
+
+    val suggestedSmartTags by remember(activeHashtagInfo?.rawQuery, uiState.availableTags, uiState.tagNoteCounts) {
+        derivedStateOf {
+            val info = activeHashtagInfo ?: return@derivedStateOf emptyList<SmartTagItem>()
+            val query = info.rawQuery.trim().lowercase(Locale.getDefault())
+
+            val allTags = uiState.availableTags
+                .filter { it != "Todas" && it.isNotBlank() }
+                .distinct()
+
+            val items = mutableListOf<SmartTagItem>()
+
+            if (query.isEmpty()) {
+                val sortedByUsage = allTags.sortedByDescending { uiState.tagNoteCounts[it] ?: 0 }
+                sortedByUsage.forEach { tag ->
+                    val count = uiState.tagNoteCounts[tag] ?: 0
+                    items.add(SmartTagItem(tag = tag, count = count, isNew = false))
+                }
+            } else {
+                val matching = allTags.filter { it.lowercase(Locale.getDefault()).contains(query) }
+                    .sortedWith(
+                        compareByDescending<String> { it.lowercase(Locale.getDefault()).startsWith(query) }
+                            .thenByDescending { uiState.tagNoteCounts[it] ?: 0 }
+                            .thenBy { it }
+                    )
+
+                matching.forEach { tag ->
+                    val count = uiState.tagNoteCounts[tag] ?: 0
+                    items.add(SmartTagItem(tag = tag, count = count, isNew = false))
+                }
+
+                val exactMatchExists = allTags.any { it.equals(query, ignoreCase = true) }
+                if (!exactMatchExists && info.rawQuery.isNotBlank()) {
+                    items.add(0, SmartTagItem(tag = info.rawQuery, count = 0, isNew = true))
+                }
+            }
+
+            items
+        }
+    }
+
+    fun applySmartTagSelection(item: SmartTagItem) {
+        val info = activeHashtagInfo ?: return
+        val tfv = info.textFieldValue
+        val text = tfv.text
+        val cursorIndex = tfv.selection.max.coerceIn(0, text.length)
+
+        val cleanTag = item.tag.trim().removePrefix("#")
+        if (cleanTag.isEmpty()) return
+
+        val replacement = "#$cleanTag "
+        val beforeHash = text.substring(0, info.hashIndex)
+        val afterCursor = text.substring(cursorIndex)
+
+        val newText = beforeHash + replacement + afterCursor
+        val newCursor = info.hashIndex + replacement.length
+        val newTfv = TextFieldValue(text = newText, selection = TextRange(newCursor))
+
+        if (info.targetId == "TITLE") {
+            titleTextFieldValue = newTfv
+            title = newText
+        } else {
+            blockTextFieldValues[info.targetId] = newTfv
+            val idx = blocks.indexOfFirst { it.id == info.targetId }
+            if (idx != -1) {
+                when (val b = blocks[idx]) {
+                    is NoteBlock.Text -> blocks[idx] = b.copy(content = newText)
+                    is NoteBlock.Checklist -> blocks[idx] = b.copy(content = newText)
+                    is NoteBlock.SimpleList -> blocks[idx] = b.copy(content = newText)
+                    is NoteBlock.CalloutBox -> blocks[idx] = b.copy(content = newText)
+                    else -> {}
+                }
+            }
+        }
+    }
+
+    val hiddenBlockIds by remember {
+        derivedStateOf {
+            val hidden = mutableSetOf<String>()
+            var isCollapsing = false
+            for (b in blocks) {
+                if (b is NoteBlock.Text) {
+                    if (b.style == TextStyleType.TITLE) {
+                        isCollapsing = false
+                    } else if (b.style == TextStyleType.SUBTITLE) {
+                        isCollapsing = b.isCollapsed
+                        continue
+                    } else if (b.style == TextStyleType.BODY && !b.isIndented) {
+                        isCollapsing = false
+                    }
+                }
+                if (isCollapsing) {
+                    hidden.add(b.id)
+                }
+            }
+            hidden
+        }
+    }
+
+    val visibleBlocksWithIndex by remember {
+        derivedStateOf {
+            blocks.mapIndexed { index, block -> index to block }
+                .filter { (_, block) -> block.id !in hiddenBlockIds }
+        }
+    }
+
+    val h2SectionBlockIds by remember {
+        derivedStateOf {
+            val h2Ids = mutableSetOf<String>()
+            var inH2Section = false
+            for (b in blocks) {
+                if (b is NoteBlock.Text) {
+                    if (b.style == TextStyleType.TITLE) {
+                        inH2Section = false
+                    } else if (b.style == TextStyleType.SUBTITLE) {
+                        inH2Section = true
+                        continue
+                    } else if (b.style == TextStyleType.BODY && !b.isIndented) {
+                        inH2Section = false
+                    }
+                }
+                if (inH2Section) {
+                    h2Ids.add(b.id)
+                }
+            }
+            h2Ids
+        }
+    }
 
     fun toggleOrInsertChecklist() {
         val targetIndex = if (focusedBlockId != null) {
@@ -364,6 +589,113 @@ fun NoteEditorScreen(
         }
     }
 
+    fun normalizeHeadingBlocks(rawBlocks: List<NoteBlock>): List<NoteBlock> {
+        val normalized = mutableListOf<NoteBlock>()
+        for (block in rawBlocks) {
+            if (block is NoteBlock.Text && (block.style == TextStyleType.SUBTITLE || block.style == TextStyleType.TITLE) && block.content.contains('\n')) {
+                val lines = block.content.split('\n')
+                val headingText = lines.firstOrNull() ?: ""
+                val remainingText = lines.drop(1).joinToString("\n")
+                normalized.add(block.copy(content = headingText))
+                if (remainingText.isNotEmpty()) {
+                    normalized.add(NoteBlock.Text(content = remainingText, style = TextStyleType.BODY, isIndented = true))
+                }
+            } else {
+                normalized.add(block)
+            }
+        }
+
+        val merged = mutableListOf<NoteBlock>()
+        for (b in normalized) {
+            val last = merged.lastOrNull()
+            if (last is NoteBlock.Text && b is NoteBlock.Text && last.style == TextStyleType.BODY && b.style == TextStyleType.BODY && last.isIndented == b.isIndented) {
+                val combined = if (last.content.isEmpty()) b.content else if (b.content.isEmpty()) last.content else "${last.content}\n${b.content}"
+                merged[merged.lastIndex] = last.copy(content = combined)
+            } else {
+                merged.add(b)
+            }
+        }
+        return merged
+    }
+
+    fun applyHeadingStyleToCurrentBlock(headingStyle: TextStyleType) {
+        val targetIndex = if (focusedBlockId != null) {
+            blocks.indexOfFirst { it.id == focusedBlockId }
+        } else -1
+
+        if (targetIndex != -1) {
+            val currentBlock = blocks[targetIndex]
+            if (currentBlock is NoteBlock.Text) {
+                val tfv = blockTextFieldValues[currentBlock.id] ?: TextFieldValue(currentBlock.content)
+                val text = tfv.text
+                val cursor = tfv.selection.max.coerceIn(0, text.length)
+
+                if (!text.contains('\n')) {
+                    val updatedBlock = currentBlock.copy(style = headingStyle, isCollapsed = false)
+                    blocks[targetIndex] = updatedBlock
+                    targetFocusBlockId = currentBlock.id
+                    focusedBlockId = currentBlock.id
+                } else {
+                    val lines = text.split('\n')
+                    var charCount = 0
+                    var targetLineIndex = lines.lastIndex
+                    for ((i, line) in lines.withIndex()) {
+                        val lineEnd = charCount + line.length
+                        if (cursor <= lineEnd) {
+                            targetLineIndex = i
+                            break
+                        }
+                        charCount = lineEnd + 1
+                    }
+
+                    val headingText = lines[targetLineIndex]
+                    val textAbove = lines.subList(0, targetLineIndex).joinToString("\n")
+                    val textBelow = lines.subList(targetLineIndex + 1, lines.size).joinToString("\n")
+
+                    if (textAbove.isNotEmpty() || targetLineIndex > 0) {
+                        blocks[targetIndex] = NoteBlock.Text(id = currentBlock.id, content = textAbove, style = TextStyleType.BODY)
+                        blockTextFieldValues[currentBlock.id] = TextFieldValue(textAbove)
+
+                        val headingId = UUID.randomUUID().toString()
+                        val headingBlock = NoteBlock.Text(id = headingId, content = headingText, style = headingStyle, isCollapsed = false)
+                        blocks.add(targetIndex + 1, headingBlock)
+                        blockTextFieldValues[headingId] = TextFieldValue(headingText, TextRange(headingText.length))
+                        targetFocusBlockId = headingId
+                        focusedBlockId = headingId
+
+                        if (textBelow.isNotEmpty() || targetLineIndex < lines.lastIndex) {
+                            val belowId = UUID.randomUUID().toString()
+                            val belowBlock = NoteBlock.Text(id = belowId, content = textBelow, style = TextStyleType.BODY)
+                            blocks.add(targetIndex + 2, belowBlock)
+                            blockTextFieldValues[belowId] = TextFieldValue(belowBlock.content)
+                        }
+                    } else {
+                        blocks[targetIndex] = currentBlock.copy(content = headingText, style = headingStyle, isCollapsed = false)
+                        blockTextFieldValues[currentBlock.id] = TextFieldValue(headingText, TextRange(headingText.length))
+                        targetFocusBlockId = currentBlock.id
+                        focusedBlockId = currentBlock.id
+
+                        if (textBelow.isNotEmpty() || targetLineIndex < lines.lastIndex) {
+                            val belowId = UUID.randomUUID().toString()
+                            val belowBlock = NoteBlock.Text(id = belowId, content = textBelow, style = TextStyleType.BODY)
+                            blocks.add(targetIndex + 1, belowBlock)
+                            blockTextFieldValues[belowId] = TextFieldValue(belowBlock.content)
+                        }
+                    }
+                }
+            } else {
+                transformOrInsertBlock { id, content ->
+                    NoteBlock.Text(id = id, content = content, style = headingStyle)
+                }
+            }
+        } else {
+            val newId = UUID.randomUUID().toString()
+            blocks.add(NoteBlock.Text(id = newId, content = "", style = headingStyle))
+            targetFocusBlockId = newId
+            focusedBlockId = newId
+        }
+    }
+
     val pdfPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -373,6 +705,69 @@ fun NoteEditorScreen(
                     blocks.add(newBlock)
                 }
             }
+        }
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                val copiedFile = ImageHelper.copyImageFromUri(context, uri)
+                val finalUri = copiedFile?.absolutePath ?: uri.toString()
+                blocks.add(
+                    ImageBlock(
+                        localUri = finalUri
+                    )
+                )
+            }
+        }
+    }
+
+    val scannerOptions = remember {
+        GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(15)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL) // Habilita filtros (B/N) y recorte manual
+            .build()
+    }
+    val scanner = remember(scannerOptions) {
+        GmsDocumentScanning.getClient(scannerOptions)
+    }
+    var pendingScannedPdfUri by remember { mutableStateOf<Uri?>(null) }
+    var scannedPdfName by remember { mutableStateOf("CamNotes Scanner") }
+
+    val scannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val scanningResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            if (scanningResult?.pdf != null) {
+                val pdfUri = scanningResult.pdf!!.uri
+                scannedPdfName = "CamNotes Scanner"
+                pendingScannedPdfUri = pdfUri
+            }
+        }
+    }
+
+    var triggerScanner by remember { mutableStateOf(initialOpenDocumentScanner) }
+
+    LaunchedEffect(triggerScanner) {
+        if (triggerScanner) {
+            val activity = context.findActivity()
+            if (activity != null) {
+                scanner.getStartScanIntent(activity)
+                    .addOnSuccessListener { intentSender ->
+                        scannerLauncher.launch(
+                            IntentSenderRequest.Builder(intentSender).build()
+                        )
+                    }
+                    .addOnFailureListener {
+                        Toast.makeText(context, "Error al iniciar el escáner", Toast.LENGTH_SHORT).show()
+                    }
+            }
+            triggerScanner = false
         }
     }
 
@@ -410,7 +805,21 @@ fun NoteEditorScreen(
 
     LaunchedEffect(targetFocusBlockId) {
         targetFocusBlockId?.let { id ->
-            delay(50)
+            val blockIndex = blocks.indexOfFirst { it.id == id }
+            if (blockIndex != -1) {
+                // The LazyColumn has 1 item before the blocks (Header + Title), so blockIndex + 1
+                try {
+                    lazyListState.animateScrollToItem(blockIndex + 1)
+                } catch (_: Exception) {
+                    // Ignore scroll errors
+                }
+            }
+            
+            var retries = 0
+            while (focusRequesters[id] == null && retries < 10) {
+                delay(50)
+                retries++
+            }
             try {
                 focusRequesters[id]?.requestFocus()
             } catch (e: Exception) {
@@ -430,6 +839,8 @@ fun NoteEditorScreen(
     var showCreateTableDialog by remember { mutableStateOf(false) }
     var createTableRows by remember { mutableIntStateOf(3) }
     var createTableCols by remember { mutableIntStateOf(3) }
+
+    var showVoiceDictation by remember { mutableStateOf(initialOpenVoiceDictation) }
 
     var isBoldActive by remember { mutableStateOf(false) }
     var isItalicActive by remember { mutableStateOf(false) }
@@ -457,6 +868,7 @@ fun NoteEditorScreen(
             val entity = viewModel.getNote(noteId)
             entity?.let {
                 title = it.title
+                titleTextFieldValue = TextFieldValue(it.title, TextRange(it.title.length))
                 noteType = runCatching { NoteType.valueOf(it.noteType) }.getOrDefault(NoteType.TEXT)
                 colorIndex = it.colorIndex
                 paperStyle = runCatching { PaperStyle.valueOf(it.paperStyle) }.getOrDefault(PaperStyle.BLANK)
@@ -465,14 +877,19 @@ fun NoteEditorScreen(
                 isLocked = it.isLocked
                 lockPin = it.lockPin
                 reminderTimestamp = it.reminderTimestamp
+                attachedImageUri = it.imageUri
                 createdAt = it.createdAt
                 updatedAt = it.updatedAt
 
                 val deserialized = NoteBlockSerializer.deserialize(it.content)
                 blocks.clear()
-                blocks.addAll(deserialized)
+                blocks.addAll(normalizeHeadingBlocks(deserialized))
             }
         } else {
+            if (initialOpenVoiceDictation && title.isBlank()) {
+                title = "Nota de voz rápida"
+                titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
+            }
             if (blocks.isEmpty()) {
                 val initialId = UUID.randomUUID().toString()
                 if (initialType == NoteType.CHECKLIST) {
@@ -491,7 +908,7 @@ fun NoteEditorScreen(
     fun saveAndExit(navigateBack: Boolean = true) {
         val finalTitle = title.trim()
         val serializedContent = NoteBlockSerializer.serialize(blocks)
-        val isEmptyNote = finalTitle.isEmpty() && blocks.all { it is NoteBlock.Text && it.content.isEmpty() }
+        val isEmptyNote = !isValidNoteForSync(finalTitle, blocks)
 
         if (noteId == 0L && isEmptyNote) {
             if (navigateBack) viewModel.navigateBack()
@@ -511,6 +928,7 @@ fun NoteEditorScreen(
             isLocked = isLocked,
             lockPin = lockPin,
             reminderTimestamp = reminderTimestamp,
+            imageUri = attachedImageUri,
             onSaved = { savedId ->
                 if (reminderTimestamp != null) {
                     viewModel.setReminder(context, savedId, reminderTimestamp!!, finalTitle, serializedContent)
@@ -549,6 +967,47 @@ fun NoteEditorScreen(
                 actions = {
                     IconButton(
                         onClick = {
+                            val activity = context.findActivity()
+                            if (activity != null) {
+                                scanner.getStartScanIntent(activity)
+                                    .addOnSuccessListener { intentSender ->
+                                        scannerLauncher.launch(
+                                            IntentSenderRequest.Builder(intentSender).build()
+                                        )
+                                    }
+                                    .addOnFailureListener {
+                                        Toast.makeText(context, "Error al iniciar el escáner", Toast.LENGTH_SHORT).show()
+                                    }
+                            } else {
+                                Toast.makeText(context, "No se pudo obtener la actividad", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_document_scanner")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DocumentScanner,
+                            contentDescription = "Escanear documento",
+                            tint = amber
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        modifier = Modifier.testTag("btn_add_image")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = "Subir imagen",
+                            tint = amber
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 val permission = Manifest.permission.POST_NOTIFICATIONS
                                 if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
@@ -575,11 +1034,13 @@ fun NoteEditorScreen(
                                 when (it) {
                                     is NoteBlock.Text -> it.content
                                     is NoteBlock.Checklist -> "${if (it.isChecked) "☑" else "☐"} ${it.content}"
-                                    is NoteBlock.SimpleList -> "${it.content}"
+                                    is NoteBlock.SimpleList -> it.content
                                     is NoteBlock.CalloutBox -> it.content
                                     is NoteBlock.Drawing -> "[Boceto]"
                                     is NoteBlock.Table -> it.matrix.joinToString(" | ") { row -> row.joinToString(" | ") { cell -> cell.text } }
                                     is PdfBlock -> "[PDF: ${it.fileName}]"
+                                    is ImageBlock -> "[Imagen]"
+                                    is NoteBlock.Image -> "[Imagen: ${it.fileName}]"
                                     is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", it.durationMs / 60000, (it.durationMs % 60000) / 1000)}]"
                                 }
                             }
@@ -592,6 +1053,56 @@ fun NoteEditorScreen(
                         }
                     ) {
                         Icon(Icons.Default.Share, contentDescription = "Compartir", tint = amber)
+                    }
+
+                    IconButton(
+                        onClick = {
+                            Toast.makeText(context, "Generando PDF...", Toast.LENGTH_SHORT).show()
+                            coroutineScope.launch {
+                                try {
+                                    val pdfFile = NotePdfExporter.exportNote(context, title, blocks)
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.provider",
+                                        pdfFile
+                                    )
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/pdf"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF"))
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    Toast.makeText(
+                                        context,
+                                        "Error al generar el PDF: ${e.message}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_export_pdf")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PictureAsPdf,
+                            contentDescription = "Exportar PDF",
+                            tint = amber
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showVoiceDictation = true
+                        },
+                        modifier = Modifier.testTag("btn_add_audio")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Dictado de voz",
+                            tint = amber
+                        )
                     }
 
                     Box {
@@ -732,255 +1243,12 @@ fun NoteEditorScreen(
                 )
             )
         },
-        bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                        .shadow(
-                            elevation = 8.dp,
-                            shape = CircleShape,
-                            ambientColor = Color.Black.copy(alpha = 0.08f),
-                            spotColor = Color.Black.copy(alpha = 0.12f)
-                        )
-                        .clip(CircleShape)
-                        .background(
-                            if (isDark) Color(0xFF1C1C1E).copy(alpha = 0.85f)
-                            else Color.White.copy(alpha = 0.85f)
-                        )
-                        .border(
-                            width = 1.dp,
-                            brush = if (isDark) {
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.40f),
-                                        Color.Transparent,
-                                        Color(0xFF3F3F46).copy(alpha = 0.60f)
-                                    )
-                                )
-                            } else {
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.90f),
-                                        Color.White.copy(alpha = 0.30f),
-                                        Color(0xFFCBD5E1).copy(alpha = 0.45f)
-                                    )
-                                )
-                            },
-                            shape = CircleShape
-                        )
-                        .testTag("liquid_glass_accessory_bar"),
-                    color = Color.Transparent
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // 1. Botón "Insertar" (+) -> Abre menú de inserción (desplegable desde abajo)
-                        IconButton(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showFormatSheet = true
-                            },
-                            modifier = Modifier.testTag("btn_insert_menu")
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AddCircleOutline,
-                                    contentDescription = "Insertar",
-                                    tint = amber,
-                                    modifier = Modifier.size(26.dp)
-                                )
-                            }
-                        }
-
-                        // 2. Negrita
-                        IconButton(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                isBoldActive = !isBoldActive
-                            },
-                            modifier = Modifier.testTag("btn_format_bold")
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isBoldActive) amber.copy(alpha = 0.25f) else Color.Transparent)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FormatBold,
-                                    contentDescription = "Negrita",
-                                    tint = amber
-                                )
-                            }
-                        }
-
-                        // 3. Cursiva
-                        IconButton(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                isItalicActive = !isItalicActive
-                            },
-                            modifier = Modifier.testTag("btn_format_italic")
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isItalicActive) amber.copy(alpha = 0.25f) else Color.Transparent)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FormatItalic,
-                                    contentDescription = "Cursiva",
-                                    tint = amber
-                                )
-                            }
-                        }
-
-                        // 4. Resaltar selección
-                        IconButton(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val currentId = focusedBlockId
-                                if (currentId != null) {
-                                    val tfv = blockTextFieldValues[currentId]
-                                    if (tfv != null && !tfv.selection.collapsed) {
-                                        val start = tfv.selection.min
-                                        val end = tfv.selection.max
-                                        val text = tfv.text
-                                        val selectedText = text.substring(start, end)
-
-                                        val (newText, newSelection) = if (selectedText.startsWith("==") && selectedText.endsWith("==") && selectedText.length >= 4) {
-                                            // Quitar resaltado
-                                            val unhighlighted = selectedText.substring(2, selectedText.length - 2)
-                                            val updated = text.substring(0, start) + unhighlighted + text.substring(end)
-                                            val sel = TextRange(start, start + unhighlighted.length)
-                                            Pair(updated, sel)
-                                        } else {
-                                            // Aplicar resaltado
-                                            val highlighted = "==$selectedText=="
-                                            val updated = text.substring(0, start) + highlighted + text.substring(end)
-                                            val sel = TextRange(start, start + highlighted.length)
-                                            Pair(updated, sel)
-                                        }
-
-                                        val newTfv = tfv.copy(text = newText, selection = newSelection)
-                                        blockTextFieldValues[currentId] = newTfv
-
-                                        // Actualizar el modelo
-                                        val idx = blocks.indexOfFirst { it.id == currentId }
-                                        if (idx != -1) {
-                                            val b = blocks[idx]
-                                            if (b is NoteBlock.Text) blocks[idx] = b.copy(content = newText)
-                                            else if (b is NoteBlock.Checklist) blocks[idx] = b.copy(content = newText)
-                                            else if (b is NoteBlock.SimpleList) blocks[idx] = b.copy(content = newText)
-                                            else if (b is NoteBlock.CalloutBox) blocks[idx] = b.copy(content = newText)
-                                        }
-                                    } else {
-                                        isHighlightActive = !isHighlightActive
-                                    }
-                                } else {
-                                    isHighlightActive = !isHighlightActive
-                                }
-                            },
-                            modifier = Modifier.testTag("btn_format_highlight")
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isHighlightActive) amber.copy(alpha = 0.25f) else Color.Transparent)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Highlight,
-                                    contentDescription = "Resaltar",
-                                    tint = amber
-                                )
-                            }
-                        }
-
-                        // 5. Tamaño de texto (Icono de regla -> abre carrusel de tamaños 1 a 150)
-                        IconButton(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showFontSizeCarouselSheet = true
-                            },
-                            modifier = Modifier.testTag("btn_font_size_ruler")
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(if (customFontSizeSp != 17) amber.copy(alpha = 0.25f) else Color.Transparent)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Straighten,
-                                    contentDescription = "Tamaño de texto",
-                                    tint = amber,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-
-                        // 6. Grabar Nota de Voz (Micrófono)
-                        var showAudioRecorder by remember { mutableStateOf(false) }
-                        IconButton(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showAudioRecorder = true
-                            },
-                            modifier = Modifier.testTag("btn_add_audio")
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Grabar audio",
-                                    tint = amber
-                                )
-                            }
-                        }
-                        
-                        if (showAudioRecorder) {
-                            AudioRecorderDialog(
-                                onDismiss = { showAudioRecorder = false },
-                                onAudioRecorded = { audioBlock ->
-                                    blocks.add(audioBlock)
-                                    showAudioRecorder = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
         containerColor = editorBgColor
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
         ) {
             PaperBackground(
                 paperStyle = paperStyle,
@@ -989,9 +1257,14 @@ fun NoteEditorScreen(
             )
 
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 20.dp),
+                state = lazyListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 0.dp,
+                    bottom = 90.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Header date & reminder
@@ -1058,9 +1331,30 @@ fun NoteEditorScreen(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     // Title input
+                    val titleBringIntoViewRequester = remember { BringIntoViewRequester() }
+                    var titleTextLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                     BasicTextField(
-                        value = title,
-                        onValueChange = { title = it },
+                        value = titleTextFieldValue,
+                        onValueChange = { newValue ->
+                            titleTextFieldValue = newValue
+                            title = newValue.text
+                            coroutineScope.launch {
+                                val layout = titleTextLayoutResult
+                                if (layout != null) {
+                                    val cursorOffset = newValue.selection.max
+                                    if (cursorOffset in 0..layout.layoutInput.text.length) {
+                                        val cursorRect = layout.getCursorRect(cursorOffset)
+                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                        titleBringIntoViewRequester.bringIntoView(expandedRect)
+                                    } else {
+                                        titleBringIntoViewRequester.bringIntoView()
+                                    }
+                                } else {
+                                    titleBringIntoViewRequester.bringIntoView()
+                                }
+                            }
+                        },
+                        onTextLayout = { titleTextLayoutResult = it },
                         textStyle = MaterialTheme.typography.headlineMedium.copy(
                             color = MaterialTheme.colorScheme.onBackground,
                             fontWeight = FontWeight.Bold,
@@ -1071,9 +1365,15 @@ fun NoteEditorScreen(
                         visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                if (focusState.isFocused) {
+                                    focusedBlockId = "TITLE"
+                                }
+                            }
+                            .bringIntoViewRequester(titleBringIntoViewRequester)
                             .testTag("apple_editor_title"),
                         decorationBox = { innerTextField ->
-                            if (title.isEmpty()) {
+                            if (titleTextFieldValue.text.isEmpty()) {
                                 Text(
                                     text = "Título",
                                     style = MaterialTheme.typography.headlineMedium.copy(
@@ -1091,14 +1391,23 @@ fun NoteEditorScreen(
                 }
 
                 // Mixed-Content Blocks Items
-                itemsIndexed(blocks, key = { _, block -> block.id }) { index, block ->
+                itemsIndexed(visibleBlocksWithIndex, key = { _, pair -> pair.second.id }) { _, (index, block) ->
                     val focusRequester = remember(block.id) { FocusRequester() }
                     focusRequesters[block.id] = focusRequester
 
-                    when (block) {
+                    val blockIndent = if (block.id in h2SectionBlockIds) 28.dp else 0.dp
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = blockIndent)
+                    ) {
+                        when (block) {
                         is NoteBlock.Text -> {
                             // PROHIBIDO MODIFICAR: El texto debe ser una casilla entera continua.
                             // ImeAction.Default permite saltos de línea (\n) sin crear nuevos bloques.
+                            val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
+                            var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
                             val baseFontSize = if (customFontSizeSp != 17) customFontSizeSp.sp else when (block.style) {
                                 TextStyleType.TITLE -> 22.sp
                                 TextStyleType.SUBTITLE -> 18.sp
@@ -1117,43 +1426,249 @@ fun NoteEditorScreen(
                                 lineHeight = (baseFontSize.value * 1.4f).sp
                             )
                             val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
-                            BasicTextField(
-                                value = tfv,
-                                onValueChange = { newValue ->
-                                    val sanitized = sanitizeTextFieldValue(newValue)
-                                    blockTextFieldValues[block.id] = sanitized
-                                    if (sanitized.text != block.content) {
-                                        blocks[index] = block.copy(content = sanitized.text)
-                                    }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .focusRequester(focusRequester)
-                                    .onFocusChanged { focusState ->
-                                        if (focusState.isFocused) {
-                                            focusedBlockId = block.id
-                                        }
-                                    }
-                                    .testTag("block_text_$index"),
-                                textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
-                                cursorBrush = SolidColor(amber),
-                                visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
-                                decorationBox = { innerTextField ->
-                                    if (block.content.isEmpty()) {
-                                        Text(
-                                            text = when (block.style) {
-                                                TextStyleType.TITLE -> "Título de sección..."
-                                                TextStyleType.SUBTITLE -> "Subtítulo..."
-                                                TextStyleType.BODY -> "Escribe algo..."
-                                            },
-                                            style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                            if (block.style == TextStyleType.SUBTITLE) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(end = 4.dp)
+                                            .clip(CircleShape)
+                                            .clickable {
+                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                                if (realIdx != -1) {
+                                                    blocks[realIdx] = block.copy(isCollapsed = !block.isCollapsed)
+                                                }
+                                            }
+                                            .padding(2.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = if (block.isCollapsed) Icons.AutoMirrored.Rounded.KeyboardArrowRight else Icons.Rounded.KeyboardArrowDown,
+                                            contentDescription = if (block.isCollapsed) "Expandir sección" else "Colapsar sección",
+                                            tint = amber,
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
-                                    innerTextField()
-                                },
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
-                            )
+                                    BasicTextField(
+                                        value = tfv,
+                                        onValueChange = { newValue ->
+                                            val sanitized = sanitizeTextFieldValue(newValue)
+                                            if (sanitized.text.contains('\n')) {
+                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                                if (block.content.isEmpty()) {
+                                                    if (realIdx != -1) {
+                                                        val updated = block.copy(style = TextStyleType.BODY, isCollapsed = false)
+                                                        blocks[realIdx] = updated
+                                                        blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
+                                                        targetFocusBlockId = block.id
+                                                        focusedBlockId = block.id
+                                                    }
+                                                } else {
+                                                    val newlineIndex = sanitized.text.indexOf('\n')
+                                                    val headingText = sanitized.text.substring(0, newlineIndex)
+                                                    val remainingText = sanitized.text.substring(newlineIndex + 1)
+
+                                                    blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
+                                                    if (realIdx != -1) {
+                                                        blocks[realIdx] = block.copy(content = headingText, isCollapsed = false)
+
+                                                        val nextBlock = blocks.getOrNull(realIdx + 1)
+                                                        if (nextBlock is NoteBlock.Text && nextBlock.style == TextStyleType.BODY && nextBlock.isIndented) {
+                                                            val updatedContent = if (remainingText.isNotEmpty()) {
+                                                                if (nextBlock.content.isEmpty()) remainingText else "$remainingText\n${nextBlock.content}"
+                                                            } else nextBlock.content
+                                                            blocks[realIdx + 1] = nextBlock.copy(content = updatedContent)
+                                                            blockTextFieldValues[nextBlock.id] = TextFieldValue(updatedContent, TextRange(remainingText.length))
+                                                            targetFocusBlockId = nextBlock.id
+                                                            focusedBlockId = nextBlock.id
+                                                        } else {
+                                                            val newBodyId = UUID.randomUUID().toString()
+                                                            val newBodyBlock = NoteBlock.Text(id = newBodyId, content = remainingText, style = TextStyleType.BODY, isIndented = true)
+                                                            blocks.add(realIdx + 1, newBodyBlock)
+                                                            blockTextFieldValues[newBodyId] = TextFieldValue(remainingText, TextRange(remainingText.length))
+                                                            targetFocusBlockId = newBodyId
+                                                            focusedBlockId = newBodyId
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                blockTextFieldValues[block.id] = sanitized
+                                                if (sanitized.text != block.content) {
+                                                    val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                                    if (realIdx != -1) {
+                                                        val nextStyle = if (block.content.isEmpty() && sanitized.text.isEmpty()) TextStyleType.BODY else block.style
+                                                        blocks[realIdx] = block.copy(content = sanitized.text, style = nextStyle)
+                                                    }
+                                                }
+                                                coroutineScope.launch {
+                                                    val layout = textLayoutResult
+                                                    val cursorOffset = sanitized.selection.max
+                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                        val cursorRect = layout.getCursorRect(cursorOffset)
+                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                        bringIntoViewRequester.bringIntoView(expandedRect)
+                                                    } else {
+                                                        bringIntoViewRequester.bringIntoView()
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onTextLayout = { textLayoutResult = it },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .bringIntoViewRequester(bringIntoViewRequester)
+                                            .focusRequester(focusRequester)
+                                            .onFocusChanged { focusState ->
+                                                if (focusState.isFocused) {
+                                                    focusedBlockId = block.id
+                                                    coroutineScope.launch {
+                                                        delay(100)
+                                                        val layout = textLayoutResult
+                                                        val currentTfv = blockTextFieldValues[block.id]
+                                                        val cursorOffset = currentTfv?.selection?.max ?: 0
+                                                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                            val cursorRect = layout.getCursorRect(cursorOffset)
+                                                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                            bringIntoViewRequester.bringIntoView(expandedRect)
+                                                        } else {
+                                                            bringIntoViewRequester.bringIntoView()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            .testTag("block_text_$index"),
+                                        textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                                        cursorBrush = SolidColor(amber),
+                                        visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                                        decorationBox = { innerTextField ->
+                                            if (block.content.isEmpty()) {
+                                                Text(
+                                                    text = "Subtítulo...",
+                                                    style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                                )
+                                            }
+                                            innerTextField()
+                                        },
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
+                                    )
+                                }
+                            } else {
+                                BasicTextField(
+                                    value = tfv,
+                                        onValueChange = { newValue ->
+                                            val sanitized = sanitizeTextFieldValue(newValue)
+                                            if ((block.style == TextStyleType.TITLE) && sanitized.text.contains('\n')) {
+                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                                if (block.content.isEmpty()) {
+                                                    if (realIdx != -1) {
+                                                        val updated = block.copy(style = TextStyleType.BODY, isCollapsed = false, isIndented = false)
+                                                        blocks[realIdx] = updated
+                                                        blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
+                                                        targetFocusBlockId = block.id
+                                                        focusedBlockId = block.id
+                                                    }
+                                                } else {
+                                                    val newlineIndex = sanitized.text.indexOf('\n')
+                                                    val headingText = sanitized.text.substring(0, newlineIndex)
+                                                    val remainingText = sanitized.text.substring(newlineIndex + 1)
+
+                                                    blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
+                                                    if (realIdx != -1) {
+                                                        blocks[realIdx] = block.copy(content = headingText, isCollapsed = false)
+
+                                                        val newBodyId = UUID.randomUUID().toString()
+                                                        val newBodyBlock = NoteBlock.Text(id = newBodyId, content = remainingText, style = TextStyleType.BODY, isIndented = true)
+                                                        blocks.add(realIdx + 1, newBodyBlock)
+                                                        blockTextFieldValues[newBodyId] = TextFieldValue(remainingText, TextRange(remainingText.length))
+                                                        targetFocusBlockId = newBodyId
+                                                        focusedBlockId = newBodyId
+                                                    }
+                                                }
+                                            } else if (block.isIndented && sanitized.text.endsWith("\n\n")) {
+                                                val trimmedText = sanitized.text.dropLast(2)
+                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                                if (realIdx != -1) {
+                                                    blocks[realIdx] = block.copy(content = trimmedText)
+                                                    blockTextFieldValues[block.id] = TextFieldValue(trimmedText, TextRange(trimmedText.length))
+
+                                                    val newBodyId = UUID.randomUUID().toString()
+                                                    val newBodyBlock = NoteBlock.Text(id = newBodyId, content = "", style = TextStyleType.BODY, isIndented = false)
+                                                    blocks.add(realIdx + 1, newBodyBlock)
+                                                    blockTextFieldValues[newBodyId] = TextFieldValue("", TextRange(0))
+                                                    targetFocusBlockId = newBodyId
+                                                    focusedBlockId = newBodyId
+                                                }
+                                            } else {
+                                                blockTextFieldValues[block.id] = sanitized
+                                                if (sanitized.text != block.content) {
+                                                    val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                                    if (realIdx != -1) {
+                                                        blocks[realIdx] = block.copy(content = sanitized.text)
+                                                    }
+                                                }
+                                                coroutineScope.launch {
+                                                    val layout = textLayoutResult
+                                                    val cursorOffset = sanitized.selection.max
+                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                        val cursorRect = layout.getCursorRect(cursorOffset)
+                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                        bringIntoViewRequester.bringIntoView(expandedRect)
+                                                    } else {
+                                                        bringIntoViewRequester.bringIntoView()
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onTextLayout = { textLayoutResult = it },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                            .bringIntoViewRequester(bringIntoViewRequester)
+                                            .focusRequester(focusRequester)
+                                            .onFocusChanged { focusState ->
+                                                if (focusState.isFocused) {
+                                                    focusedBlockId = block.id
+                                                    coroutineScope.launch {
+                                                        delay(100)
+                                                        val layout = textLayoutResult
+                                                        val currentTfv = blockTextFieldValues[block.id]
+                                                        val cursorOffset = currentTfv?.selection?.max ?: 0
+                                                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                            val cursorRect = layout.getCursorRect(cursorOffset)
+                                                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                            bringIntoViewRequester.bringIntoView(expandedRect)
+                                                        } else {
+                                                            bringIntoViewRequester.bringIntoView()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            .testTag("block_text_$index"),
+                                        textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                                        cursorBrush = SolidColor(amber),
+                                        visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                                        decorationBox = { innerTextField ->
+                                            if (block.content.isEmpty()) {
+                                                val showPlaceholder = when (block.style) {
+                                                    TextStyleType.TITLE -> "Título de sección..."
+                                                    else -> if (blocks.size <= 1 && title.isEmpty()) "Escribe algo..." else ""
+                                                }
+                                                if (showPlaceholder.isNotEmpty()) {
+                                                    Text(
+                                                        text = showPlaceholder,
+                                                        style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                                    )
+                                                }
+                                            }
+                                            innerTextField()
+                                        },
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
+                                    )
+                            }
                         }
                         is NoteBlock.Checklist -> {
                             Row(
@@ -1186,6 +1701,8 @@ fun NoteEditorScreen(
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
+                                val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
+                                var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                                 BasicTextField(
                                     value = tfv,
                                     onValueChange = { newValue ->
@@ -1194,13 +1711,39 @@ fun NoteEditorScreen(
                                         if (sanitized.text != block.content) {
                                             blocks[index] = block.copy(content = sanitized.text)
                                         }
+                                        coroutineScope.launch {
+                                            val layout = textLayoutResult
+                                            val cursorOffset = sanitized.selection.max
+                                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                val cursorRect = layout.getCursorRect(cursorOffset)
+                                                val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                bringIntoViewRequester.bringIntoView(expandedRect)
+                                            } else {
+                                                bringIntoViewRequester.bringIntoView()
+                                            }
+                                        }
                                     },
+                                    onTextLayout = { textLayoutResult = it },
                                     modifier = Modifier
                                         .weight(1f)
+                                        .bringIntoViewRequester(bringIntoViewRequester)
                                         .focusRequester(focusRequester)
                                         .onFocusChanged { focusState ->
                                             if (focusState.isFocused) {
                                                 focusedBlockId = block.id
+                                                coroutineScope.launch {
+                                                    delay(100)
+                                                    val layout = textLayoutResult
+                                                    val currentTfv = blockTextFieldValues[block.id]
+                                                    val cursorOffset = currentTfv?.selection?.max ?: 0
+                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                        val cursorRect = layout.getCursorRect(cursorOffset)
+                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                        bringIntoViewRequester.bringIntoView(expandedRect)
+                                                    } else {
+                                                        bringIntoViewRequester.bringIntoView()
+                                                    }
+                                                }
                                             }
                                         },
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -1225,9 +1768,9 @@ fun NoteEditorScreen(
                                         }
                                         innerTextField()
                                     },
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(
-                                        onDone = {
+                                        onNext = {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             if (block.content.isBlank()) {
                                                 blocks[index] = NoteBlock.Text(id = block.id, content = "")
@@ -1268,6 +1811,8 @@ fun NoteEditorScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
+                                val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
+                                var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                                 BasicTextField(
                                     value = tfv,
                                     onValueChange = { newValue ->
@@ -1276,13 +1821,39 @@ fun NoteEditorScreen(
                                         if (sanitized.text != block.content) {
                                             blocks[index] = block.copy(content = sanitized.text)
                                         }
+                                        coroutineScope.launch {
+                                            val layout = textLayoutResult
+                                            val cursorOffset = sanitized.selection.max
+                                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                val cursorRect = layout.getCursorRect(cursorOffset)
+                                                val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                bringIntoViewRequester.bringIntoView(expandedRect)
+                                            } else {
+                                                bringIntoViewRequester.bringIntoView()
+                                            }
+                                        }
                                     },
+                                    onTextLayout = { textLayoutResult = it },
                                     modifier = Modifier
                                         .weight(1f)
+                                        .bringIntoViewRequester(bringIntoViewRequester)
                                         .focusRequester(focusRequester)
                                         .onFocusChanged { focusState ->
                                             if (focusState.isFocused) {
                                                 focusedBlockId = block.id
+                                                coroutineScope.launch {
+                                                    delay(100)
+                                                    val layout = textLayoutResult
+                                                    val currentTfv = blockTextFieldValues[block.id]
+                                                    val cursorOffset = currentTfv?.selection?.max ?: 0
+                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                        val cursorRect = layout.getCursorRect(cursorOffset)
+                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                        bringIntoViewRequester.bringIntoView(expandedRect)
+                                                    } else {
+                                                        bringIntoViewRequester.bringIntoView()
+                                                    }
+                                                }
                                             }
                                         },
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -1303,9 +1874,9 @@ fun NoteEditorScreen(
                                         }
                                         innerTextField()
                                     },
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                                     keyboardActions = KeyboardActions(
-                                        onDone = {
+                                        onNext = {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             if (block.content.isBlank()) {
                                                 blocks[index] = NoteBlock.Text(id = block.id, content = "")
@@ -1360,6 +1931,8 @@ fun NoteEditorScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
+                                    val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
+                                    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                                     BasicTextField(
                                         value = tfv,
                                         onValueChange = { newValue ->
@@ -1368,13 +1941,39 @@ fun NoteEditorScreen(
                                             if (sanitized.text != block.content) {
                                                 blocks[index] = block.copy(content = sanitized.text)
                                             }
+                                            coroutineScope.launch {
+                                                val layout = textLayoutResult
+                                                val cursorOffset = sanitized.selection.max
+                                                if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                    val cursorRect = layout.getCursorRect(cursorOffset)
+                                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                    bringIntoViewRequester.bringIntoView(expandedRect)
+                                                } else {
+                                                    bringIntoViewRequester.bringIntoView()
+                                                }
+                                            }
                                         },
+                                        onTextLayout = { textLayoutResult = it },
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .bringIntoViewRequester(bringIntoViewRequester)
                                             .focusRequester(focusRequester)
                                             .onFocusChanged { focusState ->
                                                 if (focusState.isFocused) {
                                                     focusedBlockId = block.id
+                                                    coroutineScope.launch {
+                                                        delay(100)
+                                                        val layout = textLayoutResult
+                                                        val currentTfv = blockTextFieldValues[block.id]
+                                                        val cursorOffset = currentTfv?.selection?.max ?: 0
+                                                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                            val cursorRect = layout.getCursorRect(cursorOffset)
+                                                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                            bringIntoViewRequester.bringIntoView(expandedRect)
+                                                        } else {
+                                                            bringIntoViewRequester.bringIntoView()
+                                                        }
+                                                    }
                                                 }
                                             },
                                         textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -1557,6 +2156,62 @@ fun NoteEditorScreen(
                                 modifier = Modifier.testTag("block_audio_$index")
                             )
                         }
+                        is ImageBlock -> {
+                            ImageBlockItem(
+                                block = block,
+                                onRemove = { removeBlock(index) },
+                                modifier = Modifier.testTag("block_image_$index")
+                            )
+                        }
+                        is NoteBlock.Image -> {
+                            ImageBlockItem(
+                                block = block,
+                                onDeleteBlock = { removeBlock(index) },
+                                modifier = Modifier.testTag("block_image_$index")
+                            )
+                        }
+                    }
+                }
+            }
+
+                attachedImageUri?.let { uri ->
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Imagen adjunta",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 350.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Fit
+                                )
+                                IconButton(
+                                    onClick = { attachedImageUri = null },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp)
+                                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                        .size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Eliminar imagen",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1571,17 +2226,253 @@ fun NoteEditorScreen(
                             ) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 val lastBlock = blocks.lastOrNull()
-                                if (lastBlock is NoteBlock.Text) {
+                                if (lastBlock is NoteBlock.Text && lastBlock.style == TextStyleType.BODY && !lastBlock.isIndented) {
                                     targetFocusBlockId = lastBlock.id
                                     focusedBlockId = lastBlock.id
                                 } else {
                                     val newId = UUID.randomUUID().toString()
-                                    blocks.add(NoteBlock.Text(id = newId))
+                                    blocks.add(NoteBlock.Text(id = newId, style = TextStyleType.BODY, isIndented = false))
                                     targetFocusBlockId = newId
                                     focusedBlockId = newId
                                 }
                             }
                     )
+                }
+            }
+
+            // Floating Accessory Bar (barra inferior flotante)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .imePadding()
+                    .navigationBarsPadding()
+            ) {
+                AnimatedVisibility(
+                    visible = activeHashtagInfo != null && suggestedSmartTags.isNotEmpty(),
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    SmartTagsSuggestionRow(
+                        tags = suggestedSmartTags,
+                        amberColor = amber,
+                        isDark = isDark,
+                        onSelectTag = { item ->
+                            applySmartTagSelection(item)
+                        }
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .shadow(
+                                elevation = 10.dp,
+                                shape = CircleShape,
+                                ambientColor = Color.Black.copy(alpha = 0.10f),
+                                spotColor = Color.Black.copy(alpha = 0.15f)
+                            )
+                            .clip(CircleShape)
+                            .background(
+                                if (isDark) Color(0xFF1C1C1E).copy(alpha = 0.88f)
+                                else Color.White.copy(alpha = 0.88f)
+                            )
+                            .border(
+                                width = 1.dp,
+                                brush = if (isDark) {
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.40f),
+                                            Color.Transparent,
+                                            Color(0xFF3F3F46).copy(alpha = 0.60f)
+                                        )
+                                    )
+                                } else {
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.90f),
+                                            Color.White.copy(alpha = 0.30f),
+                                            Color(0xFFCBD5E1).copy(alpha = 0.45f)
+                                        )
+                                    )
+                                },
+                                shape = CircleShape
+                            )
+                            .testTag("liquid_glass_accessory_bar"),
+                        color = Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // 1. Botón "Insertar" (+) -> Abre menú de inserción (desplegable desde abajo)
+                            IconButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showFormatSheet = true
+                                },
+                                modifier = Modifier.testTag("btn_insert_menu")
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddCircleOutline,
+                                        contentDescription = "Insertar",
+                                        tint = amber,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+
+                            // 2. Negrita
+                            IconButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isBoldActive = !isBoldActive
+                                },
+                                modifier = Modifier.testTag("btn_format_bold")
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isBoldActive) amber.copy(alpha = 0.25f) else Color.Transparent)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FormatBold,
+                                        contentDescription = "Negrita",
+                                        tint = amber,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+
+                            // 3. Cursiva
+                            IconButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isItalicActive = !isItalicActive
+                                },
+                                modifier = Modifier.testTag("btn_format_italic")
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isItalicActive) amber.copy(alpha = 0.25f) else Color.Transparent)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FormatItalic,
+                                        contentDescription = "Cursiva",
+                                        tint = amber,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+
+                            // 4. Resaltar selección
+                            IconButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val currentId = focusedBlockId
+                                    if (currentId != null) {
+                                        val tfv = blockTextFieldValues[currentId]
+                                        if (tfv != null && !tfv.selection.collapsed) {
+                                            val start = tfv.selection.min
+                                            val end = tfv.selection.max
+                                            val text = tfv.text
+                                            val selectedText = text.substring(start, end)
+
+                                            val (newText, newSelection) = if (selectedText.startsWith("==") && selectedText.endsWith("==") && selectedText.length >= 4) {
+                                                // Quitar resaltado
+                                                val unhighlighted = selectedText.substring(2, selectedText.length - 2)
+                                                val updated = text.substring(0, start) + unhighlighted + text.substring(end)
+                                                val sel = TextRange(start, start + unhighlighted.length)
+                                                Pair(updated, sel)
+                                            } else {
+                                                // Aplicar resaltado
+                                                val highlighted = "==$selectedText=="
+                                                val updated = text.substring(0, start) + highlighted + text.substring(end)
+                                                val sel = TextRange(start, start + highlighted.length)
+                                                Pair(updated, sel)
+                                            }
+
+                                            val newTfv = tfv.copy(text = newText, selection = newSelection)
+                                            blockTextFieldValues[currentId] = newTfv
+
+                                            // Actualizar el modelo
+                                            val idx = blocks.indexOfFirst { it.id == currentId }
+                                            if (idx != -1) {
+                                                val b = blocks[idx]
+                                                if (b is NoteBlock.Text) blocks[idx] = b.copy(content = newText)
+                                                else if (b is NoteBlock.Checklist) blocks[idx] = b.copy(content = newText)
+                                                else if (b is NoteBlock.SimpleList) blocks[idx] = b.copy(content = newText)
+                                                else if (b is NoteBlock.CalloutBox) blocks[idx] = b.copy(content = newText)
+                                            }
+                                        } else {
+                                            isHighlightActive = !isHighlightActive
+                                        }
+                                    } else {
+                                        isHighlightActive = !isHighlightActive
+                                    }
+                                },
+                                modifier = Modifier.testTag("btn_format_highlight")
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isHighlightActive) amber.copy(alpha = 0.25f) else Color.Transparent)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Highlight,
+                                        contentDescription = "Resaltar",
+                                        tint = amber,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+
+                            // 5. Tamaño de texto (Icono de regla -> abre carrusel de tamaños 1 a 150)
+                            IconButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showFontSizeCarouselSheet = true
+                                },
+                                modifier = Modifier.testTag("btn_font_size_ruler")
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(if (customFontSizeSp != 17) amber.copy(alpha = 0.25f) else Color.Transparent)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Straighten,
+                                        contentDescription = "Tamaño de texto",
+                                        tint = amber,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1623,7 +2514,7 @@ fun NoteEditorScreen(
                 ) {
                     showFormatSheet = false
                     transformOrInsertBlock { id, content ->
-                        NoteBlock.Text(id = id, content = content, style = TextStyleType.BODY)
+                        NoteBlock.Text(id = id, content = content, style = TextStyleType.BODY, isIndented = false)
                     }
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
@@ -1633,9 +2524,7 @@ fun NoteEditorScreen(
                     text = "Título grande"
                 ) {
                     showFormatSheet = false
-                    transformOrInsertBlock { id, content ->
-                        NoteBlock.Text(id = id, content = content, style = TextStyleType.TITLE)
-                    }
+                    applyHeadingStyleToCurrentBlock(TextStyleType.TITLE)
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
 
@@ -1644,9 +2533,7 @@ fun NoteEditorScreen(
                     text = "Subtítulo"
                 ) {
                     showFormatSheet = false
-                    transformOrInsertBlock { id, content ->
-                        NoteBlock.Text(id = id, content = content, style = TextStyleType.SUBTITLE)
-                    }
+                    applyHeadingStyleToCurrentBlock(TextStyleType.SUBTITLE)
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
 
@@ -1722,7 +2609,72 @@ fun NoteEditorScreen(
                     pdfPickerLauncher.launch(arrayOf("application/pdf"))
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
+
+                FormatOptionItem(
+                    icon = Icons.Default.DocumentScanner,
+                    text = "Escanear documento (Modo Escáner Pro)"
+                ) {
+                    showFormatSheet = false
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    val activity = (context as? Activity) ?: context.findActivity()
+                    if (activity != null) {
+                        scanner.getStartScanIntent(activity)
+                            .addOnSuccessListener { intentSender ->
+                                scannerLauncher.launch(
+                                    IntentSenderRequest.Builder(intentSender).build()
+                                )
+                            }
+                            .addOnFailureListener {
+                                Toast.makeText(context, "Error al iniciar el escáner", Toast.LENGTH_SHORT).show()
+                            }
+                    } else {
+                        Toast.makeText(context, "No se pudo obtener la actividad", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
+        }
+    }
+
+    if (showVoiceDictation) {
+        val voiceSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showVoiceDictation = false },
+            sheetState = voiceSheetState,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White,
+            tonalElevation = 8.dp,
+            dragHandle = { BottomSheetDefaults.DragHandle() }
+        ) {
+            VoiceNoteScreen(
+                onRecordingFinished = { transcribedText, _, _ ->
+                    if (transcribedText.isNotBlank()) {
+                        val newTextBlockId = UUID.randomUUID().toString()
+                        val textBlock = NoteBlock.Text(
+                            id = newTextBlockId,
+                            content = transcribedText
+                        )
+                        
+                        val targetIndex = if (focusedBlockId != null) {
+                            blocks.indexOfFirst { it.id == focusedBlockId }
+                        } else -1
+
+                        if (targetIndex != -1) {
+                            val currentBlock = blocks[targetIndex]
+                            val isEmptyText = currentBlock is NoteBlock.Text && currentBlock.content.isEmpty()
+                            if (isEmptyText) {
+                                blocks[targetIndex] = textBlock
+                            } else {
+                                blocks.add(targetIndex + 1, textBlock)
+                            }
+                        } else {
+                            blocks.add(textBlock)
+                        }
+                        targetFocusBlockId = newTextBlockId
+                        focusedBlockId = newTextBlockId
+                    }
+                },
+                onDismiss = { showVoiceDictation = false }
+            )
         }
     }
 
@@ -1945,6 +2897,8 @@ fun NoteEditorScreen(
         var selectedMinuteIndex by remember {
             mutableIntStateOf(initialCal.get(Calendar.MINUTE).coerceIn(0, 59))
         }
+
+        var selectedReminderOffsets by remember { mutableStateOf(setOf(0, 15)) }
 
         val reminderCoroutineScope = rememberCoroutineScope()
 
@@ -2318,6 +3272,46 @@ fun NoteEditorScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Avisar antes",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            letterSpacing = 0.5.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(start = 2.dp, bottom = 6.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(REMINDER_OFFSET_OPTIONS) { option ->
+                            val isSelected = selectedReminderOffsets.contains(option.minutes)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    selectedReminderOffsets = if (isSelected) {
+                                        if (selectedReminderOffsets.size > 1) selectedReminderOffsets - option.minutes else selectedReminderOffsets
+                                    } else {
+                                        selectedReminderOffsets + option.minutes
+                                    }
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                },
+                                label = { Text(option.label, fontSize = 13.sp) },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = amber,
+                                    selectedLabelColor = Color.Black
+                                )
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(20.dp))
 
                 Surface(
@@ -2328,7 +3322,7 @@ fun NoteEditorScreen(
                         .clickable {
                             reminderTimestamp = selectedTimestamp
                             if (noteId > 0) {
-                                viewModel.setReminder(context, noteId, selectedTimestamp, title, NoteBlockSerializer.serialize(blocks))
+                                viewModel.setReminder(context, noteId, selectedTimestamp, title, NoteBlockSerializer.serialize(blocks), selectedReminderOffsets.toList())
                             }
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             showReminderDialog = false
@@ -2478,6 +3472,8 @@ fun NoteEditorScreen(
                     is NoteBlock.Drawing -> ""
                     is NoteBlock.Table -> it.matrix.joinToString(" ") { row -> row.joinToString(" ") { cell -> cell.text } }
                     is PdfBlock -> it.fileName
+                    is ImageBlock -> "[Imagen]"
+                    is NoteBlock.Image -> it.fileName
                     is AudioBlock -> it.transcription
                 }
             }
@@ -2697,6 +3693,48 @@ fun NoteEditorScreen(
             }
         }
     }
+
+    if (pendingScannedPdfUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingScannedPdfUri = null },
+            title = { Text("Nombrar documento escaneado") },
+            text = {
+                OutlinedTextField(
+                    value = scannedPdfName,
+                    onValueChange = { scannedPdfName = it },
+                    label = { Text("Nombre del archivo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val uri = pendingScannedPdfUri
+                        if (uri != null) {
+                            viewModel.insertPdfBlock(uri, customFileName = scannedPdfName) { newBlock ->
+                                if (!blocks.any { b -> b.id == newBlock.id }) {
+                                    blocks.add(newBlock)
+                                }
+                            }
+                        }
+                        pendingScannedPdfUri = null
+                    }
+                ) {
+                    Text("Guardar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingScannedPdfUri = null
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -2767,7 +3805,7 @@ private fun sanitizeHighlightTags(text: String): String {
     result = result.replace(Regex("""==\s*==|====|==="""), "")
 
     // 2. Corregir etiqueta rota al final: ==palabra=
-    result = result.replace(Regex("""==([^=\n]+)=(?![=])""")) {
+    result = result.replace(Regex("""==([^=\n]+)=(?!=)""")) {
         it.groupValues[1]
     }
 
@@ -2887,7 +3925,126 @@ private fun markdownVisualTransformation(isDark: Boolean, amber: Color): VisualT
             }
         }
 
-        val offsetMapping = if (spans.isEmpty()) androidx.compose.ui.text.input.OffsetMapping.Identity else HighlightOffsetMapping(spans)
+        val offsetMapping = if (spans.isEmpty()) OffsetMapping.Identity else HighlightOffsetMapping(spans)
         TransformedText(annotatedString, offsetMapping)
     }
+}
+
+@Composable
+private fun SmartTagsSuggestionRow(
+    tags: List<SmartTagItem>,
+    amberColor: Color,
+    isDark: Boolean,
+    onSelectTag: (SmartTagItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptics = LocalHapticFeedback.current
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = if (isDark) Color(0xFF2C2C2E).copy(alpha = 0.92f) else Color(0xFFF2F2F7).copy(alpha = 0.92f),
+        shadowElevation = 8.dp,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (isDark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp, horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Tag,
+                contentDescription = null,
+                tint = amberColor,
+                modifier = Modifier
+                    .size(20.dp)
+                    .padding(end = 4.dp)
+            )
+
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items(tags, key = { "${it.tag}_${it.isNew}" }) { item ->
+                    Surface(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelectTag(item)
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (item.isNew) {
+                            amberColor.copy(alpha = 0.18f)
+                        } else {
+                            if (isDark) Color(0xFF3A3A3C) else Color.White
+                        },
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (item.isNew) amberColor.copy(alpha = 0.5f)
+                            else if (isDark) Color.White.copy(alpha = 0.12f)
+                            else Color.Black.copy(alpha = 0.08f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (item.isNew) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = amberColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Crear #${item.tag}",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = amberColor
+                                    )
+                                )
+                            } else {
+                                Text(
+                                    text = "#${item.tag}",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isDark) Color.White else Color(0xFF1C1C1E)
+                                    )
+                                )
+                                if (item.count > 0) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = amberColor.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = "${item.count}",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp,
+                                                color = amberColor
+                                            ),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
