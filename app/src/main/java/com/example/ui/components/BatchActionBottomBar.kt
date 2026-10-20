@@ -23,8 +23,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
 import com.example.ui.theme.isAppInDarkTheme
 
 @Composable
@@ -36,7 +36,7 @@ fun BatchActionBottomBar(
 ) {
     val haptics = LocalHapticFeedback.current
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
 
     Surface(
         modifier = modifier

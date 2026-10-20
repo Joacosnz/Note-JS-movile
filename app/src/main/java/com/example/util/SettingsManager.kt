@@ -13,11 +13,20 @@ enum class ThemeMode(val title: String) {
     DARK("Oscuro")
 }
 
+enum class PaperThemeMode(val title: String) {
+    LIGHT("Página blanca"),
+    DARK("Página oscura"),
+    AUTO("Automático")
+}
+
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("aura_notes_prefs", Context.MODE_PRIVATE)
 
     private val _themeMode = MutableStateFlow(getThemeMode())
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private val _paperThemeMode = MutableStateFlow(getPaperThemeMode())
+    val paperThemeMode: StateFlow<PaperThemeMode> = _paperThemeMode.asStateFlow()
 
     private val _isGridView = MutableStateFlow(isGridViewDefault())
     val isGridView: StateFlow<Boolean> = _isGridView.asStateFlow()
@@ -46,6 +55,20 @@ class SettingsManager(context: Context) {
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
         _themeMode.value = mode
+    }
+
+    fun getPaperThemeMode(): PaperThemeMode {
+        val name = prefs.getString(KEY_PAPER_THEME_MODE, PaperThemeMode.AUTO.name) ?: PaperThemeMode.AUTO.name
+        return try {
+            PaperThemeMode.valueOf(name)
+        } catch (_: Exception) {
+            PaperThemeMode.AUTO
+        }
+    }
+
+    fun setPaperThemeMode(mode: PaperThemeMode) {
+        prefs.edit().putString(KEY_PAPER_THEME_MODE, mode.name).apply()
+        _paperThemeMode.value = mode
     }
 
     fun isGridViewDefault(): Boolean {
@@ -100,6 +123,7 @@ class SettingsManager(context: Context) {
 
     companion object {
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_PAPER_THEME_MODE = "key_paper_theme_mode"
         private const val KEY_DEFAULT_VIEW_GRID = "key_default_view_grid"
         private const val KEY_DEFAULT_PAPER_STYLE = "key_default_paper_style"
         private const val KEY_DEFAULT_SORT = "key_default_sort"

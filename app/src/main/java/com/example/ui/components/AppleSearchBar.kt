@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.outlined.Search
@@ -44,7 +46,7 @@ import androidx.compose.ui.unit.sp
  * Barra de Búsqueda con paradigma de diseño "Liquid Glass" (Matriz Vitrocerámica + Metal Amorfo BMG).
  */
 @Composable
-fun AppleSearchBar(
+fun NoteJsSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -136,6 +138,7 @@ fun AppleSearchBar(
                         onQueryChange(it)
                     },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     textStyle = TextStyle(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Normal,
@@ -180,28 +183,28 @@ fun AppleSearchBar(
     }
 }
 
-@Preview(showBackground = true, name = "Apple Search Bar Liquid Glass - Light")
+@Preview(showBackground = true, name = "Note JS Search Bar Liquid Glass - Light")
 @Composable
-private fun AppleSearchBarLightPreview() {
-    AppleSearchBar(
+private fun NoteJsSearchBarLightPreview() {
+    NoteJsSearchBar(
         query = "",
         onQueryChange = {},
     )
 }
 
-@Preview(showBackground = true, name = "Apple Search Bar Liquid Glass - Light with text")
+@Preview(showBackground = true, name = "Note JS Search Bar Liquid Glass - Light with text")
 @Composable
-private fun AppleSearchBarLightWithTextPreview() {
-    AppleSearchBar(
+private fun NoteJsSearchBarLightWithTextPreview() {
+    NoteJsSearchBar(
         query = "Investigación BMG",
         onQueryChange = {},
     )
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF000000, name = "Apple Search Bar Liquid Glass - Dark")
+@Preview(showBackground = true, backgroundColor = 0xFF000000, name = "Note JS Search Bar Liquid Glass - Dark")
 @Composable
-private fun AppleSearchBarDarkPreview() {
-    AppleSearchBar(
+private fun NoteJsSearchBarDarkPreview() {
+    NoteJsSearchBar(
         query = "Ceramic Shield",
         onQueryChange = {},
     )

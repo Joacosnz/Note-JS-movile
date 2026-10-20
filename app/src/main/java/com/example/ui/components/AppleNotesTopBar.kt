@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,11 +25,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
+import com.example.ui.theme.isAppInDarkTheme
 
 @Composable
-fun AppleNotesTopBar(
+fun NoteJsTopBar(
     title: String,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -42,10 +43,14 @@ fun AppleNotesTopBar(
     onDeselectAll: () -> Unit = {},
     onOpenSettings: (() -> Unit)? = null,
     isGridView: Boolean = true,
-    onToggleGridView: (() -> Unit)? = null
+    onToggleGridView: (() -> Unit)? = null,
+    availableFolders: List<String> = emptyList(),
+    selectedFolder: String? = null,
+    onSelectFolder: ((String?) -> Unit)? = null,
+    onOpenFolderSheet: (() -> Unit)? = null
 ) {
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
 
     Column(
         modifier = modifier
@@ -105,7 +110,7 @@ fun AppleNotesTopBar(
                 }
             }
         } else {
-            // Apple Large Title
+            // Note JS Large Title
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -128,6 +133,20 @@ fun AppleNotesTopBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    if (onOpenFolderSheet != null || onSelectFolder != null) {
+                        IconButton(
+                            onClick = { onOpenFolderSheet?.invoke() ?: onSelectFolder?.invoke(null) },
+                            modifier = Modifier.testTag("btn_folder_menu")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Folder,
+                                contentDescription = "Seleccionar carpeta",
+                                tint = amber,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+
                     if (onToggleGridView != null) {
                         IconButton(
                             onClick = onToggleGridView,
@@ -158,9 +177,9 @@ fun AppleNotesTopBar(
                 }
             }
 
-            // Apple Search Bar
+            // Note JS Search Bar
             Spacer(modifier = Modifier.height(10.dp))
-            AppleSearchBar(
+            NoteJsSearchBar(
                 query = query,
                 onQueryChange = onQueryChange,
                 placeholderText = "Buscar en notas...",

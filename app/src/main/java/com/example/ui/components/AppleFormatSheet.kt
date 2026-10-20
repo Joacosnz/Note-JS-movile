@@ -30,27 +30,27 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.AppleHighlightBlue
-import com.example.ui.theme.AppleHighlightMint
-import com.example.ui.theme.AppleHighlightOrange
-import com.example.ui.theme.AppleHighlightPink
-import com.example.ui.theme.AppleHighlightPurple
-import com.example.ui.theme.AppleNotesAmber
+import com.example.ui.theme.NoteJsHighlightBlue
+import com.example.ui.theme.NoteJsHighlightMint
+import com.example.ui.theme.NoteJsHighlightOrange
+import com.example.ui.theme.NoteJsHighlightPink
+import com.example.ui.theme.NoteJsHighlightPurple
+import com.example.ui.theme.NoteJsAmber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppleFormatSheet(
+fun NoteJsFormatSheet(
     sheetState: SheetState,
     onApplyStyle: (String) -> Unit,
     onApplyHighlight: (Color) -> Unit,
     onDismiss: () -> Unit
 ) {
     val highlightColors = listOf(
-        AppleHighlightPurple,
-        AppleHighlightPink,
-        AppleHighlightOrange,
-        AppleHighlightMint,
-        AppleHighlightBlue
+        NoteJsHighlightPurple,
+        NoteJsHighlightPink,
+        NoteJsHighlightOrange,
+        NoteJsHighlightMint,
+        NoteJsHighlightBlue
     )
 
     ModalBottomSheet(
@@ -138,9 +138,9 @@ fun AppleFormatSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Apple 5-color Highlighter row (from Apple Notes specification)
+            // Note JS 5-color Highlighter row (from Note JS specification)
             Text(
-                text = "Resaltador cromático Apple Notes",
+                text = "Resaltador cromático Note JS",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

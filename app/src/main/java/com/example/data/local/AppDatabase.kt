@@ -12,11 +12,12 @@ import com.example.data.local.dao.NoteDao
 import com.example.data.local.dao.SignatureDao
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.NoteEntity
+import com.example.data.local.entity.NoteFtsEntity
 import com.example.data.local.entity.SignatureEntity
 
 @Database(
-    entities = [NoteEntity::class, FolderEntity::class, SignatureEntity::class],
-    version = 11,
+    entities = [NoteEntity::class, NoteFtsEntity::class, FolderEntity::class, SignatureEntity::class],
+    version = 13,
     exportSchema = false,
 )
 @TypeConverters(UriConverters::class)
@@ -68,6 +69,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notes ADD COLUMN searchableText TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS `notes_fts` USING fts4(`title` TEXT NOT NULL, `searchableText` TEXT NOT NULL, content=`notes`)")
+                db.execSQL("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
+            }
+        }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notes ADD COLUMN syncEnabled INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -75,11 +90,22 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "auranotes_v3.db"
                 )
-                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        fun closeDatabase() {
+            synchronized(this) {
+                INSTANCE?.let {
+                    if (it.isOpen) {
+                        it.close()
+                    }
+                    INSTANCE = null
+                }
             }
         }
     }

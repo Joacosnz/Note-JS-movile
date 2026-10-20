@@ -143,7 +143,7 @@ fun SortBottomSheet(
     val isDark = isAppInDarkTheme()
     val haptic = LocalHapticFeedback.current
 
-    // Glassmorphism inspired Apple dark / light palette
+    // Glassmorphism inspired Note JS dark / light palette
     val sheetBackgroundColor = if (isDark) Color(0xFF1C1C1E) else Color(0xFFF2F2F7)
     val cardBackgroundColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
     val accentColor = MaterialTheme.colorScheme.primary

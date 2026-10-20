@@ -26,6 +26,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE (content LIKE '%' || :query || '%' OR title LIKE '%' || :query || '%' OR pdfExtractedText LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%') AND isTrashed = 0 ORDER BY isPinned DESC, updatedAt DESC")
     fun searchNotes(query: String): Flow<List<NoteEntity>>
 
+    @Query("SELECT notes.* FROM notes JOIN notes_fts ON notes.id = notes_fts.rowid WHERE notes_fts MATCH :searchQuery")
+    suspend fun searchNotesFts(searchQuery: String): List<NoteEntity>
+
     @Query("SELECT * FROM notes WHERE isTrashed = 1 ORDER BY updatedAt DESC")
     fun getTrashedNotes(): Flow<List<NoteEntity>>
 
@@ -55,6 +58,15 @@ interface NoteDao {
 
     @Query("DELETE FROM notes WHERE id IN (:ids)")
     suspend fun deletePermanentlyBatch(ids: List<Long>)
+
+    @Query("SELECT * FROM notes")
+    suspend fun getAllNotesList(): List<NoteEntity>
+
+    @Query("UPDATE notes SET folder = :newName WHERE LOWER(folder) = LOWER(:oldName)")
+    suspend fun renameFolderInNotes(oldName: String, newName: String)
+
+    @Query("UPDATE notes SET folder = '' WHERE LOWER(folder) = LOWER(:folderName)")
+    suspend fun clearFolderInNotes(folderName: String)
 
     @Query("UPDATE notes SET folder = :folder WHERE id IN (:ids)")
     suspend fun updateFolderBatch(ids: List<Long>, folder: String)

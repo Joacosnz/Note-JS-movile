@@ -34,6 +34,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -60,8 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.NoteEntity
 import com.example.model.NoteBlock
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
 import com.example.ui.theme.isAppInDarkTheme
 import com.example.util.NoteBlockSerializer
 import kotlinx.coroutines.launch
@@ -94,7 +96,7 @@ fun NoteReminderBottomSheet(
     onCancelReminder: () -> Unit
 ) {
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val haptics = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -229,6 +231,7 @@ fun NoteReminderBottomSheet(
                 label = { Text("Título de la nota") },
                 placeholder = { Text("Añadir título...") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = amber,
@@ -245,6 +248,7 @@ fun NoteReminderBottomSheet(
                 label = { Text("Contenido de la nota") },
                 placeholder = { Text("Detalle o recordatorio...") },
                 maxLines = 3,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = amber,

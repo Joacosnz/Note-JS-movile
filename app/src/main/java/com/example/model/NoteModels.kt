@@ -51,8 +51,8 @@ object NoteColors {
             name = "Predeterminado",
             lightBg = Color(0xFFFFFFFF),
             lightBorder = Color(0xFFE5E5EA),
-            darkBg = Color(0xFF1C1C1E),
-            darkBorder = Color(0xFF38383A),
+            darkBg = Color(0xFF000000),
+            darkBorder = Color(0xFF2C2C2E),
             chipColor = Color(0xFFE5E5EA)
         ),
         NoteThemeColor(

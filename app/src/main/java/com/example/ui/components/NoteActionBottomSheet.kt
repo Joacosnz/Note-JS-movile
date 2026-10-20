@@ -74,8 +74,9 @@ fun NoteActionBottomSheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
+            val displayTitle = if (note.isLocked) "Nota Protegida" else note.title.ifBlank { "Opciones de nota" }
             Text(
-                text = note.title.ifBlank { "Opciones de nota" },
+                text = displayTitle,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1
             )
@@ -169,7 +170,7 @@ fun NoteActionBottomSheet(
 
             ActionRowItem(
                 icon = if (note.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                text = if (note.isLocked) "Quitar protección PIN" else "Proteger con PIN",
+                text = if (note.isLocked) "Quitar de Carpeta Privada" else "Mover a Carpeta Privada",
                 onClick = {
                     onLockToggle()
                     onDismiss()

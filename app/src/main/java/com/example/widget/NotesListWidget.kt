@@ -83,7 +83,7 @@ private fun NotesListContent(notes: List<NoteEntity>) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "AuraNotes",
+                text = "Note JS",
                 style = TextStyle(
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,

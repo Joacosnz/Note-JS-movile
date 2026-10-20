@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.example.data.local.entity.FolderEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -13,8 +14,14 @@ interface FolderDao {
     @Query("SELECT * FROM folders ORDER BY createdAt ASC")
     fun getAllFolders(): Flow<List<FolderEntity>>
 
+    @Query("SELECT * FROM folders")
+    suspend fun getAllFoldersList(): List<FolderEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFolder(folder: FolderEntity): Long
+
+    @Update
+    suspend fun updateFolder(folder: FolderEntity)
 
     @Delete
     suspend fun deleteFolder(folder: FolderEntity)

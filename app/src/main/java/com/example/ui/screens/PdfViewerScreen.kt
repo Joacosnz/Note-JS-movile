@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -99,7 +100,21 @@ fun PdfViewerScreen(
     val coroutineScope = rememberCoroutineScope()
     val pdfLastModified by viewModel.pdfLastModified.collectAsState()
 
-    val file = remember(pdfPath) { File(pdfPath) }
+    val file = remember(pdfPath, context) {
+        val directFile = File(pdfPath)
+        if (directFile.exists()) {
+            directFile
+        } else if (pdfPath.startsWith("content://") || pdfPath.startsWith("file://")) {
+            try {
+                val uri = Uri.parse(pdfPath)
+                PdfHelper.copyPdfFromUri(context, uri, "opened_pdf.pdf") ?: directFile
+            } catch (e: Exception) {
+                directFile
+            }
+        } else {
+            directFile
+        }
+    }
     var pageCount by remember { mutableIntStateOf(1) }
     var currentPageIndex by remember { mutableIntStateOf(0) }
     var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }

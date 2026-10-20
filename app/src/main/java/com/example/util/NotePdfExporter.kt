@@ -18,7 +18,7 @@ import java.io.File
 import java.util.Locale
 
 /**
- * Motor de Exportación Inteligente para AuraNotes.
+ * Motor de Exportación Inteligente para Note JS.
  * Convierte una lista de NoteBlock en un archivo PDF paginado calculando
  * la altura de cada bloque antes de dibujarlo y forzando saltos de página
  * para evitar que los elementos se corten por la mitad.

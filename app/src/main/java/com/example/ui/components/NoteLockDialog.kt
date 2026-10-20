@@ -6,33 +6,66 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.util.BiometricHelper
 
 @Composable
 fun NoteLockDialog(
     isSettingPin: Boolean,
     onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onUnlockSuccess: (() -> Unit)? = null
 ) {
     var pinText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val isBiometricAvailable = remember(context) { BiometricHelper.isBiometricAvailable(context) }
+
+    val triggerBiometric = {
+        if (!isSettingPin && isBiometricAvailable) {
+            BiometricHelper.authenticate(
+                context = context,
+                onSuccess = {
+                    if (onUnlockSuccess != null) {
+                        onUnlockSuccess()
+                    } else {
+                        onConfirm("")
+                    }
+                },
+                onError = {
+                    // Si el usuario cancela, falla la autenticación o presiona "Usar PIN",
+                    // se mantiene en pantalla el diálogo para ingresar el PIN manualmente.
+                }
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!isSettingPin && isBiometricAvailable) {
+            triggerBiometric()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -71,6 +104,17 @@ fun NoteLockDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     isError = errorMessage != null,
+                    trailingIcon = {
+                        if (!isSettingPin && isBiometricAvailable) {
+                            IconButton(onClick = { triggerBiometric() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Fingerprint,
+                                    contentDescription = "Autenticación biométrica",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    },
                     supportingText = {
                         if (errorMessage != null) {
                             Text(errorMessage!!, color = MaterialTheme.colorScheme.error)

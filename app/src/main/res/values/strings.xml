@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">AuraNotes</string>
+    <string name="app_name">Note JS</string>
     <string name="default_web_client_id">914458922626-kmk2frhfekcfje0hdk013tped5hmh9u1.apps.googleusercontent.com</string>
 
     <string name="shortcut_new_note_short">Crear Nota</string>

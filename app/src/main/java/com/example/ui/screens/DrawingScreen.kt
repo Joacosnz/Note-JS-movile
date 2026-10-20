@@ -70,8 +70,8 @@ import androidx.compose.ui.unit.sp
 import com.example.model.NoteType
 import com.example.model.PaperStyle
 import com.example.ui.components.PaperBackground
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
 import com.example.ui.theme.isAppInDarkTheme
 import com.example.viewmodel.NotesViewModel
 import org.json.JSONArray
@@ -155,7 +155,7 @@ fun DrawingScreen(
     modifier: Modifier = Modifier
 ) {
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val haptics = LocalHapticFeedback.current
 
     var title by remember { mutableStateOf("Boceto") }
@@ -169,7 +169,7 @@ fun DrawingScreen(
     val undoneStrokes = remember { mutableStateListOf<Stroke>() }
     var currentPoints by remember { mutableStateOf(emptyList<Offset>()) }
 
-    val applePalette = remember {
+    val notejsPalette = remember {
         listOf(
             Color.Yellow,
             Color(0xFF000000),
@@ -202,7 +202,7 @@ fun DrawingScreen(
         viewModel.saveNote(
             id = noteId,
             title = title,
-            content = "Boceto de Apple Notes (${strokes.size} trazos)",
+            content = "Boceto de Note JS (${strokes.size} trazos)",
             noteType = NoteType.DRAWING,
             paperStyle = paperStyle.name,
             drawingData = json
@@ -215,7 +215,7 @@ fun DrawingScreen(
         viewModel.saveNote(
             id = noteId,
             title = title,
-            content = if (strokes.isNotEmpty()) "Boceto de Apple Notes (${strokes.size} trazos)" else "",
+            content = if (strokes.isNotEmpty()) "Boceto de Note JS (${strokes.size} trazos)" else "",
             noteType = NoteType.TEXT,
             paperStyle = paperStyle.name,
             drawingData = json
@@ -397,7 +397,7 @@ fun DrawingScreen(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                items(applePalette) { color ->
+                                items(notejsPalette) { color ->
                                     val isSelected = selectedColor == color
                                     Box(
                                         modifier = Modifier
@@ -468,7 +468,7 @@ fun DrawingScreen(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .testTag("apple_drawing_canvas")
+                    .testTag("notejs_drawing_canvas")
                     .pointerInput(currentTool, selectedColor, strokeWidth) {
                         detectDragGestures(
                             onDragStart = { offset ->

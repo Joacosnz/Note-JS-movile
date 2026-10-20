@@ -35,5 +35,7 @@ data class NoteEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val imageUri: Uri? = null, // <- Añadido para guardar el URI de Photo Picker
     val pdfExtractedText: String? = null, // <- Para Búsqueda Profunda (Deep Search) en PDFs
-    val remoteUrl: String = "" // <- URL remota del archivo adjunto en Firebase Cloud Storage
+    val remoteUrl: String = "", // <- URL remota del archivo adjunto en Firebase Cloud Storage
+    val searchableText: String = "", // <- Texto aplanado centralizado para FTS4
+    val syncEnabled: Boolean = true
 )

@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import com.example.ui.theme.isAppInDarkTheme
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -8,11 +10,15 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,21 +27,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.TableChart
-import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.material.icons.filled.ViewStream
+import androidx.compose.material.icons.rounded.Done
+import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,9 +53,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SecondaryTabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,10 +71,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,8 +109,11 @@ fun TableBlockItem(
     block: NoteBlock.Table,
     onUpdateBlock: (NoteBlock.Table) -> Unit,
     onDeleteBlock: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPaperDark: Boolean = isAppInDarkTheme()
 ) {
+    val cellTextColor = if (isPaperDark) Color.White else Color(0xFF1C1C1E)
+    val cellHintColor = if (isPaperDark) Color.LightGray else Color.DarkGray
     var isEditingTable by remember { mutableStateOf(false) }
     var selectedCells by remember { mutableStateOf<Set<Pair<Int, Int>>>(setOf(Pair(0, 0))) }
     var showOptionsSheet by remember { mutableStateOf(false) }
@@ -137,24 +147,29 @@ fun TableBlockItem(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.TableChart,
+                        imageVector = Icons.Rounded.TableChart,
                         contentDescription = null,
                         tint = amberColor,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Text(
                         text = if (isEditingTable) "Editando Tabla (${block.rows}×${block.cols})" else "Tabla (${block.rows}×${block.cols})",
-                        style = MaterialTheme.typography.labelLarge,
+                        fontSize = 15.sp,
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     if (block.hasHeaderRow) {
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = amberColor.copy(alpha = 0.15f)
+                            color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
                                 text = "Encabezado",
@@ -181,18 +196,42 @@ fun TableBlockItem(
                     }
                 }
 
+                Spacer(modifier = Modifier.width(6.dp))
+
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isEditingTable) {
-                        TextButton(
+                        Surface(
                             onClick = {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 isEditingTable = false
-                            }
+                            },
+                            shape = RoundedCornerShape(50),
+                            color = amberColor,
+                            contentColor = Color.Black
                         ) {
-                            Text("Listo", color = amberColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Listo",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Listo",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
                     } else {
                         IconButton(
@@ -268,71 +307,86 @@ fun TableBlockItem(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                .horizontalScroll(rememberScrollState())
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(
+                            OutlinedButton(
                                 onClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onUpdateBlock(block.addRowAbove(r))
-                                }
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(32.dp),
+                                border = BorderStroke(1.dp, amberColor.copy(alpha = 0.6f))
                             ) {
-                                Text("+ Fila ↑", fontSize = 11.sp, color = amberColor)
+                                Text("+ Fila ↑", fontSize = 11.sp, color = amberColor, maxLines = 1, softWrap = false, fontWeight = FontWeight.Medium)
                             }
-                            TextButton(
+
+                            OutlinedButton(
                                 onClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onUpdateBlock(block.addRowBelow(r))
-                                }
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(32.dp),
+                                border = BorderStroke(1.dp, amberColor.copy(alpha = 0.6f))
                             ) {
-                                Text("+ Fila ↓", fontSize = 11.sp, color = amberColor)
+                                Text("+ Fila ↓", fontSize = 11.sp, color = amberColor, maxLines = 1, softWrap = false, fontWeight = FontWeight.Medium)
                             }
+
                             if (block.rows > 1) {
-                                TextButton(
+                                OutlinedButton(
                                     onClick = {
                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onUpdateBlock(block.deleteRow(r))
                                         selectedCells = setOf(Pair(0, 0))
-                                    }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(32.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
                                 ) {
-                                    Text("- Fila", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                    Text("- Fila", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false, fontWeight = FontWeight.Medium)
                                 }
                             }
 
-                            HorizontalDivider(
-                                modifier = Modifier
-                                    .height(16.dp)
-                                    .width(1.dp)
-                                    .padding(horizontal = 2.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
-
-                            TextButton(
+                            OutlinedButton(
                                 onClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onUpdateBlock(block.addColumnLeft(c))
-                                }
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(32.dp),
+                                border = BorderStroke(1.dp, amberColor.copy(alpha = 0.6f))
                             ) {
-                                Text("+ Col ←", fontSize = 11.sp, color = amberColor)
+                                Text("+ Col ←", fontSize = 11.sp, color = amberColor, maxLines = 1, softWrap = false, fontWeight = FontWeight.Medium)
                             }
-                            TextButton(
+
+                            OutlinedButton(
                                 onClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onUpdateBlock(block.addColumnRight(c))
-                                }
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(32.dp),
+                                border = BorderStroke(1.dp, amberColor.copy(alpha = 0.6f))
                             ) {
-                                Text("+ Col →", fontSize = 11.sp, color = amberColor)
+                                Text("+ Col →", fontSize = 11.sp, color = amberColor, maxLines = 1, softWrap = false, fontWeight = FontWeight.Medium)
                             }
+
                             if (block.cols > 1) {
-                                TextButton(
+                                OutlinedButton(
                                     onClick = {
                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onUpdateBlock(block.deleteColumn(c))
                                         selectedCells = setOf(Pair(0, 0))
-                                    }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(32.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
                                 ) {
-                                    Text("- Col", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                    Text("- Col", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false, fontWeight = FontWeight.Medium)
                                 }
                             }
                         }
@@ -345,15 +399,14 @@ fun TableBlockItem(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(if (block.cols > 3) Modifier.horizontalScroll(scrollState) else Modifier)
+                    .horizontalScroll(scrollState)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     for (rIndex in 0 until block.rows) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.height(IntrinsicSize.Min),
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             for (cIndex in 0 until block.cols) {
@@ -373,21 +426,20 @@ fun TableBlockItem(
                                 }
 
                                 val isSelected = selectedCells.contains(Pair(rIndex, cIndex))
+                                val cellShape = RoundedCornerShape(4.dp)
 
                                 Box(
                                     modifier = Modifier
-                                        .then(
-                                            if (block.cols > 3) Modifier.widthIn(min = 110.dp)
-                                            else Modifier.weight(1f)
-                                        )
-                                        .clip(RoundedCornerShape(6.dp))
+                                        .widthIn(min = 120.dp, max = 250.dp)
+                                        .fillMaxHeight()
+                                        .clip(cellShape)
                                         .background(baseBg)
                                         .border(
                                             width = if (isSelected && isEditingTable) 2.dp else 0.5.dp,
                                             color = if (isSelected && isEditingTable) amberColor
                                             else if (isHeader) amberColor.copy(alpha = 0.5f)
                                             else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                                            shape = RoundedCornerShape(6.dp)
+                                            shape = cellShape
                                         )
                                         .clickable {
                                             selectedCells = if (selectedCells.contains(Pair(rIndex, cIndex)) && selectedCells.size > 1) {
@@ -396,7 +448,7 @@ fun TableBlockItem(
                                                 selectedCells + Pair(rIndex, cIndex)
                                             }
                                         }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        .padding(8.dp),
                                     contentAlignment = Alignment.CenterStart
                                 ) {
                                     BasicTextField(
@@ -405,10 +457,11 @@ fun TableBlockItem(
                                             onUpdateBlock(block.updateCellText(rIndex, cIndex, newText))
                                         },
                                         textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            color = cellTextColor,
                                             fontSize = 14.sp,
                                             fontWeight = if (isHeader) FontWeight.Bold else FontWeight.Normal
                                         ),
+                                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                                         cursorBrush = SolidColor(amberColor),
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -422,7 +475,7 @@ fun TableBlockItem(
                                                 Text(
                                                     text = if (isHeader) "Encabezado" else "",
                                                     style = MaterialTheme.typography.bodyMedium.copy(
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                                        color = cellHintColor.copy(alpha = 0.5f),
                                                         fontSize = 13.sp,
                                                         fontWeight = if (isHeader) FontWeight.Bold else FontWeight.Normal
                                                     )
@@ -489,6 +542,7 @@ fun TableOptionsBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
+                .navigationBarsPadding()
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -557,8 +611,9 @@ fun TableOptionsBottomSheet(
 
             // Segmented Tabs Navigation
             val tabs = listOf("Estilo y Colores", "Estructura", "Formato y Datos")
-            SecondaryTabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
+                edgePadding = 0.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 tabs.forEachIndexed { index, title ->
@@ -569,6 +624,8 @@ fun TableOptionsBottomSheet(
                             Text(
                                 text = title,
                                 fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
                             )
                         }
@@ -725,7 +782,7 @@ fun TableOptionsBottomSheet(
 
                         // 3. COMPACT INTERACTIVE CELL MAP
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = "Mapa de Selección Libre (Toca celdas para añadir):",
@@ -734,54 +791,59 @@ fun TableOptionsBottomSheet(
                                 fontWeight = FontWeight.Medium
                             )
 
-                            // Render interactive matrix grid for multi-selection inside scrollable box
-                            val gridScrollState = rememberScrollState()
+                            // Render interactive matrix grid for multi-selection as clean cells with uniform height and text truncation
+                            val gridHorizontalScroll = rememberScrollState()
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 140.dp)
+                                    .heightIn(max = 160.dp)
                                     .verticalScroll(rememberScrollState())
-                                    .then(if (block.cols > 4) Modifier.horizontalScroll(gridScrollState) else Modifier)
+                                    .then(if (block.cols > 8) Modifier.horizontalScroll(gridHorizontalScroll) else Modifier)
                             ) {
                                 Surface(
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(6.dp),
-                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         for (rIdx in 0 until block.rows) {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
                                                 for (cIdx in 0 until block.cols) {
                                                     val cell = block.matrix.getOrNull(rIdx)?.getOrNull(cIdx)
                                                     val cellPair = Pair(rIdx, cIdx)
                                                     val isSelected = selectedCells.contains(cellPair)
 
-                                                    val bg = if (cell != null && !cell.backgroundColorHex.isNullOrBlank()) {
-                                                        runCatching { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)) }
-                                                            .getOrDefault(amberColor.copy(alpha = 0.3f))
+                                                    val bg = if (isSelected) {
+                                                        if (cell != null && !cell.backgroundColorHex.isNullOrBlank()) {
+                                                            runCatching { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)) }
+                                                                .getOrDefault(amberColor)
+                                                        } else {
+                                                            amberColor
+                                                        }
                                                     } else {
-                                                        MaterialTheme.colorScheme.surface
+                                                        if (cell != null && !cell.backgroundColorHex.isNullOrBlank()) {
+                                                            runCatching { Color(android.graphics.Color.parseColor(cell.backgroundColorHex)).copy(alpha = 0.35f) }
+                                                                .getOrDefault(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                                        }
                                                     }
 
                                                     Box(
                                                         modifier = Modifier
-                                                            .then(
-                                                                if (block.cols > 4) Modifier.width(55.dp)
-                                                                else Modifier.weight(1f)
-                                                            )
                                                             .height(28.dp)
-                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .widthIn(min = 28.dp, max = 56.dp)
+                                                            .clip(RoundedCornerShape(4.dp))
                                                             .background(bg)
                                                             .border(
-                                                                width = if (isSelected) 2.dp else 0.5.dp,
-                                                                color = if (isSelected) amberColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                                                shape = RoundedCornerShape(6.dp)
+                                                                width = if (isSelected) 1.5.dp else 0.5.dp,
+                                                                color = if (isSelected) amberColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                                                shape = RoundedCornerShape(4.dp)
                                                             )
                                                             .clickable {
                                                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -792,24 +854,33 @@ fun TableOptionsBottomSheet(
                                                                 }
                                                                 onSelectCellsChange(nextSelection)
                                                             }
-                                                            .padding(2.dp),
+                                                            .padding(horizontal = 2.dp),
                                                         contentAlignment = Alignment.Center
                                                     ) {
-                                                        if (isSelected) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Check,
-                                                                contentDescription = null,
-                                                                tint = if (cell?.backgroundColorHex != null) Color.White else amberColor,
-                                                                modifier = Modifier.size(14.dp)
-                                                            )
-                                                        } else {
-                                                            Text(
-                                                                text = cell?.text?.take(3) ?: "",
-                                                                fontSize = 9.sp,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                            )
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.Center
+                                                        ) {
+                                                            if (isSelected) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Check,
+                                                                    contentDescription = "Seleccionada",
+                                                                    tint = Color.Black,
+                                                                    modifier = Modifier.size(12.dp)
+                                                                )
+                                                            }
+                                                            if (!cell?.text.isNullOrBlank()) {
+                                                                Text(
+                                                                    text = cell.text,
+                                                                    fontSize = 11.sp,
+                                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                                    color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis,
+                                                                    softWrap = false,
+                                                                    textAlign = TextAlign.Center
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -865,8 +936,8 @@ fun TableOptionsBottomSheet(
 
                                             Box(
                                                 modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .size(24.dp)
+                                                    .clip(RoundedCornerShape(4.dp))
                                                     .background(
                                                         if (isHighlighted) amberColor.copy(alpha = 0.85f)
                                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -874,7 +945,7 @@ fun TableOptionsBottomSheet(
                                                     .border(
                                                         width = if (isHighlighted) 1.5.dp else 0.5.dp,
                                                         color = if (isHighlighted) amberColor else MaterialTheme.colorScheme.outlineVariant,
-                                                        shape = RoundedCornerShape(6.dp)
+                                                        shape = RoundedCornerShape(4.dp)
                                                     )
                                                     .clickable {
                                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -900,54 +971,109 @@ fun TableOptionsBottomSheet(
                             color = amberColor
                         )
 
+                        // Row 1: Add Row buttons
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             OutlinedButton(
-                                onClick = { onUpdateBlock(block.addRowAbove(r)) },
-                                modifier = Modifier.weight(1f)
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onUpdateBlock(block.addRowAbove(r))
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text("+ Fila ↑", fontSize = 11.sp)
+                                Text("+ Fila ↑", fontSize = 12.sp, maxLines = 1)
                             }
                             OutlinedButton(
-                                onClick = { onUpdateBlock(block.addRowBelow(r)) },
-                                modifier = Modifier.weight(1f)
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onUpdateBlock(block.addRowBelow(r))
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text("+ Fila ↓", fontSize = 11.sp)
-                            }
-                            if (block.rows > 1) {
-                                OutlinedButton(
-                                    onClick = { onUpdateBlock(block.deleteRow(r)) },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("- Eliminar Fila", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                                }
+                                Text("+ Fila ↓", fontSize = 12.sp, maxLines = 1)
                             }
                         }
 
+                        // Row 2: Add Column buttons
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             OutlinedButton(
-                                onClick = { onUpdateBlock(block.addColumnLeft(c)) },
-                                modifier = Modifier.weight(1f)
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onUpdateBlock(block.addColumnLeft(c))
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text("+ Col Izq", fontSize = 11.sp)
+                                Text("+ Col ←", fontSize = 12.sp, maxLines = 1)
                             }
                             OutlinedButton(
-                                onClick = { onUpdateBlock(block.addColumnRight(c)) },
-                                modifier = Modifier.weight(1f)
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onUpdateBlock(block.addColumnRight(c))
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text("+ Col Der", fontSize = 11.sp)
+                                Text("+ Col →", fontSize = 12.sp, maxLines = 1)
                             }
-                            if (block.cols > 1) {
-                                OutlinedButton(
-                                    onClick = { onUpdateBlock(block.deleteColumn(c)) },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("- Eliminar Col", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        }
+
+                        // Row 3: Delete Row & Delete Column buttons (grouped in a Row with equal .weight(1f))
+                        if (block.rows > 1 || block.cols > 1) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (block.rows > 1) {
+                                    Button(
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onUpdateBlock(block.deleteRow(r))
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteOutline,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("- Fila", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    }
+                                }
+                                if (block.cols > 1) {
+                                    Button(
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onUpdateBlock(block.deleteColumn(c))
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteOutline,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("- Col", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    }
                                 }
                             }
                         }

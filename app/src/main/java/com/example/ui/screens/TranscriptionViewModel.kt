@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.example.util.getKeyboardLanguage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +29,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import java.nio.ByteOrder
-import java.util.Locale
 import kotlin.math.sqrt
 
 class TranscriptionViewModel(application: Application) : AndroidViewModel(application) {
@@ -172,10 +172,10 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
 
                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        val spanishLang = if (Locale.getDefault().language == "es") Locale.getDefault().toLanguageTag() else "es-ES"
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, spanishLang)
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, spanishLang)
-                        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("es-ES", "es-AR", "es-MX", "es"))
+                        val lang = getKeyboardLanguage(getApplication())
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
+                        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf(lang, "es-ES", "es-AR", "es-MX", "es"))
                         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                         putExtra("android.speech.extra.PROFANITY_FILTER", false)

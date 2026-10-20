@@ -84,6 +84,9 @@ import androidx.compose.ui.Alignment
 import android.content.ContextWrapper
 import com.google.mlkit.vision.documentscanner.*
 import com.example.ui.components.findActivity
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
@@ -101,21 +104,23 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.NoteEntity
 import com.example.model.NoteType
-import com.example.ui.components.AppleBottomToolbar
-import com.example.ui.components.AppleNoteRow
-import com.example.ui.components.AppleNotesTopBar
+import com.example.ui.components.NoteJsBottomToolbar
+import com.example.ui.components.NoteJsNoteRow
+import com.example.ui.components.NoteJsTopBar
 import com.example.ui.components.BatchActionBottomBar
 import com.example.ui.components.BatchDeleteDialog
 import com.example.ui.components.BatchFolderBottomSheet
 import com.example.ui.components.BatchTagDialog
+import com.example.ui.components.FolderTreeBottomSheet
 import com.example.ui.components.NoteActionBottomSheet
 import com.example.ui.components.NoteCard
-import com.example.ui.components.NoteLockDialog
+import com.example.ui.components.NoteContentPreview
 import com.example.ui.components.NoteReminderBottomSheet
 import com.example.ui.components.SortBottomSheet
 import com.example.ui.components.TagFilterRow
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.utils.BiometricHelper
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
 import com.example.viewmodel.NavTab
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
@@ -132,18 +137,18 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val context = LocalContext.current
 
     val snackbarHostState = remember { SnackbarHostState() }
     val sortSheetState = rememberModalBottomSheetState()
     val actionSheetState = rememberModalBottomSheetState()
     var showSortSheet by remember { mutableStateOf(false) }
+    var showFolderSheet by remember { mutableStateOf(false) }
 
     var selectedNoteForAction by remember { mutableStateOf<NoteEntity?>(null) }
     var noteForReminder by remember { mutableStateOf<NoteEntity?>(null) }
-    var noteToUnlock by remember { mutableStateOf<NoteEntity?>(null) }
-    var noteToSetPin by remember { mutableStateOf<NoteEntity?>(null) }
+    var showQuickReminderSheet by remember { mutableStateOf(false) }
 
     // Batch Action Dialog States
     var showBatchTagDialog by remember { mutableStateOf(false) }
@@ -154,27 +159,6 @@ fun HomeScreen(
     var previewNote by remember { mutableStateOf<NoteEntity?>(null) }
     var scannedPdfUri by remember { mutableStateOf<Uri?>(null) }
 
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let {
-            viewModel.createNoteWithPdf(it) { newNoteId ->
-                viewModel.navigateTo(Screen.Editor(noteId = newNoteId))
-            }
-        }
-    }
-
-    val scannerOptions = remember {
-        GmsDocumentScannerOptions.Builder()
-            .setGalleryImportAllowed(true)
-            .setPageLimit(15)
-            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
-            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
-            .build()
-    }
-    val scanner = remember(scannerOptions) {
-        GmsDocumentScanning.getClient(scannerOptions)
-    }
     val homeScannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -219,8 +203,29 @@ fun HomeScreen(
         }
     }
 
+    LaunchedEffect(uiState.activeTab, uiState.selectedFolder, uiState.selectedTag) {
+        if (uiState.activeTab != NavTab.NOTES ||
+            uiState.selectedFolder != null ||
+            (uiState.selectedTag != null &&
+                !uiState.selectedTag.equals("🔒 Privado", ignoreCase = true) &&
+                !uiState.selectedTag.equals("🔒 Privadas", ignoreCase = true) &&
+                !uiState.selectedTag.equals("Bloqueadas", ignoreCase = true))
+        ) {
+            viewModel.closePrivateFolder()
+        }
+    }
+
+    val isLockedTabSelected = uiState.selectedTag.equals("🔒 Privado", ignoreCase = true) ||
+        uiState.selectedTag.equals("🔒 Privadas", ignoreCase = true) ||
+        uiState.selectedTag.equals("Bloqueadas", ignoreCase = true) ||
+        uiState.selectedTag.equals("Privado", ignoreCase = true)
     val currentTitle = when {
-        uiState.selectedFolder != null -> uiState.selectedFolder!!
+        uiState.selectedFolder != null &&
+            !uiState.selectedFolder.equals("Todas", ignoreCase = true) &&
+            !uiState.selectedFolder.equals("Todas las notas", ignoreCase = true) -> uiState.selectedFolder!!
+        isLockedTabSelected -> "Notas Privadas"
+        uiState.selectedTag != null &&
+            !uiState.selectedTag.equals("Todas", ignoreCase = true) -> "#${uiState.selectedTag}"
         uiState.activeTab == NavTab.NOTES -> "Notas"
         uiState.activeTab == NavTab.REMINDERS -> "Con recordatorio"
         uiState.activeTab == NavTab.ARCHIVED -> "Archivadas"
@@ -233,6 +238,7 @@ fun HomeScreen(
         NavTab.REMINDERS -> uiState.remindersNotes
         NavTab.ARCHIVED -> uiState.archivedNotes
         NavTab.TRASH -> uiState.trashedNotes
+        NavTab.PDF_LIBRARY -> uiState.activeNotes
     }
     val currentListIds = currentList.map { it.id }
 
@@ -244,7 +250,7 @@ fun HomeScreen(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 Column(modifier = Modifier.statusBarsPadding()) {
-                    AppleNotesTopBar(
+                    NoteJsTopBar(
                         title = currentTitle,
                         query = uiState.searchQuery,
                         onQueryChange = { viewModel.setSearchQuery(it) },
@@ -256,15 +262,39 @@ fun HomeScreen(
                         onDeselectAll = { viewModel.deselectAllNotes() },
                         onOpenSettings = { viewModel.navigateTo(Screen.Settings) },
                         isGridView = uiState.isGridView,
-                        onToggleGridView = { viewModel.toggleViewMode() }
+                        onToggleGridView = { viewModel.toggleViewMode() },
+                        availableFolders = uiState.availableFolders,
+                        selectedFolder = uiState.selectedFolder,
+                        onSelectFolder = { viewModel.selectFolder(it) },
+                        onOpenFolderSheet = { showFolderSheet = true }
                     )
 
                     if (!uiState.isSelectionMode) {
                         if (uiState.activeTab == NavTab.NOTES) {
+                            val userFolders = uiState.availableFolders.filter {
+                                !it.equals("Notas", ignoreCase = true) && !it.equals("Todas las notas", ignoreCase = true)
+                            }
                             TagFilterRow(
-                                tags = uiState.availableTags,
+                                folders = userFolders,
+                                tags = uiState.availableTags.filter { it != "Todas" },
+                                selectedFolder = uiState.selectedFolder,
                                 selectedTag = uiState.selectedTag,
-                                onTagSelected = { viewModel.selectTag(it) },
+                                onFolderSelected = { viewModel.selectFolder(it) },
+                                onTagSelected = { tag ->
+                                    if (tag.equals("🔒 Privado", ignoreCase = true) || tag.equals("🔒 Privadas", ignoreCase = true) || tag.equals("Bloqueadas", ignoreCase = true)) {
+                                        BiometricHelper.authenticate(
+                                            context = context,
+                                            onSuccess = { viewModel.openPrivateFolder() },
+                                            onError = {}
+                                        )
+                                    } else {
+                                        viewModel.selectTag(tag)
+                                    }
+                                },
+                                onClearFilters = {
+                                    viewModel.selectFolder(null)
+                                    viewModel.selectTag(null)
+                                },
                                 onSortClick = { showSortSheet = true },
                                 modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                             )
@@ -279,7 +309,7 @@ fun HomeScreen(
                                     onClick = { showSortSheet = true },
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .testTag("apple_more_options")
+                                        .testTag("notejs_more_options")
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Sort,
@@ -310,21 +340,26 @@ fun HomeScreen(
                             val others = uiState.activeNotes.filter { !it.isPinned }
 
                             if (uiState.activeNotes.isEmpty()) {
-                                AppleEmptyState(
-                                    message = if (uiState.searchQuery.isNotBlank() || uiState.selectedTag != null)
+                                val isFiltered = uiState.searchQuery.isNotBlank() || uiState.selectedTag != null || uiState.selectedFolder != null
+                                NoteJsEmptyState(
+                                    message = if (isLockedTabSelected)
+                                        "Sin notas privadas"
+                                    else if (isFiltered)
                                         "No se encontraron notas"
                                     else
                                         "Sin notas",
-                                    submessage = if (uiState.searchQuery.isNotBlank() || uiState.selectedTag != null)
-                                        "Intenta con otra búsqueda o etiqueta."
+                                    submessage = if (isLockedTabSelected)
+                                        "Las notas que protejas con PIN aparecerán aquí."
+                                    else if (isFiltered)
+                                        "Intenta con otra búsqueda, carpeta o etiqueta."
                                     else
                                         "Toca '+' para crear tu primera nota."
                                 )
                             } else {
                                 if (uiState.isGridView) {
-                                    // iOS Gallery / Grid View
+                                    // Intelligent Adaptive Grid (Note JS style)
                                     LazyVerticalStaggeredGrid(
-                                        columns = StaggeredGridCells.Adaptive(minSize = 150.dp),
+                                        columns = StaggeredGridCells.Adaptive(minSize = 160.dp),
                                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                         verticalItemSpacing = 12.dp,
@@ -332,28 +367,29 @@ fun HomeScreen(
                                     ) {
                                         if (pinned.isNotEmpty()) {
                                             item(span = StaggeredGridItemSpan.FullLine) {
-                                                AppleSectionHeader("FIJADAS")
+                                                NoteJsSectionHeader("FIJADAS")
                                             }
                                             items(pinned, key = { it.id }) { note ->
                                                 NoteCard(
                                                     note = note,
                                                     isUnlocked = uiState.unlockedNoteIds.contains(note.id),
                                                     onClick = {
-                                                        openNoteOrUnlock(note, uiState.unlockedNoteIds, viewModel) {
-                                                            noteToUnlock = note
-                                                        }
+                                                        openNoteOrUnlock(note, viewModel)
                                                     },
                                                     onLongClick = { previewNote = note },
                                                     onTogglePin = { viewModel.togglePin(note) },
                                                     isSelectionMode = uiState.isSelectionMode,
                                                     isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                    onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
+                                                    onSelectToggle = { viewModel.toggleNoteSelection(note.id) },
+                                                    modifier = Modifier
+                                                        .animateItem(placementSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+                                                        .fillMaxWidth()
                                                 )
                                             }
 
                                             if (others.isNotEmpty()) {
                                                 item(span = StaggeredGridItemSpan.FullLine) {
-                                                    AppleSectionHeader("NOTAS")
+                                                    NoteJsSectionHeader("NOTAS")
                                                 }
                                             }
                                         }
@@ -363,15 +399,16 @@ fun HomeScreen(
                                                 note = note,
                                                 isUnlocked = uiState.unlockedNoteIds.contains(note.id),
                                                 onClick = {
-                                                    openNoteOrUnlock(note, uiState.unlockedNoteIds, viewModel) {
-                                                        noteToUnlock = note
-                                                    }
+                                                    openNoteOrUnlock(note, viewModel)
                                                 },
                                                 onLongClick = { previewNote = note },
                                                 onTogglePin = { viewModel.togglePin(note) },
                                                 isSelectionMode = uiState.isSelectionMode,
                                                 isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
+                                                onSelectToggle = { viewModel.toggleNoteSelection(note.id) },
+                                                modifier = Modifier
+                                                    .animateItem(placementSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+                                                    .fillMaxWidth()
                                             )
                                         }
                                     }
@@ -382,23 +419,23 @@ fun HomeScreen(
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         if (pinned.isNotEmpty()) {
-                                            item { AppleSectionHeader("FIJADAS") }
+                                            item { NoteJsSectionHeader("FIJADAS") }
                                             item {
                                                 Surface(
                                                     shape = RoundedCornerShape(12.dp),
                                                     color = MaterialTheme.colorScheme.surface,
-                                                    modifier = Modifier.fillMaxWidth()
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
                                                 ) {
                                                     Column {
                                                         pinned.forEachIndexed { index, note ->
-                                                            AppleNoteRow(
+                                                            NoteJsNoteRow(
                                                                 note = note,
                                                                 isUnlocked = uiState.unlockedNoteIds.contains(note.id),
                                                                 showDivider = index < pinned.size - 1,
                                                                 onClick = {
-                                                                    openNoteOrUnlock(note, uiState.unlockedNoteIds, viewModel) {
-                                                                        noteToUnlock = note
-                                                                    }
+                                                                    openNoteOrUnlock(note, viewModel)
                                                                 },
                                                                 onLongClick = { previewNote = note },
                                                                 isSelectionMode = uiState.isSelectionMode,
@@ -414,24 +451,24 @@ fun HomeScreen(
 
                                         if (others.isNotEmpty()) {
                                             item {
-                                                AppleSectionHeader(if (pinned.isNotEmpty()) "NOTAS" else "ANTERIORES")
+                                                NoteJsSectionHeader(if (pinned.isNotEmpty()) "NOTAS" else "ANTERIORES")
                                             }
                                             item {
                                                 Surface(
                                                     shape = RoundedCornerShape(12.dp),
                                                     color = MaterialTheme.colorScheme.surface,
-                                                    modifier = Modifier.fillMaxWidth()
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
                                                 ) {
                                                     Column {
                                                         others.forEachIndexed { index, note ->
-                                                            AppleNoteRow(
+                                                            NoteJsNoteRow(
                                                                 note = note,
                                                                 isUnlocked = uiState.unlockedNoteIds.contains(note.id),
                                                                 showDivider = index < others.size - 1,
                                                                 onClick = {
-                                                                    openNoteOrUnlock(note, uiState.unlockedNoteIds, viewModel) {
-                                                                        noteToUnlock = note
-                                                                    }
+                                                                    openNoteOrUnlock(note, viewModel)
                                                                 },
                                                                 onLongClick = { previewNote = note },
                                                                 isSelectionMode = uiState.isSelectionMode,
@@ -450,7 +487,7 @@ fun HomeScreen(
 
                         NavTab.REMINDERS -> {
                             if (uiState.remindersNotes.isEmpty()) {
-                                AppleEmptyState("No hay recordatorios pendientes", "Las notas con recordatorios programados aparecerán aquí.")
+                                NoteJsEmptyState("No hay recordatorios pendientes", "Las notas con recordatorios programados aparecerán aquí.")
                             } else {
                                 LazyColumn(
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
@@ -464,14 +501,12 @@ fun HomeScreen(
                                         ) {
                                             Column {
                                                 uiState.remindersNotes.forEachIndexed { index, note ->
-                                                    AppleNoteRow(
+                                                    NoteJsNoteRow(
                                                         note = note,
                                                         isUnlocked = uiState.unlockedNoteIds.contains(note.id),
                                                         showDivider = index < uiState.remindersNotes.size - 1,
                                                         onClick = {
-                                                            openNoteOrUnlock(note, uiState.unlockedNoteIds, viewModel) {
-                                                                noteToUnlock = note
-                                                            }
+                                                            openNoteOrUnlock(note, viewModel)
                                                         },
                                                         onLongClick = { previewNote = note },
                                                         isSelectionMode = uiState.isSelectionMode,
@@ -488,7 +523,7 @@ fun HomeScreen(
 
                         NavTab.ARCHIVED -> {
                             if (uiState.archivedNotes.isEmpty()) {
-                                AppleEmptyState("No hay notas archivadas", "Las notas que archives aparecerán aquí.")
+                                NoteJsEmptyState("No hay notas archivadas", "Las notas que archives aparecerán aquí.")
                             } else {
                                 LazyColumn(
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
@@ -502,7 +537,7 @@ fun HomeScreen(
                                         ) {
                                             Column {
                                                 uiState.archivedNotes.forEachIndexed { index, note ->
-                                                    AppleNoteRow(
+                                                    NoteJsNoteRow(
                                                         note = note,
                                                         isUnlocked = true,
                                                         showDivider = index < uiState.archivedNotes.size - 1,
@@ -545,7 +580,7 @@ fun HomeScreen(
                                 }
 
                                 if (uiState.trashedNotes.isEmpty()) {
-                                    AppleEmptyState("Papelera vacía", "No hay notas eliminadas.")
+                                    NoteJsEmptyState("Papelera vacía", "No hay notas eliminadas.")
                                 } else {
                                     LazyColumn(
                                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 100.dp),
@@ -559,7 +594,7 @@ fun HomeScreen(
                                             ) {
                                                 Column {
                                                     uiState.trashedNotes.forEachIndexed { index, note ->
-                                                        AppleNoteRow(
+                                                        NoteJsNoteRow(
                                                             note = note,
                                                             isUnlocked = true,
                                                             showDivider = index < uiState.trashedNotes.size - 1,
@@ -577,6 +612,11 @@ fun HomeScreen(
                                 }
                             }
                         }
+                        NavTab.PDF_LIBRARY -> {
+                            LaunchedEffect(Unit) {
+                                viewModel.navigateTo(Screen.PdfLibrary)
+                            }
+                        }
                     }
                 }
 
@@ -589,7 +629,7 @@ fun HomeScreen(
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 } else {
-                    AppleBottomToolbar(
+                    NoteJsBottomToolbar(
                         isHomeActive = true,
                         isFoldersActive = false,
                         onHomeClick = {
@@ -604,15 +644,31 @@ fun HomeScreen(
                             viewModel.navigateTo(Screen.Editor(0L, openVoiceDictation = true))
                         },
                         onReadPdf = {
-                            pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                            viewModel.navigateTo(Screen.PdfLibrary)
                         },
                         onScanDocument = {
-                            scanner.getStartScanIntent(context.findActivity()!!).addOnSuccessListener {
-                                homeScannerLauncher.launch(IntentSenderRequest.Builder(it).build())
+                            val activity = context.findActivity()
+                            if (activity != null) {
+                                val options = GmsDocumentScannerOptions.Builder()
+                                    .setGalleryImportAllowed(true)
+                                    .setPageLimit(15)
+                                    .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+                                    .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                                    .build()
+                                GmsDocumentScanning.getClient(options)
+                                    .getStartScanIntent(activity)
+                                    .addOnSuccessListener { intentSender ->
+                                        homeScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                                    }
+                                    .addOnFailureListener {
+                                        viewModel.navigateTo(Screen.Editor(0L, openDocumentScanner = true))
+                                    }
+                            } else {
+                                viewModel.navigateTo(Screen.Editor(0L, openDocumentScanner = true))
                             }
                         },
                         onReminder = {
-                            noteForReminder = NoteEntity()
+                            showQuickReminderSheet = true
                         },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
@@ -648,11 +704,8 @@ fun HomeScreen(
                     FloatingNoteCard(
                         note = currentNote,
                         onClick = {
-                            val id = currentNote.id
                             previewNote = null
-                            openNoteOrUnlock(currentNote, uiState.unlockedNoteIds, viewModel) {
-                                noteToUnlock = currentNote
-                            }
+                            openNoteOrUnlock(currentNote, viewModel)
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -674,7 +727,7 @@ fun HomeScreen(
                             previewNote = null
                         },
                         onLock = {
-                            noteToSetPin = currentNote
+                            viewModel.toggleLockNote(currentNote)
                             previewNote = null
                         },
                         onDelete = { 
@@ -693,6 +746,29 @@ fun HomeScreen(
             currentOption = uiState.sortOption,
             onOptionSelected = { viewModel.setSortOption(it) },
             onDismiss = { showSortSheet = false }
+        )
+    }
+
+    if (showFolderSheet) {
+        FolderTreeBottomSheet(
+            uiState = uiState,
+            onSelectFolder = { folder ->
+                viewModel.setFolderFilter(folder)
+                showFolderSheet = false
+            },
+            onSelectNote = { note ->
+                openNoteOrUnlock(note, viewModel)
+                showFolderSheet = false
+            },
+            onSelectPrivateFolder = {
+                showFolderSheet = false
+                BiometricHelper.authenticate(
+                    context = context,
+                    onSuccess = { viewModel.openPrivateFolder() },
+                    onError = {}
+                )
+            },
+            onDismiss = { showFolderSheet = false }
         )
     }
 
@@ -772,24 +848,8 @@ fun HomeScreen(
                 )
             },
             onLockToggle = {
-                if (note.isLocked) {
-                    viewModel.saveNote(
-                        id = note.id,
-                        title = note.title,
-                        content = note.content,
-                        noteType = NoteType.valueOf(note.noteType),
-                        colorIndex = note.colorIndex,
-                        paperStyle = note.paperStyle,
-                        isPinned = note.isPinned,
-                        isArchived = note.isArchived,
-                        tags = note.tags,
-                        folder = note.folder,
-                        isLocked = false,
-                        lockPin = ""
-                    )
-                } else {
-                    noteToSetPin = note
-                }
+                viewModel.toggleLockNote(note)
+                selectedNoteForAction = null
             },
             onShare = {
                 val sendIntent = Intent().apply {
@@ -812,52 +872,40 @@ fun HomeScreen(
             onDismiss = { noteForReminder = null },
             onSaveReminder = { timestamp, updatedTitle, updatedContent, offsets ->
                 viewModel.setReminder(context, note.id, timestamp, updatedTitle, updatedContent, offsets)
+                noteForReminder = null
             },
             onCancelReminder = {
                 viewModel.cancelReminder(context, note.id)
+                noteForReminder = null
             }
         )
     }
 
-    noteToSetPin?.let { note ->
-        NoteLockDialog(
-            isSettingPin = true,
-            onConfirm = { pin ->
+    if (showQuickReminderSheet) {
+        val dummyQuickNote = remember {
+            NoteEntity(
+                title = "Recordatorio rápido",
+                content = ""
+            )
+        }
+        NoteReminderBottomSheet(
+            note = dummyQuickNote,
+            onDismiss = { showQuickReminderSheet = false },
+            onSaveReminder = { timestamp, updatedTitle, updatedContent, offsets ->
+                val finalTitle = updatedTitle.ifBlank { "Recordatorio rápido" }
                 viewModel.saveNote(
-                    id = note.id,
-                    title = note.title,
-                    content = note.content,
-                    noteType = NoteType.valueOf(note.noteType),
-                    colorIndex = note.colorIndex,
-                    paperStyle = note.paperStyle,
-                    isPinned = note.isPinned,
-                    isArchived = note.isArchived,
-                    tags = note.tags,
-                    folder = note.folder,
-                    isLocked = true,
-                    lockPin = pin
-                )
-                noteToSetPin = null
-            },
-            onDismiss = { noteToSetPin = null }
-        )
-    }
-
-    noteToUnlock?.let { note ->
-        NoteLockDialog(
-            isSettingPin = false,
-            onConfirm = { pinInput ->
-                if (viewModel.unlockNote(note.id, pinInput, note.lockPin)) {
-                    val targetScreen = if (note.noteType == "DRAWING") {
-                        Screen.Drawing(note.id)
-                    } else {
-                        Screen.Editor(note.id, NoteType.valueOf(note.noteType))
+                    title = finalTitle,
+                    content = updatedContent,
+                    reminderTimestamp = timestamp,
+                    onSaved = { savedId ->
+                        viewModel.setReminder(context, savedId, timestamp, finalTitle, updatedContent, offsets)
                     }
-                    viewModel.navigateTo(targetScreen)
-                    noteToUnlock = null
-                }
+                )
+                showQuickReminderSheet = false
             },
-            onDismiss = { noteToUnlock = null }
+            onCancelReminder = {
+                showQuickReminderSheet = false
+            }
         )
     }
 
@@ -894,18 +942,12 @@ fun HomeScreen(
 
 private fun openNoteOrUnlock(
     note: NoteEntity,
-    unlockedIds: Set<Long>,
-    viewModel: NotesViewModel,
-    onNeedsUnlock: () -> Unit
+    viewModel: NotesViewModel
 ) {
-    if (note.isLocked && !unlockedIds.contains(note.id)) {
-        onNeedsUnlock()
+    if (note.noteType == "DRAWING") {
+        viewModel.navigateTo(Screen.Drawing(note.id))
     } else {
-        if (note.noteType == "DRAWING") {
-            viewModel.navigateTo(Screen.Drawing(note.id))
-        } else {
-            viewModel.navigateTo(Screen.Editor(note.id, NoteType.valueOf(note.noteType)))
-        }
+        viewModel.navigateTo(Screen.Editor(note.id, NoteType.valueOf(note.noteType)))
     }
 }
 
@@ -934,7 +976,7 @@ fun FloatingNoteCard(
                 .padding(20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            val title = note.title.ifBlank { "Sin Título" }
+            val title = if (note.isLocked) "Nota Protegida" else note.title.ifBlank { "Sin Título" }
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
@@ -953,80 +995,27 @@ fun FloatingNoteCard(
                 color = secondaryText
             )
             
-            val blocks = remember(note.content) { NoteBlockSerializer.deserialize(note.content) }
-            val checklistBlocks = remember(blocks) { blocks.filterIsInstance<NoteBlock.Checklist>() }
-            val completedCount = checklistBlocks.count { it.isChecked }
-            val totalChecklist = checklistBlocks.size
-
-            val snippetText = remember(blocks) {
-                val raw = blocks.filter { it !is NoteBlock.Drawing }.joinToString(" ") { block ->
-                    when (block) {
-                        is NoteBlock.Text -> block.content
-                        is NoteBlock.Checklist -> block.content
-                        is NoteBlock.SimpleList -> block.content
-                        is NoteBlock.CalloutBox -> block.content
-                        is NoteBlock.Drawing -> ""
-                        is NoteBlock.Table -> block.matrix.joinToString(" ") { row -> row.joinToString(" ") { it.text } }
-                        is PdfBlock -> "[PDF: ${block.fileName}]"
-                        is NoteBlock.ImageBlock -> "[Imagen]"
-                        is NoteBlock.Image -> "[Imagen: ${block.fileName}]"
-                        is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
-                    }
-                }
-                sanitizeNoteSnippet(raw)
-            }
-
             Spacer(modifier = Modifier.height(12.dp))
-            
-            if (totalChecklist > 0) {
-                Text(
-                    text = "☑️ $completedCount/$totalChecklist tareas completadas",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                checklistBlocks.take(12).forEach { item ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 1.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (item.isChecked) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
-                            contentDescription = null,
-                            tint = if (item.isChecked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = item.content,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 15.sp,
-                                textDecoration = if (item.isChecked) TextDecoration.LineThrough else null
-                            ),
-                            color = if (item.isChecked) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else textColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                if (totalChecklist > 12) {
+
+            if (note.isLocked) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Lock,
+                        contentDescription = "Nota Protegida",
+                        tint = if (isDark) com.example.ui.theme.NoteJsAmberDark else com.example.ui.theme.NoteJsAmber,
+                        modifier = Modifier.size(24.dp).padding(end = 8.dp)
+                    )
                     Text(
-                        text = "+ ${totalChecklist - 12} más...",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 18.dp, top = 2.dp)
+                        text = "Nota protegida",
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
+                        color = textColor.copy(alpha = 0.9f)
                     )
                 }
             } else {
-                val snippet = snippetText.ifBlank { "Sin contenido" }
-                Text(
-                    text = if (note.isLocked) "Contenido protegido" else snippet,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp),
-                    color = textColor.copy(alpha = 0.9f),
-                    maxLines = 16,
-                    overflow = TextOverflow.Ellipsis
+                NoteContentPreview(
+                    content = note.content,
+                    textColor = textColor,
+                    maxBlocks = 4
                 )
             }
         }
@@ -1043,7 +1032,7 @@ fun QuickActionsCard(
     onDelete: () -> Unit
 ) {
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
 
     Row(
         modifier = Modifier
@@ -1094,7 +1083,7 @@ fun shareNote(context: Context, note: NoteEntity) {
 
 
 @Composable
-private fun AppleSectionHeader(title: String) {
+private fun NoteJsSectionHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.labelSmall.copy(
@@ -1108,7 +1097,7 @@ private fun AppleSectionHeader(title: String) {
 }
 
 @Composable
-private fun AppleEmptyState(message: String, submessage: String) {
+private fun NoteJsEmptyState(message: String, submessage: String) {
     Box(
         modifier = Modifier
             .fillMaxSize()

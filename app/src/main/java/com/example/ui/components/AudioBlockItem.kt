@@ -34,6 +34,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AudioBlock
+import com.example.ui.theme.NoteJsAmberDark
+import com.example.ui.theme.isAppInDarkTheme
 import com.example.util.GeminiAudioTranscriber
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -64,7 +66,7 @@ fun AudioBlockItem(
             try {
                 val file = File(block.filePath)
                 if (file.exists()) {
-                    val result = GeminiAudioTranscriber.transcribeAudio(file)
+                    val result = GeminiAudioTranscriber.transcribeAudio(file = file, context = context)
                     block.transcription = result
                     transcriptionState = result
                 }
@@ -137,23 +139,26 @@ fun AudioBlockItem(
             .testTag("audio_block_player")
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            val isDark = isAppInDarkTheme()
+            val micColor = if (isDark) NoteJsAmberDark else Color(0xFF1A365D)
+
             // A. Fila del Reproductor
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Ícono de micrófono azul índigo pulido
+                // Ícono de micrófono
                 Box(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1A365D).copy(alpha = 0.1f)),
+                        .background(micColor.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
                         contentDescription = "Nota de voz",
-                        tint = Color(0xFF1A365D),
+                        tint = micColor,
                         modifier = Modifier.size(24.dp)
                     )
                 }

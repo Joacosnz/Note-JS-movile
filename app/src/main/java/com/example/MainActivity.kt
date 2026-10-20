@@ -2,9 +2,9 @@ package com.example
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,6 +28,7 @@ import com.example.ui.screens.DrawingScreen
 import com.example.ui.screens.FoldersScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.NoteEditorScreen
+import com.example.ui.screens.PdfLibraryScreen
 import com.example.ui.screens.PdfViewerScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
@@ -35,27 +36,37 @@ import com.example.util.ThemeMode
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    companion object {
+        const val ACTION_QUICK_NOTE = "com.example.ACTION_QUICK_NOTE"
+        const val ACTION_QUICK_VOICE = "com.example.ACTION_QUICK_VOICE"
+        const val ACTION_QUICK_SCAN = "com.example.ACTION_QUICK_SCAN"
+    }
+
     private var openNoteIdState by mutableLongStateOf(0L)
     private var createNewNoteState by mutableStateOf(false)
     private var openVoiceDictationState by mutableStateOf(false)
     private var openDocumentScannerState by mutableStateOf(false)
+    private var openPdfUriState by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleIntent(intent)
+        handleQuickActionIntent(intent)
         setContent {
             NotesApp(
                 initialOpenNoteId = openNoteIdState,
                 initialCreateNewNote = createNewNoteState,
                 initialOpenVoiceDictation = openVoiceDictationState,
                 initialOpenDocumentScanner = openDocumentScannerState,
+                initialOpenPdfUri = openPdfUriState,
                 onNoteOpened = {
                     openNoteIdState = 0L
                     createNewNoteState = false
                     openVoiceDictationState = false
                     openDocumentScannerState = false
+                    openPdfUriState = null
                 }
             )
         }
@@ -64,13 +75,29 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIntent(intent)
+        handleQuickActionIntent(intent)
     }
 
-    private fun handleIntent(intent: Intent) {
+    private fun handleQuickActionIntent(intent: Intent?) {
+        if (intent == null) return
+        
         val newNoteId = intent.getLongExtra("EXTRA_OPEN_NOTE_ID", 0L)
         val createNew = intent.getBooleanExtra("EXTRA_CREATE_NEW_NOTE", false)
         val action = intent.action
+        val type = intent.type
+        val data = intent.data
+
+        if (action == Intent.ACTION_VIEW) {
+            if (data != null && (type == "application/pdf" || data.toString().lowercase().endsWith(".pdf") || intent.scheme == "content" || intent.scheme == "file")) {
+                openPdfUriState = data.toString()
+                openNoteIdState = 0L
+                createNewNoteState = false
+                openVoiceDictationState = false
+                openDocumentScannerState = false
+                intent.action = null
+                return
+            }
+        }
 
         when {
             newNoteId > 0L -> {
@@ -78,25 +105,33 @@ class MainActivity : ComponentActivity() {
                 createNewNoteState = false
                 openVoiceDictationState = false
                 openDocumentScannerState = false
+                openPdfUriState = null
             }
-            createNew || action == "com.example.ACTION_NEW_NOTE" -> {
+            createNew || action == ACTION_QUICK_NOTE || action == "com.example.ACTION_NEW_NOTE" -> {
                 openNoteIdState = 0L
                 createNewNoteState = true
                 openVoiceDictationState = false
                 openDocumentScannerState = false
+                openPdfUriState = null
             }
-            action == "com.example.ACTION_VOICE_NOTE" -> {
+            action == ACTION_QUICK_VOICE || action == "com.example.ACTION_VOICE_NOTE" -> {
                 openNoteIdState = 0L
                 createNewNoteState = true
                 openVoiceDictationState = true
                 openDocumentScannerState = false
+                openPdfUriState = null
             }
-            action == "com.example.ACTION_SCAN_DOCUMENT" -> {
+            action == ACTION_QUICK_SCAN || action == "com.example.ACTION_SCAN_DOCUMENT" -> {
                 openNoteIdState = 0L
                 createNewNoteState = true
                 openDocumentScannerState = true
                 openVoiceDictationState = false
+                openPdfUriState = null
             }
+        }
+        
+        if (action == ACTION_QUICK_NOTE || action == ACTION_QUICK_VOICE || action == ACTION_QUICK_SCAN || action == "com.example.ACTION_NEW_NOTE" || action == "com.example.ACTION_VOICE_NOTE" || action == "com.example.ACTION_SCAN_DOCUMENT") {
+            intent.action = null
         }
     }
 }
@@ -107,6 +142,7 @@ fun NotesApp(
     initialCreateNewNote: Boolean = false,
     initialOpenVoiceDictation: Boolean = false,
     initialOpenDocumentScanner: Boolean = false,
+    initialOpenPdfUri: String? = null,
     onNoteOpened: () -> Unit = {},
     viewModel: NotesViewModel = viewModel()
 ) {
@@ -125,8 +161,11 @@ fun NotesApp(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
-            LaunchedEffect(initialOpenNoteId, initialCreateNewNote, initialOpenVoiceDictation, initialOpenDocumentScanner) {
-                if (initialOpenNoteId > 0L) {
+            LaunchedEffect(initialOpenNoteId, initialCreateNewNote, initialOpenVoiceDictation, initialOpenDocumentScanner, initialOpenPdfUri) {
+                if (!initialOpenPdfUri.isNullOrEmpty()) {
+                    viewModel.navigateTo(Screen.PdfViewer(noteId = 0L, pdfPath = initialOpenPdfUri))
+                    onNoteOpened()
+                } else if (initialOpenNoteId > 0L) {
                     viewModel.navigateTo(Screen.Editor(noteId = initialOpenNoteId))
                     onNoteOpened()
                 } else if (initialCreateNewNote || initialOpenVoiceDictation || initialOpenDocumentScanner) {
@@ -176,6 +215,11 @@ fun NotesApp(
                         PdfViewerScreen(
                             noteId = screen.noteId,
                             pdfPath = screen.pdfPath,
+                            viewModel = viewModel
+                        )
+                    }
+                    is Screen.PdfLibrary -> {
+                        PdfLibraryScreen(
                             viewModel = viewModel
                         )
                     }

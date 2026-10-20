@@ -29,7 +29,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,12 +48,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
 import com.example.viewmodel.NavTab
 
 @Composable
-fun AppleFoldersDrawer(
+fun NoteJsFoldersDrawer(
     isOpen: Boolean,
     onDismiss: () -> Unit,
     activeTab: NavTab,
@@ -59,7 +61,11 @@ fun AppleFoldersDrawer(
     archivedCount: Int,
     trashCount: Int,
     remindersCount: Int,
+    privateNotesCount: Int = 0,
+    isViewingPrivateFolder: Boolean = false,
     onSelectTab: (NavTab) -> Unit,
+    onSelectPrivateFolder: () -> Unit = {},
+    onOpenPdfLibrary: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (isOpen) {
@@ -107,7 +113,7 @@ fun AppleFoldersDrawer(
                 modifier = Modifier.fillMaxHeight()
             ) {
                 val isDark = isAppInDarkTheme()
-                val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+                val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
 
                 Surface(
                     modifier = Modifier
@@ -161,10 +167,26 @@ fun AppleFoldersDrawer(
                                     icon = Icons.Default.Folder,
                                     title = "Todas las notas",
                                     count = notesCount,
-                                    isSelected = activeTab == NavTab.NOTES,
+                                    isSelected = activeTab == NavTab.NOTES && !isViewingPrivateFolder,
                                     tint = amber,
                                     onClick = { onSelectTab(NavTab.NOTES) },
                                     testTag = "folder_all_notes"
+                                )
+
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 44.dp),
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+
+                                FolderRowItem(
+                                    icon = Icons.Default.Lock,
+                                    title = "🔒 Privado",
+                                    count = privateNotesCount,
+                                    isSelected = isViewingPrivateFolder,
+                                    tint = amber,
+                                    onClick = { onSelectPrivateFolder() },
+                                    testTag = "folder_private_notes"
                                 )
 
                                 HorizontalDivider(
@@ -213,6 +235,24 @@ fun AppleFoldersDrawer(
                                     tint = amber,
                                     onClick = { onSelectTab(NavTab.TRASH) },
                                     testTag = "folder_trash"
+                                )
+
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 44.dp),
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+
+                                FolderRowItem(
+                                    icon = Icons.Default.PictureAsPdf,
+                                    title = "📄 Biblioteca PDF",
+                                    count = 0,
+                                    isSelected = activeTab == NavTab.PDF_LIBRARY,
+                                    tint = amber,
+                                    onClick = {
+                                        onOpenPdfLibrary?.invoke() ?: onSelectTab(NavTab.PDF_LIBRARY)
+                                    },
+                                    testTag = "folder_pdf_library"
                                 )
                             }
                         }

@@ -8,6 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -15,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +58,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -70,7 +74,7 @@ import androidx.compose.ui.unit.dp
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun AppleBottomToolbar(
+fun NoteJsBottomToolbar(
     onNewNote: () -> Unit,
     modifier: Modifier = Modifier,
     isHomeActive: Boolean = true,
@@ -162,13 +166,22 @@ fun AppleBottomToolbar(
                     // Sección Expandida Superior
                     AnimatedVisibility(
                         visible = isMenuExpanded,
-                        enter = fadeIn(tween(180)) + expandVertically(
+                        enter = fadeIn(animationSpec = tween(150)) + scaleIn(
+                            initialScale = 0.85f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessLow
+                            )
+                        ) + expandVertically(
                             expandFrom = Alignment.Bottom,
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
                         ),
-                        exit = fadeOut(tween(120)) + shrinkVertically(
+                        exit = fadeOut(animationSpec = tween(100)) + scaleOut(
+                            targetScale = 0.9f,
+                            animationSpec = tween(100)
+                        ) + shrinkVertically(
                             shrinkTowards = Alignment.Bottom,
-                            animationSpec = tween(120)
+                            animationSpec = tween(100)
                         )
                     ) {
                         Column(
@@ -392,11 +405,38 @@ private fun QuickActionMenuItem(
     onClick: () -> Unit,
     testTag: String
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "quick_action_item_scale"
+    )
+
+    val itemBackgroundColor = if (isPressed) {
+        textColor.copy(alpha = 0.08f)
+    } else {
+        Color.Transparent
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
+            .background(itemBackgroundColor)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp)
             .testTag(testTag),
         verticalAlignment = Alignment.CenterVertically,
@@ -431,8 +471,8 @@ private fun QuickActionMenuItem(
 
 @Preview(showBackground = true, name = "Floating Bottom Toolbar Liquid Glass - Light")
 @Composable
-private fun AppleBottomToolbarLightPreview() {
-    AppleBottomToolbar(
+private fun NoteJsBottomToolbarLightPreview() {
+    NoteJsBottomToolbar(
         onNewNote = {},
         isHomeActive = true,
     )
@@ -440,8 +480,8 @@ private fun AppleBottomToolbarLightPreview() {
 
 @Preview(showBackground = true, backgroundColor = 0xFF000000, name = "Floating Bottom Toolbar Liquid Glass - Dark")
 @Composable
-private fun AppleBottomToolbarDarkPreview() {
-    AppleBottomToolbar(
+private fun NoteJsBottomToolbarDarkPreview() {
+    NoteJsBottomToolbar(
         onNewNote = {},
         isHomeActive = true,
     )

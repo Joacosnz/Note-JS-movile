@@ -26,6 +26,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "AuraNotes"
+rootProject.name = "Note JS"
 
 include(":app")

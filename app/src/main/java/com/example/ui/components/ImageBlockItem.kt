@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -8,16 +10,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import com.example.model.ImageBlock
 import com.example.model.NoteBlock
 import java.io.File
+import java.net.URI
 
 @Composable
 fun ImageBlockItem(
@@ -26,6 +36,47 @@ fun ImageBlockItem(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val imageModel = remember(block.localUri, block.remoteUrl) {
+        val localPath = block.localUri
+        val remoteUrl = block.remoteUrl
+
+        val localFile = when {
+            localPath.startsWith("/") -> File(localPath)
+            localPath.startsWith("file://") -> File(URI(localPath))
+            else -> null
+        }
+
+        when {
+            // 1. Si ya se descargó en el almacenamiento interno privado (Dispositivo B post-sync)
+            localFile != null && localFile.exists() -> localFile
+            
+            // 2. Si es una URI de la galería original (Dispositivo A)
+            localPath.startsWith("content://") -> {
+                try {
+                    // Verificamos si la imagen sigue siendo accesible en este teléfono
+                    val stream = context.contentResolver.openInputStream(Uri.parse(localPath))
+                    if (stream != null) {
+                        stream.close()
+                        localPath // Es accesible, la usamos
+                    } else {
+                        // Stream null -> la imagen no está en este dispositivo, cargar nube
+                        remoteUrl.ifBlank { localPath }
+                    }
+                } catch (e: Exception) {
+                    // No es accesible (estamos en el Dispositivo B o se borró de la galería). Fallback a la nube.
+                    remoteUrl.ifBlank { localPath }
+                }
+            }
+            
+            // 3. Fallback general a la nube si hay URL remota
+            remoteUrl.isNotBlank() -> remoteUrl
+            
+            // 4. Último recurso (intentar cargar lo que haya)
+            else -> localPath
+        }
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -36,18 +87,54 @@ fun ImageBlockItem(
         )
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            // Usamos localUri si está presente; de lo contrario, remoteUrl
-            val imageSource = block.localUri.ifEmpty { block.remoteUrl }
+            var isLoading by remember { mutableStateOf(true) }
+            var isError by remember { mutableStateOf(false) }
 
             AsyncImage(
-                model = imageSource,
+                model = imageModel,
                 contentDescription = "Imagen adjunta",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 350.dp)
+                    .heightIn(min = 100.dp, max = 350.dp)
                     .clip(RoundedCornerShape(12.dp)),
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.Fit,
+                onState = { state ->
+                    isLoading = state is AsyncImagePainter.State.Loading
+                    isError = state is AsyncImagePainter.State.Error
+                    if (isError) {
+                        val errorState = state as AsyncImagePainter.State.Error
+                        Log.e("ImageBlockItem", "Error loading image: ${errorState.result.throwable.message}")
+                    }
+                }
             )
+
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            if (isError) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close, // Un ícono de error
+                        contentDescription = "Error",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "No se pudo cargar la imagen\n(Quizás aún se está subiendo)",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
             
             // Botón (X) en la esquina superior para eliminar la imagen
             IconButton(
@@ -75,9 +162,8 @@ fun ImageBlockItem(
     onDeleteBlock: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val imageSource = if (block.filePath.isNotBlank()) File(block.filePath) else block.remoteUrl
     ImageBlockItem(
-        block = ImageBlock(id = block.id, localUri = imageSource.toString(), remoteUrl = block.remoteUrl),
+        block = ImageBlock(id = block.id, localUri = block.filePath, remoteUrl = block.remoteUrl),
         onRemove = onDeleteBlock,
         modifier = modifier
     )

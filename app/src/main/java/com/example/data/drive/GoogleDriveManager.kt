@@ -1,5 +1,6 @@
 package com.example.data.drive
 
+import android.accounts.Account
 import android.content.Context
 import com.example.R
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -16,7 +17,7 @@ import java.util.Collections
 
 /**
  * Gestor responsable de administrar la autenticación y la conexión
- * con la API de Google Drive utilizando el ámbito exclusivo de la app (appDataFolder).
+ * con la API de Note JS Cloud utilizando el ámbito exclusivo de la app (appDataFolder).
  */
 class GoogleDriveManager(private val context: Context) {
 
@@ -54,17 +55,22 @@ class GoogleDriveManager(private val context: Context) {
     }
 
     /**
-     * Construye y retorna la instancia del cliente Drive de Google configurado con las credenciales de la cuenta.
+     * Construye y retorna la instancia del cliente Drive de Note JS configurado con las credenciales de la cuenta.
      *
      * @param account Cuenta de usuario obtenida tras la autenticación exitosa.
      * @return Cliente [Drive] listo para realizar peticiones a la API REST.
      */
     fun getDriveService(account: GoogleSignInAccount): Drive {
+        val accountObj = account.account ?: account.email?.let { Account(it, "com.google") }
         val credential = GoogleAccountCredential.usingOAuth2(
             applicationContext,
             Collections.singleton(DriveScopes.DRIVE_APPDATA)
         ).apply {
-            selectedAccount = account.account
+            if (accountObj != null) {
+                selectedAccount = accountObj
+            } else if (!account.email.isNullOrEmpty()) {
+                selectedAccountName = account.email
+            }
         }
 
         return Drive.Builder(
@@ -72,7 +78,7 @@ class GoogleDriveManager(private val context: Context) {
             GsonFactory.getDefaultInstance(),
             credential
         )
-            .setApplicationName("AuraNotes")
+            .setApplicationName("Note JS")
             .build()
     }
 
@@ -92,7 +98,7 @@ class GoogleDriveManager(private val context: Context) {
             GsonFactory.getDefaultInstance(),
             credential
         )
-            .setApplicationName("AuraNotes")
+            .setApplicationName("Note JS")
             .build()
     }
 }

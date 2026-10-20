@@ -41,8 +41,8 @@ import com.example.model.NoteBlock
 import com.example.model.NoteColors
 import com.example.model.PdfBlock
 import com.example.model.AudioBlock
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
 import com.example.util.NoteBlockSerializer
 import com.example.util.sanitizeNoteSnippet
 import java.text.SimpleDateFormat
@@ -51,7 +51,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun AppleNoteRow(
+fun NoteJsNoteRow(
     note: NoteEntity,
     isUnlocked: Boolean,
     onClick: () -> Unit,
@@ -63,7 +63,7 @@ fun AppleNoteRow(
     onSelectToggle: () -> Unit = {}
 ) {
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val haptics = LocalHapticFeedback.current
     val isLockedNote = note.isLocked && !isUnlocked
 
@@ -91,12 +91,12 @@ fun AppleNoteRow(
 
     val snippetText = remember(blocks, isLockedNote) {
         val raw = if (isLockedNote) {
-            "Nota bloqueada"
+            "Toca para ingresar PIN"
         } else if (totalChecklist > 0) {
             "☑️ $completedCount/$totalChecklist tareas completadas"
         } else {
             blocks.filter { it !is NoteBlock.Drawing }.joinToString(" ") { block ->
-                when (block) {
+                 when (block) {
                     is NoteBlock.Text -> block.content
                     is NoteBlock.Checklist -> block.content
                     is NoteBlock.SimpleList -> block.content
@@ -133,7 +133,7 @@ fun AppleNoteRow(
                     }
                 }
             )
-            .testTag("apple_note_row_${note.id}")
+            .testTag("notejs_note_row_${note.id}")
     ) {
         Row(
             modifier = Modifier
@@ -160,8 +160,9 @@ fun AppleNoteRow(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val displayTitle = if (isLockedNote) "Nota Protegida" else note.title.ifBlank { "Nota sin título" }
                     Text(
-                        text = note.title.ifBlank { "Nota sin título" },
+                        text = displayTitle,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
@@ -186,9 +187,9 @@ fun AppleNoteRow(
                         if (note.isLocked) {
                             Icon(
                                 imageVector = Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(15.dp)
+                                contentDescription = "Nota Protegida",
+                                tint = amber,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                         if (note.isPinned) {

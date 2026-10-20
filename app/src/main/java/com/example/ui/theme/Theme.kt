@@ -20,37 +20,37 @@ val LocalIsDarkTheme = staticCompositionLocalOf { false }
 fun isAppInDarkTheme(): Boolean = LocalIsDarkTheme.current
 
 private val DarkColorScheme = darkColorScheme(
-    primary = AppleNotesAmberDark,
+    primary = NoteJsAmberDark,
     onPrimary = Color.Black,
     primaryContainer = Color(0xFF3D2800),
-    onPrimaryContainer = AppleNotesAmberDark,
-    secondary = AppleNotesAmberDark,
-    background = AppleSystemBgDark,
-    surface = AppleCardBgDark,
-    surfaceVariant = AppleSecondaryCardDark,
+    onPrimaryContainer = NoteJsAmberDark,
+    secondary = NoteJsAmberDark,
+    background = NoteJsSystemBgDark,
+    surface = NoteJsCardBgDark,
+    surfaceVariant = NoteJsSecondaryCardDark,
     surfaceTint = Color.Transparent,
     onBackground = Color.White,
     onSurface = Color.White,
-    onSurfaceVariant = AppleTextSecondaryDark,
-    outline = AppleSeparatorDark,
-    outlineVariant = AppleSeparatorDark
+    onSurfaceVariant = NoteJsTextSecondaryDark,
+    outline = NoteJsSeparatorDark,
+    outlineVariant = NoteJsSeparatorDark
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = AppleNotesAmber,
+    primary = NoteJsAmber,
     onPrimary = Color.White,
     primaryContainer = Color(0xFFFEF3C7),
     onPrimaryContainer = Color(0xFF78350F),
-    secondary = AppleNotesAmber,
-    background = AppleSystemBgLight,
-    surface = AppleCardBgLight,
-    surfaceVariant = AppleSearchBarLight,
+    secondary = NoteJsAmber,
+    background = NoteJsSystemBgLight,
+    surface = NoteJsCardBgLight,
+    surfaceVariant = NoteJsSearchBarLight,
     surfaceTint = Color.Transparent,
     onBackground = Color.Black,
     onSurface = Color.Black,
-    onSurfaceVariant = AppleTextSecondaryLight,
-    outline = AppleSeparatorLight,
-    outlineVariant = AppleSeparatorLight
+    onSurfaceVariant = NoteJsTextSecondaryLight,
+    outline = NoteJsSeparatorLight,
+    outlineVariant = NoteJsSeparatorLight
 )
 
 @Composable

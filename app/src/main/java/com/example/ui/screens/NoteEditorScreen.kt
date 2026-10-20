@@ -1,23 +1,29 @@
 package com.example.ui.screens
 
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.speech.RecognizerIntent
 import android.widget.Toast
+import com.example.util.getKeyboardLanguage
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 
-import androidx.compose.ui.window.Popup
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +36,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.example.ui.theme.isAppInDarkTheme
+import com.example.util.PaperThemeMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,15 +59,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.delay
 import androidx.compose.material.icons.Icons
@@ -95,6 +106,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
@@ -115,6 +128,7 @@ import androidx.compose.material.icons.rounded.FormatListNumbered
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Draw
+import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -183,6 +197,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -195,9 +210,7 @@ import com.example.model.PdfBlock
 import com.example.model.AudioBlock
 import com.example.model.TableCell
 import com.example.model.TextStyleType
-import com.example.ui.components.NoteLockDialog
 import com.example.ui.components.PaperBackground
-import com.example.ui.components.AudioRecorderDialog
 import com.example.ui.components.AudioBlockItem
 import com.example.ui.components.PdfBlockItem
 import com.example.ui.components.TableBlockItem
@@ -205,33 +218,38 @@ import com.example.ui.components.ImageBlockItem
 import com.example.ui.components.CreateTableBottomSheet
 import com.example.ui.components.REMINDER_OFFSET_OPTIONS
 import androidx.core.content.FileProvider
-import com.example.ui.theme.AppleNotesAmber
-import com.example.ui.theme.AppleNotesAmberDark
+import com.example.ui.components.ActiveHashtagInfo
+import com.example.ui.components.EditorColorPickerDialog
+import com.example.ui.components.EditorFontSizeCarouselSheet
+import com.example.ui.components.EditorAccessoryBar
+import com.example.ui.components.EditorPaperStyleDialog
+import com.example.ui.components.EditorReminderBottomSheet
+import com.example.ui.components.EditorScannedPdfNameDialog
+import com.example.ui.components.EditorStatsBottomSheet
+import com.example.ui.components.EditorTopAppBar
+import com.example.ui.components.SmartTagItem
+import com.example.ui.components.SmartTagsSuggestionRow
+import com.example.ui.components.NoteLinkSuggestionMenu
+import com.example.ui.components.markdownVisualTransformation
+import com.example.ui.components.onNoteLinkClick
+import com.example.ui.components.sanitizeTextFieldValue
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
+import com.example.util.GeminiAudioTranscriber
 import com.example.util.ImageHelper
 import com.example.util.NoteBlockSerializer
 import com.example.util.NotePdfExporter
 import com.example.util.isValidNoteForSync
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-
-private data class ActiveHashtagInfo(
-    val targetId: String,
-    val textFieldValue: TextFieldValue,
-    val hashIndex: Int,
-    val rawQuery: String
-)
-
-private data class SmartTagItem(
-    val tag: String,
-    val count: Int,
-    val isNew: Boolean
-)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -244,16 +262,37 @@ fun NoteEditorScreen(
     initialOpenDocumentScanner: Boolean = false
 ) {
     val isDark = isAppInDarkTheme()
-    val amber = if (isDark) AppleNotesAmberDark else AppleNotesAmber
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
 
     val uiState by viewModel.uiState.collectAsState()
 
+    val paperTheme = uiState.paperThemeMode
+    val isPaperDark = when (paperTheme) {
+        PaperThemeMode.DARK -> true
+        PaperThemeMode.LIGHT -> false
+        PaperThemeMode.AUTO -> isDark
+    }
+    val amber = if (isPaperDark) NoteJsAmberDark else NoteJsAmber
+
+    val paperTextColor = if (isPaperDark) Color.White else Color(0xFF1C1C1E)
+    val paperHintColor = if (isPaperDark) Color.LightGray else Color.DarkGray
+
     var title by remember { mutableStateOf("") }
     var titleTextFieldValue by remember { mutableStateOf(TextFieldValue(title)) }
     val blocks = remember { mutableStateListOf<NoteBlock>() }
+    val undoHistory = remember { mutableStateListOf<List<NoteBlock>>() }
+    val redoHistory = remember { mutableStateListOf<List<NoteBlock>>() }
+
+    fun saveSnapshot() {
+        undoHistory.add(blocks.toList())
+        if (undoHistory.size > 30) {
+            undoHistory.removeAt(0)
+        }
+        redoHistory.clear()
+    }
+
     var noteType by remember { mutableStateOf(initialType) }
     var colorIndex by remember { mutableIntStateOf(0) }
     var paperStyle by remember { mutableStateOf(PaperStyle.BLANK) }
@@ -261,6 +300,7 @@ fun NoteEditorScreen(
     var isArchived by remember { mutableStateOf(false) }
     var isLocked by remember { mutableStateOf(false) }
     var lockPin by remember { mutableStateOf("") }
+    var syncEnabled by remember { mutableStateOf(true) }
     var reminderTimestamp by remember { mutableStateOf<Long?>(null) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -273,6 +313,77 @@ fun NoteEditorScreen(
     val blockTextFieldValues = remember { mutableStateMapOf<String, TextFieldValue>() }
     val lazyListState = rememberLazyListState()
 
+    var showNoteLinker by remember { mutableStateOf(false) }
+    var linkQuery by remember { mutableStateOf("") }
+    var activeNoteLinkerBlockId by remember { mutableStateOf<String?>(null) }
+
+    fun evaluateNoteLinkTrigger(blockId: String, tfv: TextFieldValue) {
+        val text = tfv.text
+        val cursorIndex = tfv.selection.end.coerceIn(0, text.length)
+        val textBeforeCursor = text.substring(0, cursorIndex)
+        val triggerRegex = Regex("""\[\[([^\]\n]*)$""")
+        val match = triggerRegex.find(textBeforeCursor)
+        if (match != null) {
+            showNoteLinker = true
+            linkQuery = match.groupValues[1]
+            activeNoteLinkerBlockId = blockId
+        } else {
+            if (activeNoteLinkerBlockId == blockId) {
+                showNoteLinker = false
+                linkQuery = ""
+                activeNoteLinkerBlockId = null
+            }
+        }
+    }
+
+    val allActiveNotes = uiState.allActiveNotes
+    val matchingNotesForLinker = remember(linkQuery, allActiveNotes, noteId) {
+        allActiveNotes.filter { note ->
+            note.id != noteId && !note.isLocked && !note.isTrashed &&
+            (linkQuery.isBlank() || note.title.contains(linkQuery, ignoreCase = true) || note.content.contains(linkQuery, ignoreCase = true))
+        }.take(10)
+    }
+
+    fun insertNoteLink(selectedNoteId: Long, selectedNoteTitle: String) {
+        val targetId = activeNoteLinkerBlockId ?: focusedBlockId ?: return
+        val currentTfv = if (targetId == "TITLE") titleTextFieldValue else blockTextFieldValues[targetId] ?: return
+        val cursorIdx = currentTfv.selection.end.coerceIn(0, currentTfv.text.length)
+        val textBeforeCursor = currentTfv.text.substring(0, cursorIdx)
+        val textAfterCursor = currentTfv.text.substring(cursorIdx)
+
+        val triggerIndex = textBeforeCursor.lastIndexOf("[[")
+        if (triggerIndex != -1) {
+            val markdownLink = "[$selectedNoteTitle](notejs://note/$selectedNoteId) "
+            val newTextBefore = textBeforeCursor.substring(0, triggerIndex) + markdownLink
+            val newFullText = newTextBefore + textAfterCursor
+            val newCursorPos = newTextBefore.length
+            val newTfv = TextFieldValue(text = newFullText, selection = TextRange(newCursorPos))
+
+            if (targetId == "TITLE") {
+                titleTextFieldValue = newTfv
+                title = newFullText
+            } else {
+                blockTextFieldValues[targetId] = newTfv
+                val realIdx = blocks.indexOfFirst { it.id == targetId }
+                if (realIdx != -1) {
+                    val block = blocks[realIdx]
+                    if (block is NoteBlock.Text) {
+                        blocks[realIdx] = block.copy(content = newFullText)
+                    } else if (block is NoteBlock.Checklist) {
+                        blocks[realIdx] = block.copy(content = newFullText)
+                    } else if (block is NoteBlock.SimpleList) {
+                        blocks[realIdx] = block.copy(content = newFullText)
+                    } else if (block is NoteBlock.CalloutBox) {
+                        blocks[realIdx] = block.copy(content = newFullText)
+                    }
+                }
+            }
+        }
+        showNoteLinker = false
+        linkQuery = ""
+        activeNoteLinkerBlockId = null
+    }
+
     val activeHashtagInfo by remember {
         derivedStateOf {
             val currentFocusId = focusedBlockId ?: return@derivedStateOf null
@@ -282,15 +393,14 @@ fun NoteEditorScreen(
                 blockTextFieldValues[currentFocusId]
             } ?: return@derivedStateOf null
 
-            val cursorIndex = tfv.selection.max
             val text = tfv.text
-
-            if (cursorIndex < 0 || cursorIndex > text.length) return@derivedStateOf null
+            val cursorIndex = tfv.selection.max.coerceIn(0, text.length)
             val textBeforeCursor = text.substring(0, cursorIndex)
             val lastHashIndex = textBeforeCursor.lastIndexOf('#')
             if (lastHashIndex == -1) return@derivedStateOf null
 
-            val queryCandidate = textBeforeCursor.substring(lastHashIndex + 1)
+            val safeHashIdx = (lastHashIndex + 1).coerceIn(0, textBeforeCursor.length)
+            val queryCandidate = textBeforeCursor.substring(safeHashIdx)
             if (queryCandidate.any { it.isWhitespace() || it == '\n' || it == ',' || it == '.' || it == '!' || it == '?' }) {
                 return@derivedStateOf null
             }
@@ -361,8 +471,10 @@ fun NoteEditorScreen(
         if (cleanTag.isEmpty()) return
 
         val replacement = "#$cleanTag "
-        val beforeHash = text.substring(0, info.hashIndex)
-        val afterCursor = text.substring(cursorIndex)
+        val safeHashIndex = info.hashIndex.coerceIn(0, text.length)
+        val safeCursorIndex = cursorIndex.coerceIn(0, text.length)
+        val beforeHash = text.substring(0, safeHashIndex)
+        val afterCursor = text.substring(safeCursorIndex)
 
         val newText = beforeHash + replacement + afterCursor
         val newCursor = info.hashIndex + replacement.length
@@ -440,6 +552,7 @@ fun NoteEditorScreen(
     }
 
     fun toggleOrInsertChecklist() {
+        saveSnapshot()
         val targetIndex = if (focusedBlockId != null) {
             blocks.indexOfFirst { it.id == focusedBlockId }
         } else -1
@@ -549,6 +662,7 @@ fun NoteEditorScreen(
     }
 
     fun transformOrInsertBlock(createBlock: (id: String, existingContent: String) -> NoteBlock) {
+        saveSnapshot()
         val targetIndex = if (focusedBlockId != null) {
             blocks.indexOfFirst { it.id == focusedBlockId }
         } else -1
@@ -619,6 +733,7 @@ fun NoteEditorScreen(
     }
 
     fun applyHeadingStyleToCurrentBlock(headingStyle: TextStyleType) {
+        saveSnapshot()
         val targetIndex = if (focusedBlockId != null) {
             blocks.indexOfFirst { it.id == focusedBlockId }
         } else -1
@@ -702,6 +817,7 @@ fun NoteEditorScreen(
         uri?.let {
             viewModel.insertPdfBlock(it) { newBlock ->
                 if (!blocks.any { b -> b.id == newBlock.id }) {
+                    saveSnapshot()
                     blocks.add(newBlock)
                 }
             }
@@ -712,6 +828,7 @@ fun NoteEditorScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
+            saveSnapshot()
             uris.forEach { uri ->
                 val copiedFile = ImageHelper.copyImageFromUri(context, uri)
                 val finalUri = copiedFile?.absolutePath ?: uri.toString()
@@ -724,19 +841,118 @@ fun NoteEditorScreen(
         }
     }
 
-    val scannerOptions = remember {
-        GmsDocumentScannerOptions.Builder()
-            .setGalleryImportAllowed(true)
-            .setPageLimit(15)
-            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
-            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL) // Habilita filtros (B/N) y recorte manual
-            .build()
+    val voiceRecognitionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data
+            val matches = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val text = matches?.firstOrNull() ?: ""
+            
+            @Suppress("DEPRECATION")
+            val audioUri: Uri? = data?.data ?: data?.getParcelableExtra("android.speech.extra.AUDIO_URI")
+            
+            if (text.isNotBlank()) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    var localPath = ""
+                    var durationMs = 0L
+                    
+                    if (audioUri != null) {
+                        try {
+                            val inputStream = context.contentResolver.openInputStream(audioUri)
+                            val audioDir = File(context.filesDir, "audio")
+                            if (!audioDir.exists()) audioDir.mkdirs()
+                            val destFile = File(audioDir, "audio_${UUID.randomUUID()}.amr")
+                            inputStream?.use { input ->
+                                destFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            localPath = destFile.absolutePath
+                            
+                            val retriever = MediaMetadataRetriever()
+                            try {
+                                retriever.setDataSource(localPath)
+                                durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            } finally {
+                                retriever.release()
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        saveSnapshot()
+                        val newId = UUID.randomUUID().toString()
+                        
+                        val newBlock = if (localPath.isNotBlank()) {
+                            AudioBlock(
+                                id = newId,
+                                filePath = localPath,
+                                durationMs = durationMs,
+                                transcription = text,
+                                isTranscribing = false,
+                                isTranscriptionVisible = true
+                            )
+                        } else {
+                            NoteBlock.Text(id = newId, content = text)
+                        }
+                        
+                        val targetIndex = if (focusedBlockId != null) {
+                            blocks.indexOfFirst { it.id == focusedBlockId }
+                        } else -1
+
+                        if (targetIndex != -1) {
+                            val currentBlock = blocks[targetIndex]
+                            val isEmptyText = currentBlock is NoteBlock.Text && currentBlock.content.isEmpty()
+                            if (isEmptyText) {
+                                blocks[targetIndex] = newBlock
+                            } else {
+                                blocks.add(targetIndex + 1, newBlock)
+                            }
+                        } else {
+                            blocks.add(newBlock)
+                        }
+                        targetFocusBlockId = newId
+                        focusedBlockId = newId
+                        // The note logic handles saveAndExit inside NoteEditorScreen down below.
+                        // We will need to launch a ViewModel method if saveAndExit is out of scope here.
+                        // Actually, let's just trigger a re-render. Since we updated `blocks`, 
+                        // the BackHandler/Save logic will pick it up, or we can just leave it to auto-save.
+                    }
+                }
+            }
+        }
     }
-    val scanner = remember(scannerOptions) {
-        GmsDocumentScanning.getClient(scannerOptions)
+
+    var triggerVoiceDictation by remember { mutableStateOf(initialOpenVoiceDictation) }
+    
+    LaunchedEffect(triggerVoiceDictation) {
+        if (triggerVoiceDictation) {
+            triggerVoiceDictation = false
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                val lang = getKeyboardLanguage(context)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra("android.speech.extra.GET_AUDIO_FORMAT", "audio/AMR")
+                putExtra("android.speech.extra.GET_AUDIO", true)
+            }
+            try {
+                voiceRecognitionLauncher.launch(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "El reconocimiento de voz no está disponible en este dispositivo.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
-    var pendingScannedPdfUri by remember { mutableStateOf<Uri?>(null) }
-    var scannedPdfName by remember { mutableStateOf("CamNotes Scanner") }
+
+    var pendingScannedPdfUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingScannedPdfUri = pendingScannedPdfUriString?.let { Uri.parse(it) }
+    var scannedPdfName by rememberSaveable { mutableStateOf("CamNotes Scanner") }
 
     val scannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -746,8 +962,32 @@ fun NoteEditorScreen(
             if (scanningResult?.pdf != null) {
                 val pdfUri = scanningResult.pdf!!.uri
                 scannedPdfName = "CamNotes Scanner"
-                pendingScannedPdfUri = pdfUri
+                pendingScannedPdfUriString = pdfUri.toString()
             }
+        }
+    }
+
+    fun startDocumentScanner() {
+        val activity = (context as? Activity) ?: context.findActivity()
+        if (activity != null) {
+            val options = GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(true)
+                .setPageLimit(15)
+                .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .build()
+            GmsDocumentScanning.getClient(options)
+                .getStartScanIntent(activity)
+                .addOnSuccessListener { intentSender ->
+                    scannerLauncher.launch(
+                        IntentSenderRequest.Builder(intentSender).build()
+                    )
+                }
+                .addOnFailureListener {
+                    Toast.makeText(context, "Error al iniciar el escáner", Toast.LENGTH_SHORT).show()
+                }
+        } else {
+            Toast.makeText(context, "No se pudo obtener la actividad", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -755,18 +995,7 @@ fun NoteEditorScreen(
 
     LaunchedEffect(triggerScanner) {
         if (triggerScanner) {
-            val activity = context.findActivity()
-            if (activity != null) {
-                scanner.getStartScanIntent(activity)
-                    .addOnSuccessListener { intentSender ->
-                        scannerLauncher.launch(
-                            IntentSenderRequest.Builder(intentSender).build()
-                        )
-                    }
-                    .addOnFailureListener {
-                        Toast.makeText(context, "Error al iniciar el escáner", Toast.LENGTH_SHORT).show()
-                    }
-            }
+            startDocumentScanner()
             triggerScanner = false
         }
     }
@@ -792,6 +1021,7 @@ fun NoteEditorScreen(
 
     fun removeBlock(index: Int) {
         if (index in blocks.indices) {
+            saveSnapshot()
             blocks.removeAt(index)
             ensureTextNoteExists()
         }
@@ -832,15 +1062,12 @@ fun NoteEditorScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showColorDialog by remember { mutableStateOf(false) }
     var showPaperDialog by remember { mutableStateOf(false) }
-    var showLockDialog by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var showReminderDialog by remember { mutableStateOf(false) }
-    var showFormatSheet by remember { mutableStateOf(false) }
     var showCreateTableDialog by remember { mutableStateOf(false) }
     var createTableRows by remember { mutableIntStateOf(3) }
     var createTableCols by remember { mutableIntStateOf(3) }
 
-    var showVoiceDictation by remember { mutableStateOf(initialOpenVoiceDictation) }
 
     var isBoldActive by remember { mutableStateOf(false) }
     var isItalicActive by remember { mutableStateOf(false) }
@@ -856,12 +1083,7 @@ fun NoteEditorScreen(
         }
     }
 
-    val isCustomColor = colorIndex != 0
-    val editorBgColor = if (isCustomColor) {
-        NoteColors.getColor(colorIndex, isDark)
-    } else {
-        MaterialTheme.colorScheme.background
-    }
+    val editorBgColor = NoteColors.getColor(colorIndex, isPaperDark)
 
     LaunchedEffect(noteId) {
         if (noteId > 0) {
@@ -876,6 +1098,7 @@ fun NoteEditorScreen(
                 isArchived = it.isArchived
                 isLocked = it.isLocked
                 lockPin = it.lockPin
+                syncEnabled = it.syncEnabled
                 reminderTimestamp = it.reminderTimestamp
                 attachedImageUri = it.imageUri
                 createdAt = it.createdAt
@@ -884,8 +1107,12 @@ fun NoteEditorScreen(
                 val deserialized = NoteBlockSerializer.deserialize(it.content)
                 blocks.clear()
                 blocks.addAll(normalizeHeadingBlocks(deserialized))
+                undoHistory.clear()
+                redoHistory.clear()
             }
         } else {
+            undoHistory.clear()
+            redoHistory.clear()
             if (initialOpenVoiceDictation && title.isBlank()) {
                 title = "Nota de voz rápida"
                 titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
@@ -929,6 +1156,7 @@ fun NoteEditorScreen(
             lockPin = lockPin,
             reminderTimestamp = reminderTimestamp,
             imageUri = attachedImageUri,
+            syncEnabled = syncEnabled,
             onSaved = { savedId ->
                 if (reminderTimestamp != null) {
                     viewModel.setReminder(context, savedId, reminderTimestamp!!, finalTitle, serializedContent)
@@ -950,297 +1178,122 @@ fun NoteEditorScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    IconButton(
-                        onClick = { saveAndExit(navigateBack = true) },
-                        modifier = Modifier.testTag("apple_editor_back")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver",
-                            tint = amber
-                        )
+            EditorTopAppBar(
+                amber = amber,
+                editorBgColor = editorBgColor,
+                isPaperDark = isPaperDark,
+                canUndo = undoHistory.isNotEmpty(),
+                canRedo = redoHistory.isNotEmpty(),
+                isPinned = isPinned,
+                isLocked = isLocked,
+                syncEnabled = syncEnabled,
+                isArchived = isArchived,
+                reminderTimestamp = reminderTimestamp,
+                showMenu = showMenu,
+                onShowMenuChange = { showMenu = it },
+                onBack = { saveAndExit(navigateBack = true) },
+                onUndo = {
+                    if (undoHistory.isNotEmpty()) {
+                        val currentSnapshot = blocks.toList()
+                        redoHistory.add(currentSnapshot)
+                        if (redoHistory.size > 30) {
+                            redoHistory.removeAt(0)
+                        }
+                        val previousSnapshot = undoHistory.removeAt(undoHistory.lastIndex)
+                        blocks.clear()
+                        blocks.addAll(normalizeHeadingBlocks(previousSnapshot))
+                        blockTextFieldValues.clear()
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
                 },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            val activity = context.findActivity()
-                            if (activity != null) {
-                                scanner.getStartScanIntent(activity)
-                                    .addOnSuccessListener { intentSender ->
-                                        scannerLauncher.launch(
-                                            IntentSenderRequest.Builder(intentSender).build()
-                                        )
-                                    }
-                                    .addOnFailureListener {
-                                        Toast.makeText(context, "Error al iniciar el escáner", Toast.LENGTH_SHORT).show()
-                                    }
-                            } else {
-                                Toast.makeText(context, "No se pudo obtener la actividad", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.testTag("btn_document_scanner")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DocumentScanner,
-                            contentDescription = "Escanear documento",
-                            tint = amber
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        modifier = Modifier.testTag("btn_add_image")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AddPhotoAlternate,
-                            contentDescription = "Subir imagen",
-                            tint = amber
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                val permission = Manifest.permission.POST_NOTIFICATIONS
-                                if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
-                                    showReminderDialog = true
-                                } else {
-                                    permissionLauncher.launch(permission)
-                                }
-                            } else {
-                                showReminderDialog = true
-                            }
-                        },
-                        modifier = Modifier.testTag("btn_set_reminder")
-                    ) {
-                        Icon(
-                            imageVector = if (reminderTimestamp != null) Icons.Default.Notifications else Icons.Outlined.NotificationsActive,
-                            contentDescription = "Programar recordatorio",
-                            tint = amber
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            val plainText = blocks.joinToString("\n") {
-                                when (it) {
-                                    is NoteBlock.Text -> it.content
-                                    is NoteBlock.Checklist -> "${if (it.isChecked) "☑" else "☐"} ${it.content}"
-                                    is NoteBlock.SimpleList -> it.content
-                                    is NoteBlock.CalloutBox -> it.content
-                                    is NoteBlock.Drawing -> "[Boceto]"
-                                    is NoteBlock.Table -> it.matrix.joinToString(" | ") { row -> row.joinToString(" | ") { cell -> cell.text } }
-                                    is PdfBlock -> "[PDF: ${it.fileName}]"
-                                    is ImageBlock -> "[Imagen]"
-                                    is NoteBlock.Image -> "[Imagen: ${it.fileName}]"
-                                    is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", it.durationMs / 60000, (it.durationMs % 60000) / 1000)}]"
-                                }
-                            }
-                            val shareIntent = Intent().apply {
-                                action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, "$title\n\n$plainText")
-                                type = "text/plain"
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Compartir nota"))
+                onRedo = {
+                    if (redoHistory.isNotEmpty()) {
+                        val currentSnapshot = blocks.toList()
+                        undoHistory.add(currentSnapshot)
+                        if (undoHistory.size > 30) {
+                            undoHistory.removeAt(0)
                         }
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Compartir", tint = amber)
+                        val nextSnapshot = redoHistory.removeAt(redoHistory.lastIndex)
+                        blocks.clear()
+                        blocks.addAll(normalizeHeadingBlocks(nextSnapshot))
+                        blockTextFieldValues.clear()
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
-
-                    IconButton(
-                        onClick = {
-                            Toast.makeText(context, "Generando PDF...", Toast.LENGTH_SHORT).show()
-                            coroutineScope.launch {
-                                try {
-                                    val pdfFile = NotePdfExporter.exportNote(context, title, blocks)
-                                    val uri = FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.provider",
-                                        pdfFile
-                                    )
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/pdf"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF"))
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    Toast.makeText(
-                                        context,
-                                        "Error al generar el PDF: ${e.message}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                        },
-                        modifier = Modifier.testTag("btn_export_pdf")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PictureAsPdf,
-                            contentDescription = "Exportar PDF",
-                            tint = amber
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            showVoiceDictation = true
-                        },
-                        modifier = Modifier.testTag("btn_add_audio")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Dictado de voz",
-                            tint = amber
-                        )
-                    }
-
-                    Box {
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.testTag("btn_more_options")
-                        ) {
-                            Icon(
-                                Icons.Default.MoreHoriz,
-                                contentDescription = "Opciones",
-                                tint = if (showMenu) Color.Transparent else amber
-                            )
+                },
+                onReminderClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val permission = Manifest.permission.POST_NOTIFICATIONS
+                        if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+                            showReminderDialog = true
+                        } else {
+                            permissionLauncher.launch(permission)
                         }
-
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            offset = DpOffset(x = 16.dp, y = (-42).dp), // Ajustado para centrar mejor sobre el botón original
-                            containerColor = Color.Transparent,
-                            shadowElevation = 0.dp,
-                            tonalElevation = 0.dp,
-                            modifier = Modifier
-                                .background(Color.Transparent)
-                                .shadow(0.dp)
-                        ) {
-                            LiquidGlassContainer(
-                                shape = CircleShape, // Menos cuadrado
-                                isDark = isDark,
-                                glassAlpha = 0.65f, // Más translúcido
-                                elevation = 12.dp,
-                                modifier = Modifier.padding(2.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    // 0. Cerrar menú (simula el botón original dentro del vidrio)
-                                    IconButton(
-                                        onClick = {
-                                            showMenu = false
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreHoriz,
-                                            contentDescription = "Cerrar opciones",
-                                            tint = amber
-                                        )
-                                    }
-
-                                    // 1. Fijar / Desanclar
-                                    IconButton(
-                                        onClick = {
-                                            isPinned = !isPinned
-                                            showMenu = false
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isPinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
-                                            contentDescription = if (isPinned) "Desanclar nota" else "Fijar nota",
-                                            tint = amber
-                                        )
-                                    }
-
-                                    // 2. Bloquear con PIN
-                                    IconButton(
-                                        onClick = {
-                                            showMenu = false
-                                            if (isLocked) {
-                                                isLocked = false
-                                                lockPin = ""
-                                            } else {
-                                                showLockDialog = true
-                                            }
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Outlined.Lock,
-                                            contentDescription = if (isLocked) "Desbloquear" else "Bloquear con PIN",
-                                            tint = amber
-                                        )
-                                    }
-
-                                    // 3. Líneas y cuadrículas (Estilo de papel)
-                                    IconButton(
-                                        onClick = {
-                                            showMenu = false
-                                            showPaperDialog = true
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.GridView,
-                                            contentDescription = "Líneas y cuadrículas",
-                                            tint = amber
-                                        )
-                                    }
-
-                                    // 4. Información y estadísticas
-                                    IconButton(
-                                        onClick = {
-                                            showMenu = false
-                                            showStatsDialog = true
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Info,
-                                            contentDescription = "Información y estadísticas",
-                                            tint = amber
-                                        )
-                                    }
-
-                                    // 5. Archivar / Desarchivar
-                                    IconButton(
-                                        onClick = {
-                                            isArchived = !isArchived
-                                            showMenu = false
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isArchived) Icons.Default.Unarchive else Icons.Outlined.Archive,
-                                            contentDescription = if (isArchived) "Desarchivar" else "Archivar nota",
-                                            tint = amber
-                                        )
-                                    }
-                                }
+                    } else {
+                        showReminderDialog = true
+                    }
+                },
+                onShareClick = {
+                    val plainText = blocks.joinToString("\n") {
+                        when (it) {
+                            is NoteBlock.Text -> it.content
+                            is NoteBlock.Checklist -> "${if (it.isChecked) "☑" else "☐"} ${it.content}"
+                            is NoteBlock.SimpleList -> it.content
+                            is NoteBlock.CalloutBox -> it.content
+                            is NoteBlock.Drawing -> "[Boceto]"
+                            is NoteBlock.Table -> it.matrix.joinToString(" | ") { row -> row.joinToString(" | ") { cell -> cell.text } }
+                            is PdfBlock -> "[PDF: ${it.fileName}]"
+                            is ImageBlock -> "[Imagen]"
+                            is NoteBlock.Image -> "[Imagen: ${it.fileName}]"
+                            is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", it.durationMs / 60000, (it.durationMs % 60000) / 1000)}]"
+                        }
+                    }
+                    val shareIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_TEXT, "$title\n\n$plainText")
+                        type = "text/plain"
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Compartir nota"))
+                },
+                onExportPdfClick = {
+                    Toast.makeText(context, "Generando PDF...", Toast.LENGTH_SHORT).show()
+                    coroutineScope.launch {
+                        try {
+                            val pdfFile = NotePdfExporter.exportNote(context, title, blocks)
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.provider",
+                                pdfFile
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/pdf"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
+                            context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF"))
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(
+                                context,
+                                "Error al generar el PDF: ${e.message}",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = editorBgColor
-                )
+                onTogglePin = { isPinned = !isPinned },
+                onToggleLock = {
+                    isLocked = !isLocked
+                    lockPin = ""
+                    val msg = if (isLocked) "Nota movida a Privado" else "Nota quitada de Privado"
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                },
+                onOpenPaperStyle = { showPaperDialog = true },
+                onToggleSync = {
+                    syncEnabled = !syncEnabled
+                    saveAndExit(navigateBack = false)
+                },
+                onOpenStats = { showStatsDialog = true },
+                onToggleArchive = { isArchived = !isArchived }
             )
         },
         containerColor = editorBgColor
@@ -1250,10 +1303,27 @@ fun NoteEditorScreen(
                 .fillMaxSize()
                 .padding(top = innerPadding.calculateTopPadding())
         ) {
+            val localDensity = LocalDensity.current
+            val editorLineHeight = (customFontSizeSp * 1.4f).sp
+            val lineHeightPx = with(localDensity) { editorLineHeight.toPx() }
+            
+            // Cálculo exacto del margen superior basado en la estructura del Header (Fecha + Recordatorio + Título + Spacers + Padding)
+            val reminderHeight = if (reminderTimestamp != null) 44.dp else 0.dp
+            val headerMarginPx = with(localDensity) {
+                120.dp.toPx().coerceAtLeast(
+                    (6.dp + 14.dp + 12.dp + 10.dp + 4.dp + reminderHeight).toPx() + (12.sp.toPx() * 1.4f) + (28.sp.toPx() * 1.4f)
+                )
+            }
+            // El offset del renglón es la altura exacta de una línea de texto para que cada renglón quede situado justo debajo de la línea de escritura
+            val startYOffsetPx = lineHeightPx
+
             PaperBackground(
                 paperStyle = paperStyle,
-                isDark = isDark,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                lineHeightPx = lineHeightPx,
+                startYOffsetPx = startYOffsetPx,
+                headerMarginPx = headerMarginPx,
+                isDark = isPaperDark
             )
 
             LazyColumn(
@@ -1273,7 +1343,7 @@ fun NoteEditorScreen(
                     Text(
                         text = formattedHeaderDate,
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = paperHintColor,
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center
                     )
@@ -1338,6 +1408,7 @@ fun NoteEditorScreen(
                         onValueChange = { newValue ->
                             titleTextFieldValue = newValue
                             title = newValue.text
+                            evaluateNoteLinkTrigger("TITLE", newValue)
                             coroutineScope.launch {
                                 val layout = titleTextLayoutResult
                                 if (layout != null) {
@@ -1356,22 +1427,41 @@ fun NoteEditorScreen(
                         },
                         onTextLayout = { titleTextLayoutResult = it },
                         textStyle = MaterialTheme.typography.headlineMedium.copy(
-                            color = MaterialTheme.colorScheme.onBackground,
+                            color = paperTextColor,
                             fontWeight = FontWeight.Bold,
                             fontSize = 28.sp,
                             letterSpacing = (-0.5).sp
                         ),
                         cursorBrush = SolidColor(amber),
-                        visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = {
+                                if (blocks.isEmpty()) {
+                                    ensureTextNoteExists()
+                                }
+                                blocks.firstOrNull()?.id?.let { firstId ->
+                                    targetFocusBlockId = firstId
+                                    focusedBlockId = firstId
+                                }
+                            }
+                        ),
+                        singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .onNoteLinkClick(titleTextLayoutResult) { linkedId ->
+                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                            }
                             .onFocusChanged { focusState ->
                                 if (focusState.isFocused) {
                                     focusedBlockId = "TITLE"
                                 }
                             }
                             .bringIntoViewRequester(titleBringIntoViewRequester)
-                            .testTag("apple_editor_title"),
+                            .testTag("notejs_editor_title"),
                         decorationBox = { innerTextField ->
                             if (titleTextFieldValue.text.isEmpty()) {
                                 Text(
@@ -1380,7 +1470,7 @@ fun NoteEditorScreen(
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 28.sp
                                     ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    color = paperHintColor.copy(alpha = 0.5f)
                                 )
                             }
                             innerTextField()
@@ -1457,6 +1547,7 @@ fun NoteEditorScreen(
                                         value = tfv,
                                         onValueChange = { newValue ->
                                             val sanitized = sanitizeTextFieldValue(newValue)
+                                            evaluateNoteLinkTrigger(block.id, sanitized)
                                             if (sanitized.text.contains('\n')) {
                                                 val realIdx = blocks.indexOfFirst { it.id == block.id }
                                                 if (block.content.isEmpty()) {
@@ -1469,8 +1560,9 @@ fun NoteEditorScreen(
                                                     }
                                                 } else {
                                                     val newlineIndex = sanitized.text.indexOf('\n')
-                                                    val headingText = sanitized.text.substring(0, newlineIndex)
-                                                    val remainingText = sanitized.text.substring(newlineIndex + 1)
+                                                    val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
+                                                    val headingText = sanitized.text.substring(0, safeNL)
+                                                    val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
 
                                                     blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
                                                     if (realIdx != -1) {
@@ -1520,6 +1612,9 @@ fun NoteEditorScreen(
                                         onTextLayout = { textLayoutResult = it },
                                         modifier = Modifier
                                             .weight(1f)
+                                            .onNoteLinkClick(textLayoutResult) { linkedId ->
+                                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                            }
                                             .bringIntoViewRequester(bringIntoViewRequester)
                                             .focusRequester(focusRequester)
                                             .onFocusChanged { focusState ->
@@ -1541,19 +1636,22 @@ fun NoteEditorScreen(
                                                 }
                                             }
                                             .testTag("block_text_$index"),
-                                        textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                                        textStyle = textStyle.copy(color = paperTextColor),
                                         cursorBrush = SolidColor(amber),
-                                        visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
                                         decorationBox = { innerTextField ->
                                             if (block.content.isEmpty()) {
                                                 Text(
                                                     text = "Subtítulo...",
-                                                    style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                                    style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
                                                 )
                                             }
                                             innerTextField()
                                         },
-                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
+                                        keyboardOptions = KeyboardOptions(
+                                            capitalization = KeyboardCapitalization.Sentences,
+                                            imeAction = ImeAction.Default
+                                        )
                                     )
                                 }
                             } else {
@@ -1561,6 +1659,7 @@ fun NoteEditorScreen(
                                     value = tfv,
                                         onValueChange = { newValue ->
                                             val sanitized = sanitizeTextFieldValue(newValue)
+                                            evaluateNoteLinkTrigger(block.id, sanitized)
                                             if ((block.style == TextStyleType.TITLE) && sanitized.text.contains('\n')) {
                                                 val realIdx = blocks.indexOfFirst { it.id == block.id }
                                                 if (block.content.isEmpty()) {
@@ -1573,8 +1672,9 @@ fun NoteEditorScreen(
                                                     }
                                                 } else {
                                                     val newlineIndex = sanitized.text.indexOf('\n')
-                                                    val headingText = sanitized.text.substring(0, newlineIndex)
-                                                    val remainingText = sanitized.text.substring(newlineIndex + 1)
+                                                    val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
+                                                    val headingText = sanitized.text.substring(0, safeNL)
+                                                    val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
 
                                                     blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
                                                     if (realIdx != -1) {
@@ -1627,6 +1727,9 @@ fun NoteEditorScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(vertical = 4.dp)
+                                            .onNoteLinkClick(textLayoutResult) { linkedId ->
+                                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                            }
                                             .bringIntoViewRequester(bringIntoViewRequester)
                                             .focusRequester(focusRequester)
                                             .onFocusChanged { focusState ->
@@ -1648,9 +1751,9 @@ fun NoteEditorScreen(
                                                 }
                                             }
                                             .testTag("block_text_$index"),
-                                        textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                                        textStyle = textStyle.copy(color = paperTextColor),
                                         cursorBrush = SolidColor(amber),
-                                        visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
                                         decorationBox = { innerTextField ->
                                             if (block.content.isEmpty()) {
                                                 val showPlaceholder = when (block.style) {
@@ -1660,13 +1763,16 @@ fun NoteEditorScreen(
                                                 if (showPlaceholder.isNotEmpty()) {
                                                     Text(
                                                         text = showPlaceholder,
-                                                        style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                                        style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
                                                     )
                                                 }
                                             }
                                             innerTextField()
                                         },
-                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
+                                        keyboardOptions = KeyboardOptions(
+                                            capitalization = KeyboardCapitalization.Sentences,
+                                            imeAction = ImeAction.Default
+                                        )
                                     )
                             }
                         }
@@ -1682,7 +1788,7 @@ fun NoteEditorScreen(
                                     modifier = Modifier
                                         .size(24.dp)
                                         .clip(CircleShape)
-                                        .border(2.dp, if (block.isChecked) amber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), CircleShape)
+                                        .border(2.dp, if (block.isChecked) amber else if (isPaperDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.35f), CircleShape)
                                         .background(if (block.isChecked) amber else Color.Transparent)
                                         .clickable {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -1707,6 +1813,7 @@ fun NoteEditorScreen(
                                     value = tfv,
                                     onValueChange = { newValue ->
                                         val sanitized = sanitizeTextFieldValue(newValue)
+                                        evaluateNoteLinkTrigger(block.id, sanitized)
                                         blockTextFieldValues[block.id] = sanitized
                                         if (sanitized.text != block.content) {
                                             blocks[index] = block.copy(content = sanitized.text)
@@ -1726,6 +1833,9 @@ fun NoteEditorScreen(
                                     onTextLayout = { textLayoutResult = it },
                                     modifier = Modifier
                                         .weight(1f)
+                                        .onNoteLinkClick(textLayoutResult) { linkedId ->
+                                            viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                        }
                                         .bringIntoViewRequester(bringIntoViewRequester)
                                         .focusRequester(focusRequester)
                                         .onFocusChanged { focusState ->
@@ -1750,7 +1860,7 @@ fun NoteEditorScreen(
                                         fontSize = customFontSizeSp.sp,
                                         fontWeight = if (isBoldActive) FontWeight.Bold else FontWeight.Normal,
                                         fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
-                                        color = if (block.isChecked) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
+                                        color = if (block.isChecked) paperHintColor else paperTextColor,
                                         background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
                                         textDecoration = when {
                                             block.isChecked -> TextDecoration.LineThrough
@@ -1758,17 +1868,20 @@ fun NoteEditorScreen(
                                         }
                                     ),
                                     cursorBrush = SolidColor(amber),
-                                    visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
                                     decorationBox = { innerTextField ->
                                         if (block.content.isEmpty()) {
                                             Text(
                                                 text = "Elemento de lista de tareas...",
-                                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = paperHintColor.copy(alpha = 0.5f))
                                             )
                                         }
                                         innerTextField()
                                     },
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                    keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        ),
                                     keyboardActions = KeyboardActions(
                                         onNext = {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -1789,7 +1902,7 @@ fun NoteEditorScreen(
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Eliminar",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        tint = paperHintColor.copy(alpha = 0.6f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1817,6 +1930,7 @@ fun NoteEditorScreen(
                                     value = tfv,
                                     onValueChange = { newValue ->
                                         val sanitized = sanitizeTextFieldValue(newValue)
+                                        evaluateNoteLinkTrigger(block.id, sanitized)
                                         blockTextFieldValues[block.id] = sanitized
                                         if (sanitized.text != block.content) {
                                             blocks[index] = block.copy(content = sanitized.text)
@@ -1836,6 +1950,9 @@ fun NoteEditorScreen(
                                     onTextLayout = { textLayoutResult = it },
                                     modifier = Modifier
                                         .weight(1f)
+                                        .onNoteLinkClick(textLayoutResult) { linkedId ->
+                                            viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                        }
                                         .bringIntoViewRequester(bringIntoViewRequester)
                                         .focusRequester(focusRequester)
                                         .onFocusChanged { focusState ->
@@ -1861,20 +1978,23 @@ fun NoteEditorScreen(
                                         fontWeight = if (isBoldActive) FontWeight.Bold else FontWeight.Normal,
                                         fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
                                         background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = paperTextColor
                                     ),
                                     cursorBrush = SolidColor(amber),
-                                    visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
                                     decorationBox = { innerTextField ->
                                         if (block.content.isEmpty()) {
                                             Text(
                                                 text = "Elemento de lista...",
-                                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = paperHintColor.copy(alpha = 0.5f))
                                             )
                                         }
                                         innerTextField()
                                     },
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                    keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        ),
                                     keyboardActions = KeyboardActions(
                                         onNext = {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -1897,10 +2017,10 @@ fun NoteEditorScreen(
 
                             val calloutBg = if (!block.backgroundColorHex.isNullOrBlank()) {
                                 runCatching { Color(android.graphics.Color.parseColor(block.backgroundColorHex)) }.getOrDefault(
-                                    if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+                                    if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
                                 )
                             } else {
-                                if (isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+                                if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
                             }
 
                             Surface(
@@ -1937,6 +2057,7 @@ fun NoteEditorScreen(
                                         value = tfv,
                                         onValueChange = { newValue ->
                                             val sanitized = sanitizeTextFieldValue(newValue)
+                                            evaluateNoteLinkTrigger(block.id, sanitized)
                                             blockTextFieldValues[block.id] = sanitized
                                             if (sanitized.text != block.content) {
                                                 blocks[index] = block.copy(content = sanitized.text)
@@ -1956,6 +2077,9 @@ fun NoteEditorScreen(
                                         onTextLayout = { textLayoutResult = it },
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .onNoteLinkClick(textLayoutResult) { linkedId ->
+                                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                            }
                                             .bringIntoViewRequester(bringIntoViewRequester)
                                             .focusRequester(focusRequester)
                                             .onFocusChanged { focusState ->
@@ -1978,25 +2102,28 @@ fun NoteEditorScreen(
                                             },
                                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                                             fontSize = 17.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            color = paperTextColor,
                                             fontStyle = FontStyle.Italic
                                         ),
                                         cursorBrush = SolidColor(amber),
-                                        visualTransformation = remember(isDark) { markdownVisualTransformation(isDark, amber) },
+                                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
                                         decorationBox = { innerTextField ->
                                             if (block.content.isEmpty()) {
                                                 Text(
                                                     text = "Cuadro destacado / Nota importante...",
                                                     style = MaterialTheme.typography.bodyLarge.copy(
                                                         fontSize = 17.sp,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                        color = paperHintColor.copy(alpha = 0.5f),
                                                         fontStyle = FontStyle.Italic
                                                     )
                                                 )
                                             }
                                             innerTextField()
                                         },
-                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
+                                        keyboardOptions = KeyboardOptions(
+                                            capitalization = KeyboardCapitalization.Sentences,
+                                            imeAction = ImeAction.Default
+                                        )
                                     )
                                 }
                             }
@@ -2092,7 +2219,7 @@ fun NoteEditorScreen(
                                         viewModel.navigateTo(Screen.Drawing(noteId))
                                     },
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isDark) Color(0xFF1C1C1E) else Color(0xFFE5E5EA),
+                                color = if (isPaperDark) Color(0xFF1C1C1E) else Color(0xFFE5E5EA),
                                 border = BorderStroke(1.dp, amber.copy(alpha = 0.4f))
                             ) {
                                 Box(
@@ -2105,7 +2232,7 @@ fun NoteEditorScreen(
                                         Text(
                                             text = "Boceto a mano alzada (Toca para editar)",
                                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = paperTextColor
                                         )
                                     }
                                 }
@@ -2120,6 +2247,7 @@ fun NoteEditorScreen(
                                 onDeleteBlock = {
                                     removeBlock(index)
                                 },
+                                isPaperDark = isPaperDark,
                                 modifier = Modifier.testTag("table_block_$index")
                             )
                         }
@@ -2230,6 +2358,7 @@ fun NoteEditorScreen(
                                     targetFocusBlockId = lastBlock.id
                                     focusedBlockId = lastBlock.id
                                 } else {
+                                    saveSnapshot()
                                     val newId = UUID.randomUUID().toString()
                                     blocks.add(NoteBlock.Text(id = newId, style = TextStyleType.BODY, isIndented = false))
                                     targetFocusBlockId = newId
@@ -2249,6 +2378,27 @@ fun NoteEditorScreen(
                     .navigationBarsPadding()
             ) {
                 AnimatedVisibility(
+                    visible = showNoteLinker,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    NoteLinkSuggestionMenu(
+                        linkQuery = linkQuery,
+                        notes = matchingNotesForLinker,
+                        amberColor = amber,
+                        isDark = isPaperDark,
+                        onNoteSelected = { selectedNoteId, selectedNoteTitle ->
+                            insertNoteLink(selectedNoteId, selectedNoteTitle)
+                        },
+                        onDismiss = {
+                            showNoteLinker = false
+                            linkQuery = ""
+                            activeNoteLinkerBlockId = null
+                        }
+                    )
+                }
+
+                AnimatedVisibility(
                     visible = activeHashtagInfo != null && suggestedSmartTags.isNotEmpty(),
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
@@ -2256,585 +2406,167 @@ fun NoteEditorScreen(
                     SmartTagsSuggestionRow(
                         tags = suggestedSmartTags,
                         amberColor = amber,
-                        isDark = isDark,
+                        isDark = isPaperDark,
                         onSelectTag = { item ->
                             applySmartTagSelection(item)
                         }
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.Center
+                AnimatedVisibility(
+                    visible = focusedBlockId != null,
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                 ) {
-                    Surface(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(60.dp)
-                            .shadow(
-                                elevation = 10.dp,
-                                shape = CircleShape,
-                                ambientColor = Color.Black.copy(alpha = 0.10f),
-                                spotColor = Color.Black.copy(alpha = 0.15f)
-                            )
-                            .clip(CircleShape)
-                            .background(
-                                if (isDark) Color(0xFF1C1C1E).copy(alpha = 0.88f)
-                                else Color.White.copy(alpha = 0.88f)
-                            )
-                            .border(
-                                width = 1.dp,
-                                brush = if (isDark) {
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            Color.White.copy(alpha = 0.40f),
-                                            Color.Transparent,
-                                            Color(0xFF3F3F46).copy(alpha = 0.60f)
-                                        )
-                                    )
-                                } else {
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            Color.White.copy(alpha = 0.90f),
-                                            Color.White.copy(alpha = 0.30f),
-                                            Color(0xFFCBD5E1).copy(alpha = 0.45f)
-                                        )
-                                    )
-                                },
-                                shape = CircleShape
-                            )
-                            .testTag("liquid_glass_accessory_bar"),
-                        color = Color.Transparent
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 20.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // 1. Botón "Insertar" (+) -> Abre menú de inserción (desplegable desde abajo)
-                            IconButton(
-                                onClick = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    showFormatSheet = true
-                                },
-                                modifier = Modifier.testTag("btn_insert_menu")
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.size(42.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AddCircleOutline,
-                                        contentDescription = "Insertar",
-                                        tint = amber,
-                                        modifier = Modifier.size(28.dp)
-                                    )
+                        EditorAccessoryBar(
+                            amber = amber,
+                            isPaperDark = isPaperDark,
+                            isBoldActive = isBoldActive,
+                            isItalicActive = isItalicActive,
+                            isHighlightActive = isHighlightActive,
+                            customFontSizeSp = customFontSizeSp,
+                            onFormatBody = {
+                                transformOrInsertBlock { id, content ->
+                                    NoteBlock.Text(id = id, content = content, style = TextStyleType.BODY, isIndented = false)
                                 }
-                            }
-
-                            // 2. Negrita
-                            IconButton(
-                                onClick = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isBoldActive = !isBoldActive
-                                },
-                                modifier = Modifier.testTag("btn_format_bold")
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isBoldActive) amber.copy(alpha = 0.25f) else Color.Transparent)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FormatBold,
-                                        contentDescription = "Negrita",
-                                        tint = amber,
-                                        modifier = Modifier.size(26.dp)
-                                    )
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatTitle = {
+                                applyHeadingStyleToCurrentBlock(TextStyleType.TITLE)
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatSubtitle = {
+                                applyHeadingStyleToCurrentBlock(TextStyleType.SUBTITLE)
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatChecklist = {
+                                toggleOrInsertChecklist()
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatBulletList = {
+                                transformOrInsertBlock { id, content ->
+                                    NoteBlock.SimpleList(id = id, content = content, isNumbered = false)
                                 }
-                            }
-
-                            // 3. Cursiva
-                            IconButton(
-                                onClick = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isItalicActive = !isItalicActive
-                                },
-                                modifier = Modifier.testTag("btn_format_italic")
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isItalicActive) amber.copy(alpha = 0.25f) else Color.Transparent)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FormatItalic,
-                                        contentDescription = "Cursiva",
-                                        tint = amber,
-                                        modifier = Modifier.size(26.dp)
-                                    )
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatNumberedList = {
+                                transformOrInsertBlock { id, content ->
+                                    NoteBlock.SimpleList(id = id, content = content, isNumbered = true)
                                 }
-                            }
-
-                            // 4. Resaltar selección
-                            IconButton(
-                                onClick = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    val currentId = focusedBlockId
-                                    if (currentId != null) {
-                                        val tfv = blockTextFieldValues[currentId]
-                                        if (tfv != null && !tfv.selection.collapsed) {
-                                            val start = tfv.selection.min
-                                            val end = tfv.selection.max
-                                            val text = tfv.text
-                                            val selectedText = text.substring(start, end)
-
-                                            val (newText, newSelection) = if (selectedText.startsWith("==") && selectedText.endsWith("==") && selectedText.length >= 4) {
-                                                // Quitar resaltado
-                                                val unhighlighted = selectedText.substring(2, selectedText.length - 2)
-                                                val updated = text.substring(0, start) + unhighlighted + text.substring(end)
-                                                val sel = TextRange(start, start + unhighlighted.length)
-                                                Pair(updated, sel)
-                                            } else {
-                                                // Aplicar resaltado
-                                                val highlighted = "==$selectedText=="
-                                                val updated = text.substring(0, start) + highlighted + text.substring(end)
-                                                val sel = TextRange(start, start + highlighted.length)
-                                                Pair(updated, sel)
-                                            }
-
-                                            val newTfv = tfv.copy(text = newText, selection = newSelection)
-                                            blockTextFieldValues[currentId] = newTfv
-
-                                            // Actualizar el modelo
-                                            val idx = blocks.indexOfFirst { it.id == currentId }
-                                            if (idx != -1) {
-                                                val b = blocks[idx]
-                                                if (b is NoteBlock.Text) blocks[idx] = b.copy(content = newText)
-                                                else if (b is NoteBlock.Checklist) blocks[idx] = b.copy(content = newText)
-                                                else if (b is NoteBlock.SimpleList) blocks[idx] = b.copy(content = newText)
-                                                else if (b is NoteBlock.CalloutBox) blocks[idx] = b.copy(content = newText)
-                                            }
-                                        } else {
-                                            isHighlightActive = !isHighlightActive
-                                        }
-                                    } else {
-                                        isHighlightActive = !isHighlightActive
-                                    }
-                                },
-                                modifier = Modifier.testTag("btn_format_highlight")
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isHighlightActive) amber.copy(alpha = 0.25f) else Color.Transparent)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Highlight,
-                                        contentDescription = "Resaltar",
-                                        tint = amber,
-                                        modifier = Modifier.size(26.dp)
-                                    )
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatCallout = {
+                                transformOrInsertBlock { id, content ->
+                                    NoteBlock.CalloutBox(id = id, content = content)
                                 }
-                            }
-
-                            // 5. Tamaño de texto (Icono de regla -> abre carrusel de tamaños 1 a 150)
-                            IconButton(
-                                onClick = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    showFontSizeCarouselSheet = true
-                                },
-                                modifier = Modifier.testTag("btn_font_size_ruler")
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(if (customFontSizeSp != 17) amber.copy(alpha = 0.25f) else Color.Transparent)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Straighten,
-                                        contentDescription = "Tamaño de texto",
-                                        tint = amber,
-                                        modifier = Modifier.size(26.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Insert Bottom Sheet (Menú desplegable desde abajo hacia arriba)
-    if (showFormatSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-        ModalBottomSheet(
-            onDismissRequest = { showFormatSheet = false },
-            sheetState = sheetState,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            containerColor = Color.Black,
-            tonalElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 24.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "Insertar contenido",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    ),
-                    color = Color.White,
-                    modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-                )
-
-                FormatSectionTitle("Básico")
-                FormatOptionItem(
-                    icon = Icons.AutoMirrored.Rounded.Subject,
-                    text = "Texto normal (Cuerpo)"
-                ) {
-                    showFormatSheet = false
-                    transformOrInsertBlock { id, content ->
-                        NoteBlock.Text(id = id, content = content, style = TextStyleType.BODY, isIndented = false)
-                    }
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.Rounded.Title,
-                    text = "Título grande"
-                ) {
-                    showFormatSheet = false
-                    applyHeadingStyleToCurrentBlock(TextStyleType.TITLE)
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.Rounded.FormatSize,
-                    text = "Subtítulo"
-                ) {
-                    showFormatSheet = false
-                    applyHeadingStyleToCurrentBlock(TextStyleType.SUBTITLE)
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatSectionTitle("Listas")
-                FormatOptionItem(
-                    icon = Icons.Rounded.CheckBox,
-                    text = "Lista de tareas (Checklist)"
-                ) {
-                    showFormatSheet = false
-                    toggleOrInsertChecklist()
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.AutoMirrored.Rounded.FormatListBulleted,
-                    text = "Lista con viñetas"
-                ) {
-                    showFormatSheet = false
-                    transformOrInsertBlock { id, content ->
-                        NoteBlock.SimpleList(id = id, content = content, isNumbered = false)
-                    }
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.Rounded.FormatListNumbered,
-                    text = "Lista numerada"
-                ) {
-                    showFormatSheet = false
-                    transformOrInsertBlock { id, content ->
-                        NoteBlock.SimpleList(id = id, content = content, isNumbered = true)
-                    }
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatSectionTitle("Elementos Avanzados")
-                FormatOptionItem(
-                    icon = Icons.Rounded.Info,
-                    text = "Cuadro destacado"
-                ) {
-                    showFormatSheet = false
-                    transformOrInsertBlock { id, content ->
-                        NoteBlock.CalloutBox(id = id, content = content)
-                    }
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.Rounded.TableChart,
-                    text = "Tabla"
-                ) {
-                    showFormatSheet = false
-                    createTableRows = 3
-                    createTableCols = 3
-                    showCreateTableDialog = true
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.Rounded.Draw,
-                    text = "Boceto a mano (Dibujo)"
-                ) {
-                    showFormatSheet = false
-                    blocks.add(NoteBlock.Drawing())
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.Rounded.PictureAsPdf,
-                    text = "Adjuntar PDF"
-                ) {
-                    showFormatSheet = false
-                    pdfPickerLauncher.launch(arrayOf("application/pdf"))
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-
-                FormatOptionItem(
-                    icon = Icons.Default.DocumentScanner,
-                    text = "Escanear documento (Modo Escáner Pro)"
-                ) {
-                    showFormatSheet = false
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    val activity = (context as? Activity) ?: context.findActivity()
-                    if (activity != null) {
-                        scanner.getStartScanIntent(activity)
-                            .addOnSuccessListener { intentSender ->
-                                scannerLauncher.launch(
-                                    IntentSenderRequest.Builder(intentSender).build()
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatTable = {
+                                createTableRows = 3
+                                createTableCols = 3
+                                showCreateTableDialog = true
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatDrawing = {
+                                saveSnapshot()
+                                blocks.add(NoteBlock.Drawing())
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatPdf = {
+                                pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onFormatScanner = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                startDocumentScanner()
+                            },
+                            onAddImage = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
+                            },
+                            onStartAudioDictation = {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                val lang = getKeyboardLanguage(context)
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
+                                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                                putExtra("android.speech.extra.GET_AUDIO_FORMAT", "audio/AMR")
+                                putExtra("android.speech.extra.GET_AUDIO", true)
                             }
-                            .addOnFailureListener {
-                                Toast.makeText(context, "Error al iniciar el escáner", Toast.LENGTH_SHORT).show()
+                            try {
+                                voiceRecognitionLauncher.launch(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "El reconocimiento de voz no está disponible en este dispositivo.", Toast.LENGTH_SHORT).show()
                             }
-                    } else {
-                        Toast.makeText(context, "No se pudo obtener la actividad", Toast.LENGTH_SHORT).show()
-                    }
+                        },
+                        onToggleBold = { isBoldActive = !isBoldActive },
+                        onToggleItalic = { isItalicActive = !isItalicActive },
+                        onToggleHighlight = {
+                            val currentId = focusedBlockId
+                            if (currentId != null) {
+                                val tfv = blockTextFieldValues[currentId]
+                                if (tfv != null && !tfv.selection.collapsed) {
+                                    val text = tfv.text
+                                    val start = tfv.selection.min.coerceIn(0, text.length)
+                                    val end = tfv.selection.max.coerceIn(start, text.length)
+                                    val selectedText = text.substring(start, end)
+
+                                    val (newText, newSelection) = if (selectedText.startsWith("==") && selectedText.endsWith("==") && selectedText.length >= 4) {
+                                        val unhighlighted = selectedText.substring(2, (selectedText.length - 2).coerceIn(2, selectedText.length))
+                                        val updated = text.substring(0, start) + unhighlighted + text.substring(end.coerceIn(0, text.length))
+                                        val sel = TextRange(start, start + unhighlighted.length)
+                                        Pair(updated, sel)
+                                    } else {
+                                        val highlighted = "==$selectedText=="
+                                        val updated = text.substring(0, start) + highlighted + text.substring(end.coerceIn(0, text.length))
+                                        val sel = TextRange(start, start + highlighted.length)
+                                        Pair(updated, sel)
+                                    }
+
+                                    val newTfv = tfv.copy(text = newText, selection = newSelection)
+                                    blockTextFieldValues[currentId] = newTfv
+
+                                    val idx = blocks.indexOfFirst { it.id == currentId }
+                                    if (idx != -1) {
+                                        val b = blocks[idx]
+                                        if (b is NoteBlock.Text) blocks[idx] = b.copy(content = newText)
+                                        else if (b is NoteBlock.Checklist) blocks[idx] = b.copy(content = newText)
+                                        else if (b is NoteBlock.SimpleList) blocks[idx] = b.copy(content = newText)
+                                        else if (b is NoteBlock.CalloutBox) blocks[idx] = b.copy(content = newText)
+                                    }
+                                } else {
+                                    isHighlightActive = !isHighlightActive
+                                }
+                            } else {
+                                isHighlightActive = !isHighlightActive
+                            }
+                        },
+                        onOpenFontSizeRuler = { showFontSizeCarouselSheet = true }
+                    )
+                }
                 }
             }
-        }
-    }
-
-    if (showVoiceDictation) {
-        val voiceSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { showVoiceDictation = false },
-            sheetState = voiceSheetState,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White,
-            tonalElevation = 8.dp,
-            dragHandle = { BottomSheetDefaults.DragHandle() }
-        ) {
-            VoiceNoteScreen(
-                onRecordingFinished = { transcribedText, _, _ ->
-                    if (transcribedText.isNotBlank()) {
-                        val newTextBlockId = UUID.randomUUID().toString()
-                        val textBlock = NoteBlock.Text(
-                            id = newTextBlockId,
-                            content = transcribedText
-                        )
-                        
-                        val targetIndex = if (focusedBlockId != null) {
-                            blocks.indexOfFirst { it.id == focusedBlockId }
-                        } else -1
-
-                        if (targetIndex != -1) {
-                            val currentBlock = blocks[targetIndex]
-                            val isEmptyText = currentBlock is NoteBlock.Text && currentBlock.content.isEmpty()
-                            if (isEmptyText) {
-                                blocks[targetIndex] = textBlock
-                            } else {
-                                blocks.add(targetIndex + 1, textBlock)
-                            }
-                        } else {
-                            blocks.add(textBlock)
-                        }
-                        targetFocusBlockId = newTextBlockId
-                        focusedBlockId = newTextBlockId
-                    }
-                },
-                onDismiss = { showVoiceDictation = false }
-            )
         }
     }
 
     // Carousel Vertical Font Size Bottom Sheet (1 a 150 sp - Rodillo/Rueda vertical)
-    if (showFontSizeCarouselSheet) {
-        val fontSizeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        val initialItemIndex = (customFontSizeSp - 1).coerceIn(0, 149)
-        val verticalPickerState = rememberLazyListState(initialFirstVisibleItemIndex = initialItemIndex)
-        val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = verticalPickerState)
-        val coroutineScope = rememberCoroutineScope()
-
-        // Sincronizar customFontSizeSp con la posición exacta del rodillo en tiempo real
-        LaunchedEffect(verticalPickerState) {
-            snapshotFlow { verticalPickerState.firstVisibleItemIndex }
-                .collect { firstIndex ->
-                    val newSize = (firstIndex + 1).coerceIn(1, 150)
-                    if (newSize != customFontSizeSp) {
-                        customFontSizeSp = newSize
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                }
-        }
-
-        ModalBottomSheet(
-            onDismissRequest = { showFontSizeCarouselSheet = false },
-            sheetState = fontSizeSheetState,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White,
-            tonalElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Tamaño de texto",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    ),
-                    color = if (isDark) Color.White else Color(0xFF0F172A)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Muestra digital del tamaño actual
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = amber.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, amber.copy(alpha = 0.4f))
-                ) {
-                    Text(
-                        text = "$customFontSizeSp sp",
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 32.sp,
-                            color = amber
-                        ),
-                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 6.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Rodillo / Rueda Selectora Vertical (180dp alto: 60dp arriba, 60dp centro, 60dp abajo)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.50f)
-                        .height(180.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Cápsula seleccionada central en la rueda
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = amber.copy(alpha = 0.2f),
-                        border = BorderStroke(1.5.dp, amber)
-                    ) {}
-
-                    LazyColumn(
-                        state = verticalPickerState,
-                        flingBehavior = snapFlingBehavior,
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        contentPadding = PaddingValues(vertical = 60.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(150) { index ->
-                            val number = index + 1
-                            val isSelected = number == customFontSizeSp
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(60.dp)
-                                    .clickable {
-                                        customFontSizeSp = number
-                                        coroutineScope.launch {
-                                            verticalPickerState.animateScrollToItem(index)
-                                        }
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "$number",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                                        fontSize = if (isSelected) 30.sp else 20.sp
-                                    ),
-                                    color = if (isSelected) amber else if (isDark) Color.White.copy(alpha = 0.35f) else Color.DarkGray.copy(alpha = 0.35f)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Accesos rápidos comunes abajo
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    listOf(12, 14, 17, 20, 24, 32, 48, 64).forEach { quickSize ->
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (customFontSizeSp == quickSize) amber.copy(alpha = 0.35f) else if (isDark) Color(0xFF27272A) else Color(0xFFE2E8F0),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    customFontSizeSp = quickSize
-                                    coroutineScope.launch {
-                                        verticalPickerState.animateScrollToItem((quickSize - 1).coerceIn(0, 149))
-                                    }
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                }
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "$quickSize",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (customFontSizeSp == quickSize) amber else if (isDark) Color.White else Color.Black
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    EditorFontSizeCarouselSheet(
+        showFontSizeCarouselSheet = showFontSizeCarouselSheet,
+        customFontSizeSp = customFontSizeSp,
+        isPaperDark = isPaperDark,
+        isDark = isDark,
+        amber = amber,
+        onFontSizeChange = { customFontSizeSp = it },
+        onDismissRequest = { showFontSizeCarouselSheet = false }
+    )
 
     if (showCreateTableDialog) {
         CreateTableBottomSheet(
@@ -2842,6 +2574,7 @@ fun NoteEditorScreen(
             initialCols = createTableCols,
             onCreateTable = { r, c, header, zebra ->
                 showCreateTableDialog = false
+                saveSnapshot()
                 val newId = UUID.randomUUID().toString()
                 blocks.add(
                     NoteBlock.Table(
@@ -2858,1189 +2591,76 @@ fun NoteEditorScreen(
         )
     }
 
-    if (showReminderDialog) {
-        val reminderSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-        val dayOptions = remember {
-            List(60) { offset ->
-                Calendar.getInstance().apply {
-                    add(Calendar.DAY_OF_YEAR, offset)
-                }
-            }
-        }
-        val hourOptions = remember { (0..23).toList() }
-        val minuteOptions = remember { (0..59).toList() }
-
-        val initialCal = remember(reminderTimestamp) {
-            Calendar.getInstance().apply {
-                if (reminderTimestamp != null && reminderTimestamp!! > System.currentTimeMillis()) {
-                    timeInMillis = reminderTimestamp!!
-                } else {
-                    add(Calendar.HOUR_OF_DAY, 1)
-                    set(Calendar.MINUTE, 0)
-                }
-            }
-        }
-
-        var selectedDayIndex by remember {
-            val initialDay = dayOptions.indexOfFirst {
-                it.get(Calendar.YEAR) == initialCal.get(Calendar.YEAR) &&
-                it.get(Calendar.DAY_OF_YEAR) == initialCal.get(Calendar.DAY_OF_YEAR)
-            }
-            mutableIntStateOf(if (initialDay >= 0) initialDay else 0)
-        }
-
-        var selectedHourIndex by remember {
-            mutableIntStateOf(initialCal.get(Calendar.HOUR_OF_DAY).coerceIn(0, 23))
-        }
-
-        var selectedMinuteIndex by remember {
-            mutableIntStateOf(initialCal.get(Calendar.MINUTE).coerceIn(0, 59))
-        }
-
-        var selectedReminderOffsets by remember { mutableStateOf(setOf(0, 15)) }
-
-        val reminderCoroutineScope = rememberCoroutineScope()
-
-        val dayPickerState = rememberLazyListState(initialFirstVisibleItemIndex = selectedDayIndex)
-        val hourPickerState = rememberLazyListState(initialFirstVisibleItemIndex = selectedHourIndex)
-        val minutePickerState = rememberLazyListState(initialFirstVisibleItemIndex = selectedMinuteIndex)
-
-        val daySnap = rememberSnapFlingBehavior(lazyListState = dayPickerState)
-        val hourSnap = rememberSnapFlingBehavior(lazyListState = hourPickerState)
-        val minuteSnap = rememberSnapFlingBehavior(lazyListState = minutePickerState)
-
-        LaunchedEffect(dayPickerState) {
-            snapshotFlow { dayPickerState.firstVisibleItemIndex }
-                .collect { index ->
-                    if (index in dayOptions.indices && index != selectedDayIndex) {
-                        selectedDayIndex = index
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                }
-        }
-
-        LaunchedEffect(hourPickerState) {
-            snapshotFlow { hourPickerState.firstVisibleItemIndex }
-                .collect { index ->
-                    if (index in hourOptions.indices && index != selectedHourIndex) {
-                        selectedHourIndex = index
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                }
-        }
-
-        LaunchedEffect(minutePickerState) {
-            snapshotFlow { minutePickerState.firstVisibleItemIndex }
-                .collect { index ->
-                    if (index in minuteOptions.indices && index != selectedMinuteIndex) {
-                        selectedMinuteIndex = index
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                }
-        }
-
-        val selectedTimestamp = remember(selectedDayIndex, selectedHourIndex, selectedMinuteIndex) {
-            Calendar.getInstance().apply {
-                val base = dayOptions.getOrElse(selectedDayIndex) { Calendar.getInstance() }
-                set(Calendar.YEAR, base.get(Calendar.YEAR))
-                set(Calendar.DAY_OF_YEAR, base.get(Calendar.DAY_OF_YEAR))
-                set(Calendar.HOUR_OF_DAY, hourOptions.getOrElse(selectedHourIndex) { 0 })
-                set(Calendar.MINUTE, minuteOptions.getOrElse(selectedMinuteIndex) { 0 })
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-        }
-
-        val formattedSelectedDateTime = remember(selectedTimestamp) {
-            val sdf = SimpleDateFormat("EEEE d 'de' MMMM, HH:mm", Locale.forLanguageTag("es-ES"))
-            val formatted = sdf.format(Date(selectedTimestamp))
-            formatted.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.forLanguageTag("es-ES")) else it.toString() }
-        }
-
-        ModalBottomSheet(
-            onDismissRequest = { showReminderDialog = false },
-            sheetState = reminderSheetState,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            containerColor = if (isDark) Color(0xFF1C1C1E) else Color.White,
-            tonalElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Programar recordatorio",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    ),
-                    color = if (isDark) Color.White else Color(0xFF0F172A)
+    EditorReminderBottomSheet(
+        showReminderDialog = showReminderDialog,
+        reminderTimestamp = reminderTimestamp,
+        isDark = isDark,
+        amber = amber,
+        onSaveReminder = { selectedTimestamp, offsets ->
+            reminderTimestamp = selectedTimestamp
+            if (noteId > 0) {
+                viewModel.setReminder(
+                    context,
+                    noteId,
+                    selectedTimestamp,
+                    title,
+                    NoteBlockSerializer.serialize(blocks),
+                    offsets
                 )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = amber.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, amber.copy(alpha = 0.4f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = null,
-                            tint = amber,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = formattedSelectedDateTime,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = amber
-                            )
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (isDark) Color(0xFF27272A) else Color(0xFFE2E8F0),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                selectedDayIndex = 0
-                                selectedHourIndex = 18
-                                selectedMinuteIndex = 0
-                                reminderCoroutineScope.launch {
-                                    dayPickerState.animateScrollToItem(0)
-                                    hourPickerState.animateScrollToItem(18)
-                                    minutePickerState.animateScrollToItem(0)
-                                }
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                    ) {
-                        Box(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Hoy 18:00",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (isDark) Color.White else Color.Black
-                            )
-                        }
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (isDark) Color(0xFF27272A) else Color(0xFFE2E8F0),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                val targetDay = if (dayOptions.size > 1) 1 else 0
-                                selectedDayIndex = targetDay
-                                selectedHourIndex = 9
-                                selectedMinuteIndex = 0
-                                reminderCoroutineScope.launch {
-                                    dayPickerState.animateScrollToItem(targetDay)
-                                    hourPickerState.animateScrollToItem(9)
-                                    minutePickerState.animateScrollToItem(0)
-                                }
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                    ) {
-                        Box(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Mañana 09:00",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (isDark) Color.White else Color.Black
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "DÍA",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(0.50f),
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        text = "HORA",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(0.25f),
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        text = "MIN",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(0.25f),
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = amber.copy(alpha = 0.18f),
-                        border = BorderStroke(1.5.dp, amber)
-                    ) {}
-
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        LazyColumn(
-                            state = dayPickerState,
-                            flingBehavior = daySnap,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            contentPadding = PaddingValues(vertical = 55.dp),
-                            modifier = Modifier
-                                .weight(0.50f)
-                                .fillMaxHeight()
-                        ) {
-                            itemsIndexed(dayOptions) { idx, dayCal ->
-                                val isSelected = idx == selectedDayIndex
-                                val dayText = remember(dayCal) {
-                                    val now = Calendar.getInstance()
-                                    if (dayCal.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
-                                        dayCal.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) {
-                                        "Hoy"
-                                    } else {
-                                        val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-                                        if (dayCal.get(Calendar.YEAR) == tomorrow.get(Calendar.YEAR) &&
-                                            dayCal.get(Calendar.DAY_OF_YEAR) == tomorrow.get(Calendar.DAY_OF_YEAR)) {
-                                            "Mañana"
-                                        } else {
-                                            val sdf = SimpleDateFormat("EEE d MMM", Locale.forLanguageTag("es-ES"))
-                                            sdf.format(dayCal.time)
-                                        }
-                                    }
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(50.dp)
-                                        .clickable {
-                                            selectedDayIndex = idx
-                                            reminderCoroutineScope.launch {
-                                                dayPickerState.animateScrollToItem(idx)
-                                            }
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = dayText,
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = if (isSelected) 17.sp else 14.sp
-                                        ),
-                                        color = if (isSelected) amber else if (isDark) Color.White.copy(alpha = 0.35f) else Color.DarkGray.copy(alpha = 0.35f),
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(120.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                        )
-
-                        LazyColumn(
-                            state = hourPickerState,
-                            flingBehavior = hourSnap,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            contentPadding = PaddingValues(vertical = 55.dp),
-                            modifier = Modifier
-                                .weight(0.25f)
-                                .fillMaxHeight()
-                        ) {
-                            itemsIndexed(hourOptions) { idx, hour ->
-                                val isSelected = idx == selectedHourIndex
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(50.dp)
-                                        .clickable {
-                                            selectedHourIndex = idx
-                                            reminderCoroutineScope.launch {
-                                                hourPickerState.animateScrollToItem(idx)
-                                            }
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = String.format(Locale.getDefault(), "%02d", hour),
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = if (isSelected) 20.sp else 15.sp
-                                        ),
-                                        color = if (isSelected) amber else if (isDark) Color.White.copy(alpha = 0.35f) else Color.DarkGray.copy(alpha = 0.35f)
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = ":",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = amber,
-                            modifier = Modifier.padding(horizontal = 2.dp)
-                        )
-
-                        LazyColumn(
-                            state = minutePickerState,
-                            flingBehavior = minuteSnap,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            contentPadding = PaddingValues(vertical = 55.dp),
-                            modifier = Modifier
-                                .weight(0.25f)
-                                .fillMaxHeight()
-                        ) {
-                            itemsIndexed(minuteOptions) { idx, minute ->
-                                val isSelected = idx == selectedMinuteIndex
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(50.dp)
-                                        .clickable {
-                                            selectedMinuteIndex = idx
-                                            reminderCoroutineScope.launch {
-                                                minutePickerState.animateScrollToItem(idx)
-                                            }
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = String.format(Locale.getDefault(), "%02d", minute),
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = if (isSelected) 20.sp else 15.sp
-                                        ),
-                                        color = if (isSelected) amber else if (isDark) Color.White.copy(alpha = 0.35f) else Color.DarkGray.copy(alpha = 0.35f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Avisar antes",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            letterSpacing = 0.5.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(start = 2.dp, bottom = 6.dp)
-                    )
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(REMINDER_OFFSET_OPTIONS) { option ->
-                            val isSelected = selectedReminderOffsets.contains(option.minutes)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    selectedReminderOffsets = if (isSelected) {
-                                        if (selectedReminderOffsets.size > 1) selectedReminderOffsets - option.minutes else selectedReminderOffsets
-                                    } else {
-                                        selectedReminderOffsets + option.minutes
-                                    }
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                                label = { Text(option.label, fontSize = 13.sp) },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = amber,
-                                    selectedLabelColor = Color.Black
-                                )
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = amber,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            reminderTimestamp = selectedTimestamp
-                            if (noteId > 0) {
-                                viewModel.setReminder(context, noteId, selectedTimestamp, title, NoteBlockSerializer.serialize(blocks), selectedReminderOffsets.toList())
-                            }
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            showReminderDialog = false
-                        }
-                ) {
-                    Box(
-                        modifier = Modifier.padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Guardar recordatorio",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            ),
-                            color = Color.Black
-                        )
-                    }
-                }
-
-                if (reminderTimestamp != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    TextButton(
-                        onClick = {
-                            reminderTimestamp = null
-                            if (noteId > 0) {
-                                viewModel.cancelReminder(context, noteId)
-                            }
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            showReminderDialog = false
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Eliminar recordatorio",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                        )
-                    }
-                }
             }
-        }
-    }
-
-    if (showColorDialog) {
-        AlertDialog(
-            onDismissRequest = { showColorDialog = false },
-            title = { Text("Color de nota") },
-            text = {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    items(6) { idx ->
-                        val col = NoteColors.getColor(idx, isDark)
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(col)
-                                .border(
-                                    width = if (colorIndex == idx) 2.dp else 1.dp,
-                                    color = if (colorIndex == idx) amber else MaterialTheme.colorScheme.outline,
-                                    shape = CircleShape
-                                )
-                                .clickable {
-                                    colorIndex = idx
-                                    showColorDialog = false
-                                }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showColorDialog = false }) {
-                    Text("Cerrar")
-                }
+        },
+        onDeleteReminder = {
+            reminderTimestamp = null
+            if (noteId > 0) {
+                viewModel.cancelReminder(context, noteId)
             }
-        )
-    }
-
-    if (showPaperDialog) {
-        AlertDialog(
-            onDismissRequest = { showPaperDialog = false },
-            title = { Text("Estilo de papel") },
-            text = {
-                Column {
-                    PaperStyle.entries.forEach { style ->
-                        TextButton(
-                            onClick = {
-                                paperStyle = style
-                                showPaperDialog = false
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = when (style) {
-                                    PaperStyle.BLANK -> "Liso"
-                                    PaperStyle.RULED -> "Rayado"
-                                    PaperStyle.GRID -> "Cuadriculado"
-                                    PaperStyle.DOTS -> "Punteado"
-                                },
-                                color = if (paperStyle == style) amber else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showPaperDialog = false }) {
-                    Text("Cerrar")
-                }
-            }
-        )
-    }
-
-    if (showLockDialog) {
-        NoteLockDialog(
-            isSettingPin = true,
-            onConfirm = { pin ->
-                isLocked = true
-                lockPin = pin
-                showLockDialog = false
-            },
-            onDismiss = { showLockDialog = false }
-        )
-    }
-
-    if (showStatsDialog) {
-        val statsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-        val textBlocks = blocks.filterIsInstance<NoteBlock.Text>()
-        val checklistBlocks = blocks.filterIsInstance<NoteBlock.Checklist>()
-        val tableBlocks = blocks.filterIsInstance<NoteBlock.Table>()
-        val audioBlocks = blocks.filterIsInstance<AudioBlock>()
-        val pdfBlocks = blocks.filterIsInstance<PdfBlock>()
-
-        val plainTextSnippet = remember(blocks, title) {
-            val contentStr = blocks.joinToString(" ") {
-                when (it) {
-                    is NoteBlock.Text -> it.content
-                    is NoteBlock.Checklist -> it.content
-                    is NoteBlock.SimpleList -> it.content
-                    is NoteBlock.CalloutBox -> it.content
-                    is NoteBlock.Drawing -> ""
-                    is NoteBlock.Table -> it.matrix.joinToString(" ") { row -> row.joinToString(" ") { cell -> cell.text } }
-                    is PdfBlock -> it.fileName
-                    is ImageBlock -> "[Imagen]"
-                    is NoteBlock.Image -> it.fileName
-                    is AudioBlock -> it.transcription
-                }
-            }
-            "$title $contentStr"
-        }
-
-        val wordCount = remember(plainTextSnippet) {
-            plainTextSnippet.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
-        }
-        val charCount = remember(plainTextSnippet) { plainTextSnippet.length }
-        val readTimeMin = remember(wordCount) { (wordCount / 200).coerceAtLeast(1) }
-
-        val createdFormatted = remember(createdAt) {
-            SimpleDateFormat("d 'de' MMMM 'de' yyyy, HH:mm", Locale.forLanguageTag("es-ES")).format(Date(createdAt))
-        }
-        val updatedFormatted = remember(updatedAt) {
-            SimpleDateFormat("d 'de' MMMM 'de' yyyy, HH:mm", Locale.forLanguageTag("es-ES")).format(Date(updatedAt))
-        }
-
-        ModalBottomSheet(
-            onDismissRequest = { showStatsDialog = false },
-            sheetState = statsSheetState,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = if (isDark) Color(0xFF141416) else Color(0xFFF8FAFC),
-            tonalElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Información y estadísticas",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    ),
-                    color = if (isDark) Color.White else Color(0xFF0F172A)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    LiquidGlassContainer(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        isDark = isDark
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "$wordCount",
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                color = amber
-                            )
-                            Text(
-                                text = "Palabras",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    LiquidGlassContainer(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        isDark = isDark
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "$charCount",
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                color = amber
-                            )
-                            Text(
-                                text = "Caracteres",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    LiquidGlassContainer(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        isDark = isDark
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "~$readTimeMin min",
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                color = amber
-                            )
-                            Text(
-                                text = "Lectura",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                LiquidGlassContainer(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    isDark = isDark
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "Detalles del contenido",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = if (isDark) Color.White else Color(0xFF0F172A)
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Párrafos de texto:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("${textBlocks.size}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                        }
-
-                        if (checklistBlocks.isNotEmpty()) {
-                            val doneCount = checklistBlocks.count { it.isChecked }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Tareas completadas:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("$doneCount de ${checklistBlocks.size}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = amber)
-                            }
-                        }
-
-                        if (tableBlocks.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Tablas:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${tableBlocks.size}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                            }
-                        }
-
-                        if (audioBlocks.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Grabaciones de audio:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${audioBlocks.size}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                            }
-                        }
-
-                        if (pdfBlocks.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Adjuntos PDF:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${pdfBlocks.size}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                            }
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Creada:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(createdFormatted, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Modificada:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(updatedFormatted, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                TextButton(
-                    onClick = { showStatsDialog = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Cerrar",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                        color = amber
-                    )
-                }
-            }
-        }
-    }
-
-    if (pendingScannedPdfUri != null) {
-        AlertDialog(
-            onDismissRequest = { pendingScannedPdfUri = null },
-            title = { Text("Nombrar documento escaneado") },
-            text = {
-                OutlinedTextField(
-                    value = scannedPdfName,
-                    onValueChange = { scannedPdfName = it },
-                    label = { Text("Nombre del archivo") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val uri = pendingScannedPdfUri
-                        if (uri != null) {
-                            viewModel.insertPdfBlock(uri, customFileName = scannedPdfName) { newBlock ->
-                                if (!blocks.any { b -> b.id == newBlock.id }) {
-                                    blocks.add(newBlock)
-                                }
-                            }
-                        }
-                        pendingScannedPdfUri = null
-                    }
-                ) {
-                    Text("Guardar")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        pendingScannedPdfUri = null
-                    }
-                ) {
-                    Text("Cancelar")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun FormatSectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.labelMedium.copy(
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp
-        ),
-        color = Color(0xFF94A3B8),
-        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 12.dp)
+        },
+        onDismissRequest = { showReminderDialog = false }
     )
-}
 
-@Composable
-fun FormatOptionItem(
-    icon: ImageVector,
-    text: String,
-    onClick: () -> Unit
-) {
-    val bgColor = Color(0xFF1C1C1E)
-    val contentColor = Color.White
-    val iconTint = AppleNotesAmber
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(bgColor),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium.copy(
-                fontWeight = FontWeight.Medium,
-                fontSize = 15.sp
-            ),
-            color = contentColor
-        )
-    }
-}
-
-private data class HighlightSpan(val rawStart: Int, val rawEnd: Int) {
-    val rawLength: Int get() = rawEnd - rawStart
-    val innerLength: Int get() = rawLength - 4
-}
-
-private fun sanitizeHighlightTags(text: String): String {
-    var result = text
-    // 1. Eliminar etiquetas vacías o triples como ==== o ===
-    result = result.replace(Regex("""==\s*==|====|==="""), "")
-
-    // 2. Corregir etiqueta rota al final: ==palabra=
-    result = result.replace(Regex("""==([^=\n]+)=(?!=)""")) {
-        it.groupValues[1]
-    }
-
-    // 3. Corregir etiqueta rota al inicio: =palabra==
-    result = result.replace(Regex("""(?<!=)=([^=\n]+)==""")) {
-        it.groupValues[1]
-    }
-
-    // 4. Corregir etiquetas únicas: =palabra=
-    result = result.replace(Regex("""(?<!=)=([^=\n]+)=(?![=])""")) {
-        it.groupValues[1]
-    }
-
-    return result
-}
-
-private fun sanitizeTextFieldValue(tfv: TextFieldValue): TextFieldValue {
-    val rawText = tfv.text
-    val sanitized = sanitizeHighlightTags(rawText)
-    if (sanitized == rawText) {
-        return tfv
-    }
-    val newCursor = tfv.selection.start.coerceIn(0, sanitized.length)
-    return tfv.copy(
-        text = sanitized,
-        selection = TextRange(newCursor)
+    EditorColorPickerDialog(
+        showColorDialog = showColorDialog,
+        colorIndex = colorIndex,
+        isDark = isDark,
+        amber = amber,
+        onColorSelected = { colorIndex = it },
+        onDismissRequest = { showColorDialog = false }
     )
-}
 
-private class HighlightOffsetMapping(private val spans: List<HighlightSpan>) : OffsetMapping {
-    override fun originalToTransformed(offset: Int): Int {
-        var totalRemoved = 0
-        for (span in spans) {
-            if (offset <= span.rawStart) {
-                break
-            } else if (offset <= span.rawStart + 2) {
-                totalRemoved += (offset - span.rawStart)
-            } else if (offset <= span.rawEnd - 2) {
-                totalRemoved += 2
-            } else if (offset <= span.rawEnd) {
-                totalRemoved += 2 + (offset - (span.rawEnd - 2))
-            } else {
-                totalRemoved += 4
-            }
-        }
-        return offset - totalRemoved
-    }
+    EditorPaperStyleDialog(
+        showPaperDialog = showPaperDialog,
+        paperStyle = paperStyle,
+        amber = amber,
+        onStyleSelected = { paperStyle = it },
+        onDismissRequest = { showPaperDialog = false }
+    )
 
-    override fun transformedToOriginal(offset: Int): Int {
-        var totalAdded = 0
-        for (span in spans) {
-            val visualStart = span.rawStart - totalAdded
-            val visualEnd = visualStart + span.innerLength
+    EditorStatsBottomSheet(
+        showStatsDialog = showStatsDialog,
+        blocks = blocks,
+        title = title,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        isPaperDark = isPaperDark,
+        isDark = isDark,
+        amber = amber,
+        onDismissRequest = { showStatsDialog = false }
+    )
 
-            if (offset <= visualStart) {
-                break
-            } else if (offset <= visualEnd) {
-                totalAdded += 2
-            } else {
-                totalAdded += 4
-            }
-        }
-        return offset + totalAdded
-    }
-}
-
-private fun markdownVisualTransformation(isDark: Boolean, amber: Color): VisualTransformation {
-    val lightIndigo = Color(0xFF1A365D)
-    val darkIndigo = Color(0xFF60A5FA)
-    val tagColor = if (isDark) darkIndigo else lightIndigo
-
-    return VisualTransformation { text ->
-        val fullText = text.text
-        val highlightRegex = Regex("""==([^=\n]+)==""")
-        val highlightMatches = highlightRegex.findAll(fullText).toList()
-
-        val spans = highlightMatches.map {
-            HighlightSpan(it.range.first, it.range.last + 1)
-        }
-
-        val annotatedString = buildAnnotatedString {
-            var lastIndex = 0
-            for (match in highlightMatches) {
-                val start = match.range.first
-                val end = match.range.last + 1
-
-                if (start > lastIndex) {
-                    append(fullText.substring(lastIndex, start))
-                }
-
-                val innerText = match.groupValues[1]
-                val visualStart = length
-                append(innerText)
-                val visualEnd = length
-
-                addStyle(
-                    SpanStyle(background = amber.copy(alpha = 0.35f)),
-                    visualStart,
-                    visualEnd
-                )
-
-                lastIndex = end
-            }
-            if (lastIndex < fullText.length) {
-                append(fullText.substring(lastIndex))
-            }
-
-            // Aplicar estilo de hashtags sobre el texto visual
-            val visualString = toAnnotatedString().text
-            val hashtagRegex = Regex("""#([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)""")
-            for (m in hashtagRegex.findAll(visualString)) {
-                addStyle(
-                    SpanStyle(color = tagColor, fontWeight = FontWeight.SemiBold),
-                    m.range.first,
-                    m.range.last + 1
-                )
-            }
-        }
-
-        val offsetMapping = if (spans.isEmpty()) OffsetMapping.Identity else HighlightOffsetMapping(spans)
-        TransformedText(annotatedString, offsetMapping)
-    }
-}
-
-@Composable
-private fun SmartTagsSuggestionRow(
-    tags: List<SmartTagItem>,
-    amberColor: Color,
-    isDark: Boolean,
-    onSelectTag: (SmartTagItem) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val haptics = LocalHapticFeedback.current
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = if (isDark) Color(0xFF2C2C2E).copy(alpha = 0.92f) else Color(0xFFF2F2F7).copy(alpha = 0.92f),
-        shadowElevation = 8.dp,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (isDark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f)
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp, horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Tag,
-                contentDescription = null,
-                tint = amberColor,
-                modifier = Modifier
-                    .size(20.dp)
-                    .padding(end = 4.dp)
-            )
-
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                items(tags, key = { "${it.tag}_${it.isNew}" }) { item ->
-                    Surface(
-                        onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onSelectTag(item)
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        color = if (item.isNew) {
-                            amberColor.copy(alpha = 0.18f)
-                        } else {
-                            if (isDark) Color(0xFF3A3A3C) else Color.White
-                        },
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = if (item.isNew) amberColor.copy(alpha = 0.5f)
-                            else if (isDark) Color.White.copy(alpha = 0.12f)
-                            else Color.Black.copy(alpha = 0.08f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (item.isNew) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = null,
-                                    tint = amberColor,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "Crear #${item.tag}",
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = amberColor
-                                    )
-                                )
-                            } else {
-                                Text(
-                                    text = "#${item.tag}",
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isDark) Color.White else Color(0xFF1C1C1E)
-                                    )
-                                )
-                                if (item.count > 0) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = amberColor.copy(alpha = 0.15f)
-                                    ) {
-                                        Text(
-                                            text = "${item.count}",
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 10.sp,
-                                                color = amberColor
-                                            ),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+    EditorScannedPdfNameDialog(
+        pdfUri = pendingScannedPdfUri,
+        scannedPdfName = scannedPdfName,
+        onNameChange = { scannedPdfName = it },
+        onConfirm = { uri, name ->
+            viewModel.insertPdfBlock(uri, customFileName = name) { newBlock ->
+                if (!blocks.any { b -> b.id == newBlock.id }) {
+                    blocks.add(newBlock)
                 }
             }
-        }
-    }
+            pendingScannedPdfUriString = null
+        },
+        onDismissRequest = { pendingScannedPdfUriString = null }
+    )
 }
 
 private fun Context.findActivity(): Activity? = when (this) {
