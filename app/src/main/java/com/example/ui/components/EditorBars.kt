@@ -506,6 +506,7 @@ internal fun EditorAccessoryBar(
     onFormatPdf: () -> Unit,
     onFormatScanner: () -> Unit,
     onFormatMath: () -> Unit = {},
+    onFormatInlineMath: () -> Unit = {},
     onAddImage: () -> Unit,
     onStartAudioDictation: () -> Unit,
     onToggleBold: () -> Unit,
@@ -709,11 +710,21 @@ internal fun EditorAccessoryBar(
 
                             FormatOptionItem(
                                 icon = Icons.Default.Functions,
-                                text = "Ecuación (KaTeX)",
+                                text = "Ecuación en bloque (KaTeX)",
                                 isPaperDark = isPaperDark,
                                 amberColor = amber
                             ) {
                                 onFormatMath()
+                                isInsertMenuExpanded = false
+                            }
+
+                            FormatOptionItem(
+                                icon = Icons.Default.Functions,
+                                text = "Fórmula en línea (Inline Math $...$)",
+                                isPaperDark = isPaperDark,
+                                amberColor = amber
+                            ) {
+                                onFormatInlineMath()
                                 isInsertMenuExpanded = false
                             }
                         }

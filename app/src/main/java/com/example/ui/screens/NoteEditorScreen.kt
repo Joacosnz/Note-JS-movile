@@ -68,7 +68,11 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import com.example.ui.components.BasicTextFieldWithInline
+import com.example.ui.components.buildInlineMathMap
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -135,6 +139,9 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.runtime.derivedStateOf
 import com.example.ui.components.LiquidGlassContainer
 import com.example.ui.components.InlineMathView
+import com.example.ui.components.InlineMathBlockItem
+import com.example.ui.components.InsertInlineMathDialog
+import com.example.ui.components.onInlineMathClick
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -318,6 +325,12 @@ fun NoteEditorScreen(
     var showNoteLinker by remember { mutableStateOf(false) }
     var linkQuery by remember { mutableStateOf("") }
     var activeNoteLinkerBlockId by remember { mutableStateOf<String?>(null) }
+
+    var showInlineMathDialog by remember { mutableStateOf(false) }
+    var inlineMathDialogInitialCode by remember { mutableStateOf("") }
+    var inlineMathDialogTargetBlockId by remember { mutableStateOf<String?>(null) }
+    var inlineMathDialogIsEditing by remember { mutableStateOf(false) }
+    var inlineMathDialogRange by remember { mutableStateOf<TextRange?>(null) }
 
     fun evaluateNoteLinkTrigger(blockId: String, tfv: TextFieldValue) {
         val text = tfv.text
@@ -1501,6 +1514,10 @@ fun NoteEditorScreen(
                             val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
                             var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
 
+                            var isFocused by remember(block.id) { mutableStateOf(false) }
+                            val hasMath = block.content.count { it == '$' } >= 2 || block.content.contains("[math:")
+                            val showMathPreview = !isFocused && (targetFocusBlockId != block.id) && hasMath
+
                             val baseFontSize = if (customFontSizeSp != 17) customFontSizeSp.sp else when (block.style) {
                                 TextStyleType.TITLE -> 22.sp
                                 TextStyleType.SUBTITLE -> 18.sp
@@ -1519,7 +1536,19 @@ fun NoteEditorScreen(
                                 lineHeight = (baseFontSize.value * 1.4f).sp
                             )
                             val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
-                            if (block.style == TextStyleType.SUBTITLE) {
+
+                            if (showMathPreview) {
+                                InlineMathView(
+                                    content = block.content,
+                                    isDark = isPaperDark,
+                                    onClick = {
+                                        isFocused = true
+                                        focusedBlockId = block.id
+                                        targetFocusBlockId = block.id
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                )
+                            } else if (block.style == TextStyleType.SUBTITLE) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1546,7 +1575,15 @@ fun NoteEditorScreen(
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
-                                    BasicTextField(
+                                    BasicTextFieldWithInline(
+                                        inlineContent = buildInlineMathMap(block.content) { code, start, end ->
+                                            inlineMathDialogTargetBlockId = block.id
+                                            inlineMathDialogInitialCode = code
+                                            inlineMathDialogIsEditing = true
+                                            inlineMathDialogRange = TextRange(start, end)
+                                            showInlineMathDialog = true
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
                                         value = tfv,
                                         onValueChange = { newValue ->
                                             val sanitized = sanitizeTextFieldValue(newValue)
@@ -1621,6 +1658,7 @@ fun NoteEditorScreen(
                                             .bringIntoViewRequester(bringIntoViewRequester)
                                             .focusRequester(focusRequester)
                                             .onFocusChanged { focusState ->
+                                                isFocused = focusState.isFocused
                                                 if (focusState.isFocused) {
                                                     focusedBlockId = block.id
                                                     coroutineScope.launch {
@@ -1660,62 +1698,90 @@ fun NoteEditorScreen(
                             } else {
                                 BasicTextField(
                                     value = tfv,
-                                        onValueChange = { newValue ->
-                                            val sanitized = sanitizeTextFieldValue(newValue)
-                                            evaluateNoteLinkTrigger(block.id, sanitized)
-                                            if ((block.style == TextStyleType.TITLE) && sanitized.text.contains('\n')) {
-                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                                if (block.content.isEmpty()) {
-                                                    if (realIdx != -1) {
-                                                        val updated = block.copy(style = TextStyleType.BODY, isCollapsed = false, isIndented = false)
-                                                        blocks[realIdx] = updated
-                                                        blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
-                                                        targetFocusBlockId = block.id
-                                                        focusedBlockId = block.id
-                                                    }
-                                                } else {
-                                                    val newlineIndex = sanitized.text.indexOf('\n')
-                                                    val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
-                                                    val headingText = sanitized.text.substring(0, safeNL)
-                                                    val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
-
-                                                    blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
-                                                    if (realIdx != -1) {
-                                                        blocks[realIdx] = block.copy(content = headingText, isCollapsed = false)
-
-                                                        val newBodyId = UUID.randomUUID().toString()
-                                                        val newBodyBlock = NoteBlock.Text(id = newBodyId, content = remainingText, style = TextStyleType.BODY, isIndented = true)
-                                                        blocks.add(realIdx + 1, newBodyBlock)
-                                                        blockTextFieldValues[newBodyId] = TextFieldValue(remainingText, TextRange(remainingText.length))
-                                                        targetFocusBlockId = newBodyId
-                                                        focusedBlockId = newBodyId
-                                                    }
-                                                }
-                                            } else if (block.isIndented && sanitized.text.endsWith("\n\n")) {
-                                                val trimmedText = sanitized.text.dropLast(2)
-                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                    onValueChange = { newValue ->
+                                        val sanitized = sanitizeTextFieldValue(newValue)
+                                        evaluateNoteLinkTrigger(block.id, sanitized)
+                                        if ((block.style == TextStyleType.TITLE) && sanitized.text.contains('\n')) {
+                                            val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                            if (block.content.isEmpty()) {
                                                 if (realIdx != -1) {
-                                                    blocks[realIdx] = block.copy(content = trimmedText)
-                                                    blockTextFieldValues[block.id] = TextFieldValue(trimmedText, TextRange(trimmedText.length))
+                                                    val updated = block.copy(style = TextStyleType.BODY, isCollapsed = false, isIndented = false)
+                                                    blocks[realIdx] = updated
+                                                    blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
+                                                    targetFocusBlockId = block.id
+                                                    focusedBlockId = block.id
+                                                }
+                                            } else {
+                                                val newlineIndex = sanitized.text.indexOf('\n')
+                                                val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
+                                                val headingText = sanitized.text.substring(0, safeNL)
+                                                val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
+
+                                                blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
+                                                if (realIdx != -1) {
+                                                    blocks[realIdx] = block.copy(content = headingText, isCollapsed = false)
 
                                                     val newBodyId = UUID.randomUUID().toString()
-                                                    val newBodyBlock = NoteBlock.Text(id = newBodyId, content = "", style = TextStyleType.BODY, isIndented = false)
+                                                    val newBodyBlock = NoteBlock.Text(id = newBodyId, content = remainingText, style = TextStyleType.BODY, isIndented = true)
                                                     blocks.add(realIdx + 1, newBodyBlock)
-                                                    blockTextFieldValues[newBodyId] = TextFieldValue("", TextRange(0))
+                                                    blockTextFieldValues[newBodyId] = TextFieldValue(remainingText, TextRange(remainingText.length))
                                                     targetFocusBlockId = newBodyId
                                                     focusedBlockId = newBodyId
                                                 }
-                                            } else {
-                                                blockTextFieldValues[block.id] = sanitized
-                                                if (sanitized.text != block.content) {
-                                                    val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                                    if (realIdx != -1) {
-                                                        blocks[realIdx] = block.copy(content = sanitized.text)
-                                                    }
+                                            }
+                                        } else if (block.isIndented && sanitized.text.endsWith("\n\n")) {
+                                            val trimmedText = sanitized.text.dropLast(2)
+                                            val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                            if (realIdx != -1) {
+                                                blocks[realIdx] = block.copy(content = trimmedText)
+                                                blockTextFieldValues[block.id] = TextFieldValue(trimmedText, TextRange(trimmedText.length))
+
+                                                val newBodyId = UUID.randomUUID().toString()
+                                                val newBodyBlock = NoteBlock.Text(id = newBodyId, content = "", style = TextStyleType.BODY, isIndented = false)
+                                                blocks.add(realIdx + 1, newBodyBlock)
+                                                blockTextFieldValues[newBodyId] = TextFieldValue("", TextRange(0))
+                                                targetFocusBlockId = newBodyId
+                                                focusedBlockId = newBodyId
+                                            }
+                                        } else {
+                                            blockTextFieldValues[block.id] = sanitized
+                                            if (sanitized.text != block.content) {
+                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
+                                                if (realIdx != -1) {
+                                                    blocks[realIdx] = block.copy(content = sanitized.text)
                                                 }
+                                            }
+                                            coroutineScope.launch {
+                                                val layout = textLayoutResult
+                                                val cursorOffset = sanitized.selection.max
+                                                if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                                    val cursorRect = layout.getCursorRect(cursorOffset)
+                                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                                    bringIntoViewRequester.bringIntoView(expandedRect)
+                                                } else {
+                                                    bringIntoViewRequester.bringIntoView()
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onTextLayout = { textLayoutResult = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .onNoteLinkClick(textLayoutResult) { linkedId ->
+                                            viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                        }
+                                        .bringIntoViewRequester(bringIntoViewRequester)
+                                        .focusRequester(focusRequester)
+                                        .onFocusChanged { focusState ->
+                                            isFocused = focusState.isFocused
+                                            if (focusState.isFocused) {
+                                                focusedBlockId = block.id
                                                 coroutineScope.launch {
+                                                    delay(100)
                                                     val layout = textLayoutResult
-                                                    val cursorOffset = sanitized.selection.max
+                                                    val currentTfv = blockTextFieldValues[block.id]
+                                                    val cursorOffset = currentTfv?.selection?.max ?: 0
                                                     if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
                                                         val cursorRect = layout.getCursorRect(cursorOffset)
                                                         val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
@@ -1725,58 +1791,31 @@ fun NoteEditorScreen(
                                                     }
                                                 }
                                             }
-                                        },
-                                        onTextLayout = { textLayoutResult = it },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp)
-                                            .onNoteLinkClick(textLayoutResult) { linkedId ->
-                                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                        }
+                                        .testTag("block_text_$index"),
+                                    textStyle = textStyle.copy(color = paperTextColor),
+                                    cursorBrush = SolidColor(amber),
+                                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
+                                    decorationBox = { innerTextField ->
+                                        if (block.content.isEmpty()) {
+                                            val showPlaceholder = when (block.style) {
+                                                TextStyleType.TITLE -> "Título de sección..."
+                                                else -> if (blocks.size <= 1 && title.isEmpty()) "Escribe algo..." else ""
                                             }
-                                            .bringIntoViewRequester(bringIntoViewRequester)
-                                            .focusRequester(focusRequester)
-                                            .onFocusChanged { focusState ->
-                                                if (focusState.isFocused) {
-                                                    focusedBlockId = block.id
-                                                    coroutineScope.launch {
-                                                        delay(100)
-                                                        val layout = textLayoutResult
-                                                        val currentTfv = blockTextFieldValues[block.id]
-                                                        val cursorOffset = currentTfv?.selection?.max ?: 0
-                                                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                            val cursorRect = layout.getCursorRect(cursorOffset)
-                                                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                            bringIntoViewRequester.bringIntoView(expandedRect)
-                                                        } else {
-                                                            bringIntoViewRequester.bringIntoView()
-                                                        }
-                                                    }
-                                                }
+                                            if (showPlaceholder.isNotEmpty()) {
+                                                Text(
+                                                    text = showPlaceholder,
+                                                    style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
+                                                )
                                             }
-                                            .testTag("block_text_$index"),
-                                        textStyle = textStyle.copy(color = paperTextColor),
-                                        cursorBrush = SolidColor(amber),
-                                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                                        decorationBox = { innerTextField ->
-                                            if (block.content.isEmpty()) {
-                                                val showPlaceholder = when (block.style) {
-                                                    TextStyleType.TITLE -> "Título de sección..."
-                                                    else -> if (blocks.size <= 1 && title.isEmpty()) "Escribe algo..." else ""
-                                                }
-                                                if (showPlaceholder.isNotEmpty()) {
-                                                    Text(
-                                                        text = showPlaceholder,
-                                                        style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
-                                                    )
-                                                }
-                                            }
-                                            innerTextField()
-                                        },
-                                        keyboardOptions = KeyboardOptions(
-                                            capitalization = KeyboardCapitalization.Sentences,
-                                            imeAction = ImeAction.Default
-                                        )
+                                        }
+                                        innerTextField()
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        capitalization = KeyboardCapitalization.Sentences,
+                                        imeAction = ImeAction.Default
                                     )
+                                )
                             }
                         }
                         is NoteBlock.Checklist -> {
@@ -2056,7 +2095,15 @@ fun NoteEditorScreen(
                                     val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
                                     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
                                     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-                                    BasicTextField(
+                                    BasicTextFieldWithInline(
+                                        inlineContent = buildInlineMathMap(block.content) { code, start, end ->
+                                            inlineMathDialogTargetBlockId = block.id
+                                            inlineMathDialogInitialCode = code
+                                            inlineMathDialogIsEditing = true
+                                            inlineMathDialogRange = TextRange(start, end)
+                                            showInlineMathDialog = true
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        },
                                         value = tfv,
                                         onValueChange = { newValue ->
                                             val sanitized = sanitizeTextFieldValue(newValue)
@@ -2302,7 +2349,7 @@ fun NoteEditorScreen(
                             )
                         }
                         is NoteBlock.Math -> {
-                            MathBlockItem(
+                            InlineMathBlockItem(
                                 block = block,
                                 onUpdateBlock = { updatedMath ->
                                     blocks[index] = updatedMath
@@ -2310,6 +2357,7 @@ fun NoteEditorScreen(
                                 onDeleteBlock = {
                                     removeBlock(index)
                                 },
+                                isDark = isPaperDark,
                                 modifier = Modifier.testTag("block_math_$index")
                             )
                         }
@@ -2507,6 +2555,16 @@ fun NoteEditorScreen(
                                 }
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             },
+                            onFormatInlineMath = {
+                                ensureTextNoteExists()
+                                val targetId = focusedBlockId ?: blocks.firstOrNull { it is NoteBlock.Text }?.id
+                                inlineMathDialogTargetBlockId = targetId
+                                inlineMathDialogInitialCode = ""
+                                inlineMathDialogIsEditing = false
+                                inlineMathDialogRange = null
+                                showInlineMathDialog = true
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
                             onAddImage = {
                                 photoPickerLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -2682,6 +2740,74 @@ fun NoteEditorScreen(
         },
         onDismissRequest = { pendingScannedPdfUriString = null }
     )
+
+    if (showInlineMathDialog) {
+        InsertInlineMathDialog(
+            initialCode = inlineMathDialogInitialCode,
+            isEditing = inlineMathDialogIsEditing,
+            isDark = isPaperDark,
+            onDismiss = { showInlineMathDialog = false },
+            onConfirm = { newLatexCode ->
+                val targetId = inlineMathDialogTargetBlockId
+                if (targetId != null) {
+                    val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                    val text = currentTfv.text
+                    val selection = currentTfv.selection
+                    val mathTag = "[math:$newLatexCode]"
+                    val newText: String
+                    val newSelection: TextRange
+
+                    if (inlineMathDialogIsEditing && inlineMathDialogRange != null) {
+                        val range = inlineMathDialogRange!!
+                        val start = range.min.coerceIn(0, text.length)
+                        val end = range.max.coerceIn(start, text.length)
+                        newText = text.substring(0, start) + mathTag + text.substring(end)
+                        newSelection = TextRange(start + mathTag.length)
+                    } else if (selection.min != selection.max) {
+                        val start = selection.min
+                        val end = selection.max
+                        newText = text.substring(0, start) + mathTag + text.substring(end)
+                        newSelection = TextRange(start + mathTag.length)
+                    } else {
+                        val cursor = selection.min.coerceIn(0, text.length)
+                        val prefix = if (cursor > 0 && !text[cursor - 1].isWhitespace()) " " else ""
+                        val suffix = if (cursor < text.length && !text[cursor].isWhitespace()) " " else ""
+                        val insertStr = "$prefix$mathTag$suffix"
+                        newText = text.substring(0, cursor) + insertStr + text.substring(cursor)
+                        newSelection = TextRange(cursor + insertStr.length)
+                    }
+
+                    blockTextFieldValues[targetId] = TextFieldValue(newText, newSelection)
+                    val realIdx = blocks.indexOfFirst { it.id == targetId }
+                    if (realIdx != -1 && blocks[realIdx] is NoteBlock.Text) {
+                        blocks[realIdx] = (blocks[realIdx] as NoteBlock.Text).copy(content = newText)
+                    }
+                    targetFocusBlockId = targetId
+                    focusedBlockId = targetId
+                }
+                showInlineMathDialog = false
+            },
+            onDelete = if (inlineMathDialogIsEditing && inlineMathDialogRange != null) {
+                {
+                    val targetId = inlineMathDialogTargetBlockId
+                    val range = inlineMathDialogRange
+                    if (targetId != null && range != null) {
+                        val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                        val text = currentTfv.text
+                        val start = range.min.coerceIn(0, text.length)
+                        val end = range.max.coerceIn(start, text.length)
+                        val newText = text.substring(0, start) + text.substring(end)
+                        blockTextFieldValues[targetId] = TextFieldValue(newText, TextRange(start))
+                        val realIdx = blocks.indexOfFirst { it.id == targetId }
+                        if (realIdx != -1 && blocks[realIdx] is NoteBlock.Text) {
+                            blocks[realIdx] = (blocks[realIdx] as NoteBlock.Text).copy(content = newText)
+                        }
+                    }
+                    showInlineMathDialog = false
+                }
+            } else null
+        )
+    }
 }
 
 private fun Context.findActivity(): Activity? = when (this) {

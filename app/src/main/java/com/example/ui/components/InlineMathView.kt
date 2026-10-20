@@ -22,6 +22,10 @@ fun InlineMathView(
 ) {
     val textColor = if (isDark) "white" else "black"
     val html = remember(content, isDark) {
+        val parsedContent = content
+            .replace(Regex("""\[math:(.*?)\]""")) { "\$" + it.groupValues[1] + "\$" }
+            .replace("\n", "<br>")
+
         """
         <!DOCTYPE html>
         <html>
@@ -50,7 +54,7 @@ fun InlineMathView(
             </style>
         </head>
         <body>
-            ${content.replace("\n", "<br>")}
+            $parsedContent
         </body>
         </html>
         """.trimIndent()

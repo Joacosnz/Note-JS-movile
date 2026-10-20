@@ -1,22 +1,33 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.viewinterop.AndroidView
 
 internal val WORD_COUNT_REGEX = Regex("""\s+""")
 internal val EMPTY_HIGHLIGHT_REGEX = Regex("""==\s*==|====|===""")
@@ -26,6 +37,7 @@ internal val MALFORMED_HIGHLIGHT_3_REGEX = Regex("""(?<!=)=([^=\n]+)=(?![=])""")
 internal val HIGHLIGHT_REGEX = Regex("""==([^=\n]+)==""")
 internal val HASHTAG_REGEX = Regex("""#([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)""")
 internal val NOTE_LINK_REGEX = Regex("""\[([^\]]+)\]\(notejs://note/([^\)]+)\)""")
+internal val INLINE_MATH_REGEX = Regex("""\[math:(.*?)\]""")
 
 internal fun sanitizeHighlightTags(text: String): String {
     var result = text
@@ -67,7 +79,8 @@ internal fun sanitizeTextFieldValue(tfv: TextFieldValue): TextFieldValue {
 
 internal enum class SyntaxType {
     HIGHLIGHT,
-    NOTE_LINK
+    NOTE_LINK,
+    INLINE_MATH
 }
 
 internal data class SyntaxSpan(
@@ -92,15 +105,10 @@ internal class SyntaxOffsetMapping(
         for (span in spans) {
             if (clamped <= span.rawStart) {
                 break
-            } else if (clamped <= span.rawStart + span.prefixLength) {
+            } else if (clamped < span.rawEnd) {
+                val rel = (clamped - (span.rawStart + span.prefixLength)).coerceIn(0, span.visualLength)
                 val visualStart = span.rawStart - totalHiddenBefore
-                return visualStart.coerceIn(0, transformedLength)
-            } else if (clamped <= span.rawStart + span.prefixLength + span.visualLength) {
-                val hiddenInThisSpan = span.prefixLength
-                return (clamped - totalHiddenBefore - hiddenInThisSpan).coerceIn(0, transformedLength)
-            } else if (clamped <= span.rawEnd) {
-                val visualEnd = span.rawStart + span.prefixLength + span.visualLength - totalHiddenBefore - span.prefixLength
-                return visualEnd.coerceIn(0, transformedLength)
+                return (visualStart + rel).coerceIn(0, transformedLength)
             } else {
                 totalHiddenBefore += (span.prefixLength + span.suffixLength)
             }
@@ -117,7 +125,7 @@ internal class SyntaxOffsetMapping(
 
             if (clamped <= visualStart) {
                 break
-            } else if (clamped < visualEnd) {
+            } else if (clamped <= visualEnd) {
                 val offsetInsideVisual = clamped - visualStart
                 return (span.rawStart + span.prefixLength + offsetInsideVisual).coerceIn(0, originalLength)
             } else {
@@ -168,7 +176,25 @@ internal fun markdownVisualTransformation(isDark: Boolean, amber: Color): Visual
             )
         }
 
-        val allSpans = (highlightSpans + noteLinkSpans)
+        val mathSpans = INLINE_MATH_REGEX.findAll(fullText).map { match ->
+            val rawStart = match.range.first
+            val rawEnd = match.range.last + 1
+            val code = match.groupValues[1]
+            val fullMatchLen = match.value.length
+            val prefixLen = 6 // "[math:"
+            val visualText = " $code "
+            val suffixLen = 1 // "]"
+            SyntaxSpan(
+                type = SyntaxType.INLINE_MATH,
+                rawStart = rawStart,
+                rawEnd = rawEnd,
+                prefixLength = prefixLen,
+                visualText = visualText,
+                suffixLength = suffixLen
+            )
+        }
+
+        val allSpans = (highlightSpans + noteLinkSpans + mathSpans)
             .sortedBy { it.rawStart }
             .fold(mutableListOf<SyntaxSpan>()) { acc, span ->
                 if (acc.isEmpty() || span.rawStart >= acc.last().rawEnd) {
@@ -187,7 +213,17 @@ internal fun markdownVisualTransformation(isDark: Boolean, amber: Color): Visual
                 }
 
                 val visualStart = length
-                append(span.visualText)
+                
+                if (span.type == SyntaxType.INLINE_MATH) {
+                    val matchStr = fullText.substring(span.rawStart, span.rawEnd)
+                    val latexCodeStr = INLINE_MATH_REGEX.find(matchStr)?.groupValues?.getOrNull(1)
+                    if (latexCodeStr != null) {
+                        appendInlineContent(id = "math_${span.rawStart}", alternateText = latexCodeStr)
+                    }
+                } else {
+                    append(span.visualText)
+                }
+                
                 val visualEnd = length
 
                 when (span.type) {
@@ -219,6 +255,7 @@ internal fun markdownVisualTransformation(isDark: Boolean, amber: Color): Visual
                             )
                         }
                     }
+                    SyntaxType.INLINE_MATH -> {}
                 }
 
                 lastIndex = span.rawEnd
@@ -269,5 +306,107 @@ internal fun Modifier.onNoteLinkClick(
                 onNavigateToNote(noteId)
             }
         }
+    }
+}
+
+internal fun Modifier.onInlineMathClick(
+    textLayoutResult: TextLayoutResult?,
+    onEditInlineMath: (code: String, rawStart: Int, rawEnd: Int) -> Unit
+): Modifier = this.pointerInput(textLayoutResult) {
+    awaitEachGesture {
+        awaitFirstDown(pass = PointerEventPass.Initial)
+        val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
+        if (up != null) {
+            val layout = textLayoutResult ?: return@awaitEachGesture
+            val offset = layout.getOffsetForPosition(up.position)
+            val annotations = layout.layoutInput.text.getStringAnnotations("INLINE_MATH", offset, offset)
+            val itemStr = annotations.firstOrNull()?.item
+            if (itemStr != null) {
+                val parts = itemStr.split("|")
+                if (parts.size >= 3) {
+                    val code = parts[0]
+                    val start = parts[1].toIntOrNull() ?: 0
+                    val end = parts[2].toIntOrNull() ?: 0
+                    up.consume()
+                    onEditInlineMath(code, start, end)
+                }
+            }
+        }
+    }
+}
+
+
+
+@Composable
+fun buildInlineMathMap(
+    text: String,
+    onEditInlineMath: (code: String, rawStart: Int, rawEnd: Int) -> Unit
+): Map<String, InlineTextContent> {
+    return remember(text) {
+        val map = mutableMapOf<String, InlineTextContent>()
+        INLINE_MATH_REGEX.findAll(text).forEach { match ->
+            val code = match.groupValues[1]
+            val rawStart = match.range.first
+            val rawEnd = match.range.last + 1
+            val id = "math_$rawStart"
+            
+            map[id] = InlineTextContent(
+                Placeholder(
+                    width = (code.length * 0.8).em,
+                    height = 2.em,
+                    placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
+                )
+            ) { 
+                Box(
+                    modifier = Modifier.clickable {
+                        onEditInlineMath(code, rawStart, rawEnd)
+                    }
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            android.webkit.WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            }
+                        },
+                        update = { webView ->
+                            val htmlData = """
+                                <!DOCTYPE html>
+                                <html>
+                                <head>
+                                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+                                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+                                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+                                    <style>
+                                        body { margin: 0; padding: 0; display: inline-block; background-color: transparent; font-size: 18px; }
+                                    </style>
+                                </head>
+                                <body>
+                                    $$ $code $$
+                                    <script>
+                                        function renderMath() {
+                                            if (window.renderMathInElement) {
+                                                renderMathInElement(document.body, {
+                                                    delimiters: [
+                                                        {left: "$$", right: "$$", display: false}
+                                                    ]
+                                                });
+                                            } else {
+                                                setTimeout(renderMath, 40);
+                                            }
+                                        }
+                                        document.addEventListener("DOMContentLoaded", renderMath);
+                                        setTimeout(renderMath, 80);
+                                    </script>
+                                </body>
+                                </html>
+                            """.trimIndent()
+                            webView.loadDataWithBaseURL("https://katex.org", htmlData, "text/html", "UTF-8", null)
+                        }
+                    )
+                }
+            }
+        }
+        map
     }
 }
