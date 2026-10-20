@@ -49,6 +49,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
                         is NoteBlock.ImageBlock -> "[Imagen]"
                         is NoteBlock.Image -> "[Imagen: ${block.fileName}]"
                         is AudioBlock -> "[Audio]"
+                        is NoteBlock.Math -> "[Fórmula Math: ${block.latexCode}]"
                     }
                 }.filter { it.isNotBlank() }
                 lines.joinToString("\n")

@@ -106,6 +106,9 @@ class NoteRepository(
                     if (block.fileName.isNotBlank()) textParts.add(block.fileName)
                 }
                 is NoteBlock.Drawing -> {}
+                is NoteBlock.Math -> {
+                    if (block.latexCode.isNotBlank()) textParts.add(block.latexCode)
+                }
             }
         }
 

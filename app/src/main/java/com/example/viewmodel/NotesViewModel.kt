@@ -1330,6 +1330,11 @@ private fun extractNotePlainText(title: String, content: String): String {
                             append(block.transcription).append(" ")
                         }
                     }
+                    is NoteBlock.Math -> {
+                        if (block.latexCode.isNotBlank()) {
+                            append(block.latexCode).append(" ")
+                        }
+                    }
                 }
             }
         } catch (_: Exception) {

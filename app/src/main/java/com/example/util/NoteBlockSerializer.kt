@@ -150,6 +150,11 @@ object NoteBlockSerializer {
                     obj.put("isTranscribing", block.isTranscribing)
                     obj.put("isTranscriptionVisible", block.isTranscriptionVisible)
                 }
+                is NoteBlock.Math -> {
+                    obj.put("type", "math")
+                    obj.put("id", block.id)
+                    obj.put("latexCode", block.latexCode)
+                }
             }
             jsonArray.put(obj)
         }
@@ -315,6 +320,10 @@ object NoteBlockSerializer {
                         val isTranscribing = obj.optBoolean("isTranscribing", false)
                         val isTranscriptionVisible = obj.optBoolean("isTranscriptionVisible", false)
                         list.add(AudioBlock(id = id, filePath = filePath, remoteUrl = remoteUrl, durationMs = durationMs, transcription = transcription, isTranscribing = isTranscribing, isTranscriptionVisible = isTranscriptionVisible))
+                    }
+                    "math" -> {
+                        val latexCode = obj.optString("latexCode", "")
+                        list.add(NoteBlock.Math(id = id, latexCode = latexCode))
                     }
                     else -> {
                         val isCollapsed = obj.optBoolean("isCollapsed", false)

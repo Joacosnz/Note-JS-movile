@@ -107,6 +107,7 @@ fun NoteJsNoteRow(
                     is NoteBlock.ImageBlock -> "[Imagen]"
                     is NoteBlock.Image -> "[Imagen: ${block.fileName}]"
                     is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
+                    is NoteBlock.Math -> "[Fórmula Math: ${block.latexCode}]"
                 }
             }
         }

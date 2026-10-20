@@ -215,6 +215,7 @@ import com.example.ui.components.AudioBlockItem
 import com.example.ui.components.PdfBlockItem
 import com.example.ui.components.TableBlockItem
 import com.example.ui.components.ImageBlockItem
+import com.example.ui.components.MathBlockItem
 import com.example.ui.components.CreateTableBottomSheet
 import com.example.ui.components.REMINDER_OFFSET_OPTIONS
 import androidx.core.content.FileProvider
@@ -1245,6 +1246,7 @@ fun NoteEditorScreen(
                             is ImageBlock -> "[Imagen]"
                             is NoteBlock.Image -> "[Imagen: ${it.fileName}]"
                             is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", it.durationMs / 60000, (it.durationMs % 60000) / 1000)}]"
+                            is NoteBlock.Math -> "[Fórmula Math: ${it.latexCode}]"
                         }
                     }
                     val shareIntent = Intent().apply {
@@ -2298,6 +2300,18 @@ fun NoteEditorScreen(
                                 modifier = Modifier.testTag("block_image_$index")
                             )
                         }
+                        is NoteBlock.Math -> {
+                            MathBlockItem(
+                                block = block,
+                                onUpdateBlock = { updatedMath ->
+                                    blocks[index] = updatedMath
+                                },
+                                onDeleteBlock = {
+                                    removeBlock(index)
+                                },
+                                modifier = Modifier.testTag("block_math_$index")
+                            )
+                        }
                     }
                 }
             }
@@ -2485,6 +2499,12 @@ fun NoteEditorScreen(
                             onFormatScanner = {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 startDocumentScanner()
+                            },
+                            onFormatMath = {
+                                transformOrInsertBlock { id, content ->
+                                    NoteBlock.Math(id = id, latexCode = content)
+                                }
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             },
                             onAddImage = {
                                 photoPickerLauncher.launch(

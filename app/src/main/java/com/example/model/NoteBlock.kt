@@ -290,4 +290,9 @@ sealed interface NoteBlock {
             return copy(hasZebraStripes = !hasZebraStripes)
         }
     }
+
+    data class Math(
+        override val id: String = UUID.randomUUID().toString(),
+        var latexCode: String = ""
+    ) : NoteBlock
 }

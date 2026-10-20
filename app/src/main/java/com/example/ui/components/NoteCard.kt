@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PushPin
@@ -480,6 +481,14 @@ private fun CompactNoteBlockItem(
             CompactMediaItem(
                 icon = Icons.Rounded.Brush,
                 fileName = "Dibujo / Boceto",
+                modifier = modifier
+            )
+        }
+
+        is NoteBlock.Math -> {
+            CompactMediaItem(
+                icon = Icons.Default.Functions,
+                fileName = block.latexCode.ifBlank { "Fórmula Matemática" },
                 modifier = modifier
             )
         }

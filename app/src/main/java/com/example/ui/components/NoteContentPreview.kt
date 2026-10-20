@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Mic
@@ -211,6 +212,15 @@ fun NoteContentPreview(
                         icon = Icons.Rounded.Brush,
                         iconTint = MaterialTheme.colorScheme.primary,
                         fileName = "Dibujo / Boceto",
+                        textColor = textColor
+                    )
+                }
+
+                is NoteBlock.Math -> {
+                    MediaChip(
+                        icon = Icons.Default.Functions,
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        fileName = block.latexCode.ifBlank { "Fórmula Matemática" },
                         textColor = textColor
                     )
                 }

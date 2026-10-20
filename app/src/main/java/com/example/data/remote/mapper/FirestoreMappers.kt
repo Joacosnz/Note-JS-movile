@@ -118,6 +118,11 @@ fun NoteBlock.toFirestoreBlockMap(): Map<String, Any?> {
             "isTranscribing" to isTranscribing,
             "isTranscriptionVisible" to isTranscriptionVisible
         )
+        is NoteBlock.Math -> mapOf(
+            "type" to "math",
+            "id" to id,
+            "latexCode" to latexCode
+        )
     }
 }
 

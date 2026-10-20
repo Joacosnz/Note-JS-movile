@@ -572,6 +572,7 @@ internal fun EditorStatsBottomSheet(
                     is ImageBlock -> "[Imagen]"
                     is NoteBlock.Image -> it.fileName
                     is AudioBlock -> it.transcription
+                    is NoteBlock.Math -> it.latexCode
                 }
             }
             "$title $contentStr"

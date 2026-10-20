@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -504,6 +505,7 @@ internal fun EditorAccessoryBar(
     onFormatDrawing: () -> Unit,
     onFormatPdf: () -> Unit,
     onFormatScanner: () -> Unit,
+    onFormatMath: () -> Unit = {},
     onAddImage: () -> Unit,
     onStartAudioDictation: () -> Unit,
     onToggleBold: () -> Unit,
@@ -702,6 +704,16 @@ internal fun EditorAccessoryBar(
                                 amberColor = amber
                             ) {
                                 onFormatScanner()
+                                isInsertMenuExpanded = false
+                            }
+
+                            FormatOptionItem(
+                                icon = Icons.Default.Functions,
+                                text = "Ecuación (KaTeX)",
+                                isPaperDark = isPaperDark,
+                                amberColor = amber
+                            ) {
+                                onFormatMath()
                                 isInsertMenuExpanded = false
                             }
                         }

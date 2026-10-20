@@ -417,6 +417,23 @@ object NotePdfExporter {
 
                     currentY += approxHeight
                 }
+
+                is NoteBlock.Math -> {
+                    val snippet = "Fórmula (LaTeX): ${block.latexCode}"
+                    val layout = StaticLayout.Builder.obtain(
+                        snippet,
+                        0,
+                        snippet.length,
+                        bodyPaint,
+                        USABLE_WIDTH.toInt()
+                    ).build()
+                    checkPageBreak(layout.height + 10f)
+                    canvas.save()
+                    canvas.translate(MARGIN, currentY)
+                    layout.draw(canvas)
+                    canvas.restore()
+                    currentY += layout.height + 10f
+                }
             }
         }
 
