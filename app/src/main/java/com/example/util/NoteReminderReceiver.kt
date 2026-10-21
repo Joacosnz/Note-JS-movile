@@ -91,7 +91,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
             putExtra("EXTRA_OPEN_NOTE_ID", noteId)
         }
 
-        val requestCode = (noteId.toInt() * 100) + offsetMinutes
+        val requestCode = ReminderScheduler.getReminderRequestCode(noteId, offsetMinutes)
 
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -112,7 +112,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
             .setContentIntent(pendingIntent)
             .build()
 
-        val notificationId = (noteId.toInt() * 100) + offsetMinutes
+        val notificationId = ReminderScheduler.getReminderRequestCode(noteId, offsetMinutes)
         notificationManager.notify(notificationId, notification)
     }
 }

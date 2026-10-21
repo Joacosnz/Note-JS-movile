@@ -118,7 +118,7 @@ import com.example.ui.components.NoteContentPreview
 import com.example.ui.components.NoteReminderBottomSheet
 import com.example.ui.components.SortBottomSheet
 import com.example.ui.components.TagFilterRow
-import com.example.ui.utils.BiometricHelper
+import com.example.ui.utils.BiometricAuthManager
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
 import com.example.viewmodel.NavTab
@@ -282,10 +282,10 @@ fun HomeScreen(
                                 onFolderSelected = { viewModel.selectFolder(it) },
                                 onTagSelected = { tag ->
                                     if (tag.equals("🔒 Privado", ignoreCase = true) || tag.equals("🔒 Privadas", ignoreCase = true) || tag.equals("Bloqueadas", ignoreCase = true)) {
-                                        BiometricHelper.authenticate(
+                                        BiometricAuthManager.authenticateWithBiometrics(
                                             context = context,
                                             onSuccess = { viewModel.openPrivateFolder() },
-                                            onError = {}
+                                            onError = { _ -> }
                                         )
                                     } else {
                                         viewModel.selectTag(tag)
@@ -762,10 +762,10 @@ fun HomeScreen(
             },
             onSelectPrivateFolder = {
                 showFolderSheet = false
-                BiometricHelper.authenticate(
+                BiometricAuthManager.authenticateWithBiometrics(
                     context = context,
                     onSuccess = { viewModel.openPrivateFolder() },
-                    onError = {}
+                    onError = { _ -> }
                 )
             },
             onDismiss = { showFolderSheet = false }

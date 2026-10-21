@@ -10,37 +10,38 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 
-object BiometricAuth {
+/**
+ * Gestor unificado definitivo para autenticación biométrica y credenciales del sistema (PIN/Patrón/Rostro/Huella).
+ */
+object BiometricAuthManager {
 
     /**
-     * Comprueba si la autenticación biométrica (Huella/Rostro) o las credenciales del dispositivo (PIN/Patrón)
-     * están disponibles y configuradas en el dispositivo.
+     * Verifica si la autenticación biométrica o las credenciales del dispositivo están disponibles y configuradas.
      */
-    fun isBiometricOrCredentialAvailable(context: Context): Boolean {
+    fun isBiometricAvailable(context: Context): Boolean {
         val biometricManager = BiometricManager.from(context)
         val authenticators = BIOMETRIC_STRONG or BIOMETRIC_WEAK or DEVICE_CREDENTIAL
         return biometricManager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     /**
-     * Muestra el prompt de autenticación biométrica nativo de Android.
-     * Permite autenticación con huella dactilar, rostro o credenciales del dispositivo (PIN/Patrón/Contraseña del sistema).
+     * Autentica al usuario mediante biometría o credencial del sistema.
      *
-     * Callbacks:
-     * - [onSuccess]: Se ejecuta si el usuario se autentica con éxito.
-     * - [onError]: Se ejecuta en caso de error grave de hardware o configuración.
-     * - [onCancel]: Se ejecuta si el usuario cancela explícitamente el diálogo.
+     * @param context Contexto de la aplicación o Activity.
+     * @param title Título del diálogo nativo del sistema.
+     * @param subtitle Subtítulo descriptivo.
+     * @param onSuccess Callback ejecutado cuando la autenticación es exitosa.
+     * @param onError Callback ejecutado con la descripción del error o cancelación.
      */
-    fun authenticate(
+    fun authenticateWithBiometrics(
         context: Context,
         title: String = "Acceso a Carpeta Privada",
-        subtitle: String = "Verifica tu identidad mediante huella, rostro o PIN del sistema",
+        subtitle: String = "Verifica tu identidad usando tu huella, rostro o PIN del dispositivo",
         onSuccess: () -> Unit,
-        onError: (errorCode: Int, errString: String) -> Unit = { _, _ -> },
-        onCancel: () -> Unit = {}
+        onError: (String) -> Unit = {}
     ) {
         val activity = context.findFragmentActivity() ?: run {
-            onError(-1, "No se encontró FragmentActivity para mostrar BiometricPrompt.")
+            onError("No se encontró FragmentActivity para mostrar BiometricPrompt.")
             return
         }
 
@@ -54,26 +55,18 @@ object BiometricAuth {
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 super.onAuthenticationError(errorCode, errString)
-                if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
-                    errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
-                    errorCode == BiometricPrompt.ERROR_CANCELED
-                ) {
-                    onCancel()
-                } else {
-                    onError(errorCode, errString.toString())
-                }
+                onError(errString.toString())
             }
 
             override fun onAuthenticationFailed() {
                 super.onAuthenticationFailed()
-                // Intento fallido pero el prompt sigue activo
             }
         }
 
         val biometricPrompt = BiometricPrompt(activity, executor, callback)
 
-        // IMPORTANTE: Según la especificación de Android BiometricPrompt, cuando se incluye DEVICE_CREDENTIAL
-        // en setAllowedAuthenticators, NO se debe llamar a setNegativeButtonText().
+        // Nota: Según la especificación oficial de BiometricPrompt, cuando se incluye DEVICE_CREDENTIAL
+        // en setAllowedAuthenticators, NO debe invocarse setNegativeButtonText().
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)

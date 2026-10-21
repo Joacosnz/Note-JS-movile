@@ -3,6 +3,7 @@ package com.example.data.remote
 import com.example.data.local.entity.NoteEntity
 import com.example.data.remote.mapper.toFirestoreMap
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -11,12 +12,23 @@ import kotlinx.coroutines.tasks.await
 
 class FirestoreManager {
 
+    private var notesListener: ListenerRegistration? = null
+
     private val db: FirebaseFirestore?
         get() = try {
             FirebaseFirestore.getInstance()
         } catch (e: Exception) {
             null
         }
+
+    /**
+     * Cierra y destruye explícitamente cualquier listener activo de Firestore
+     * para evitar lecturas fantasma y fugas de memoria/recursos al cambiar de cuenta o cerrar sesión.
+     */
+    fun clearListeners() {
+        notesListener?.remove()
+        notesListener = null
+    }
 
     suspend fun pushNote(userId: String, note: NoteEntity): Boolean {
         val database = db ?: return false
@@ -58,7 +70,11 @@ class FirestoreManager {
             close(IllegalStateException("Firebase is not initialized"))
             return@callbackFlow
         }
-        val listenerRegistration = database.collection("users")
+
+        // Si existía un listener anterior, limpiarlo antes de registrar el nuevo
+        clearListeners()
+
+        val subscription = database.collection("users")
             .document(userId)
             .collection("notes")
             .addSnapshotListener { snapshot, error ->
@@ -73,8 +89,13 @@ class FirestoreManager {
                 }
             }
 
+        notesListener = subscription
+
         awaitClose {
-            listenerRegistration.remove()
+            subscription.remove()
+            if (notesListener == subscription) {
+                notesListener = null
+            }
         }
     }
 }

@@ -36,7 +36,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
-import com.example.ui.utils.BiometricHelper
+import com.example.ui.utils.BiometricAuthManager
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -358,12 +358,12 @@ fun FoldersScreen(
                                     tint = MaterialTheme.colorScheme.primary,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        BiometricHelper.authenticate(
+                                        BiometricAuthManager.authenticateWithBiometrics(
                                             context = context,
                                             onSuccess = {
                                                 viewModel.openPrivateFolder()
                                             },
-                                            onError = {}
+                                            onError = { _ -> }
                                         )
                                     },
                                     testTag = "folder_private_notes",

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.util.MathEvaluator
 import com.example.ui.theme.isAppInDarkTheme
 
 import androidx.compose.foundation.BorderStroke
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.material.icons.filled.ViewStream
@@ -110,7 +112,8 @@ fun TableBlockItem(
     onUpdateBlock: (NoteBlock.Table) -> Unit,
     onDeleteBlock: () -> Unit,
     modifier: Modifier = Modifier,
-    isPaperDark: Boolean = isAppInDarkTheme()
+    isPaperDark: Boolean = isAppInDarkTheme(),
+    onExportTablePdf: (() -> Unit)? = null
 ) {
     val cellTextColor = if (isPaperDark) Color.White else Color(0xFF1C1C1E)
     val cellHintColor = if (isPaperDark) Color.LightGray else Color.DarkGray
@@ -247,6 +250,23 @@ fun TableBlockItem(
                                 tint = amberColor,
                                 modifier = Modifier.size(18.dp)
                             )
+                        }
+
+                        if (onExportTablePdf != null) {
+                            IconButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onExportTablePdf()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = "Exportar Hoja de Cálculo a PDF",
+                                    tint = amberColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
 
                         IconButton(
@@ -454,7 +474,12 @@ fun TableBlockItem(
                                     BasicTextField(
                                         value = cell.text,
                                         onValueChange = { newText ->
-                                            onUpdateBlock(block.updateCellText(rIndex, cIndex, newText))
+                                            val solvedText = if (newText.length > cell.text.length && newText.endsWith("=")) {
+                                                MathEvaluator.trySolveInlineEquation(newText, newText.length)?.newText ?: newText
+                                            } else {
+                                                newText
+                                            }
+                                            onUpdateBlock(block.updateCellText(rIndex, cIndex, solvedText))
                                         },
                                         textStyle = MaterialTheme.typography.bodyMedium.copy(
                                             color = cellTextColor,
@@ -507,6 +532,7 @@ fun TableBlockItem(
                 showOptionsSheet = false
                 onDeleteBlock()
             },
+            onExportPdf = onExportTablePdf,
             onDismiss = { showOptionsSheet = false }
         )
     }
@@ -524,6 +550,7 @@ fun TableOptionsBottomSheet(
     onColorScopeChange: (NoteBlock.TableColorScope) -> Unit,
     onUpdateBlock: (NoteBlock.Table) -> Unit,
     onDeleteBlock: () -> Unit,
+    onExportPdf: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -1192,6 +1219,33 @@ fun TableOptionsBottomSheet(
                         }
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                        if (onExportPdf != null) {
+                            Button(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onExportPdf()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = amberColor,
+                                    contentColor = Color.Black
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Exportar Hoja de Cálculo a PDF (PdfBox)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
 
                         OutlinedButton(
                             onClick = { onUpdateBlock(block.clearCells(selectedCells)) },

@@ -37,7 +37,7 @@ internal val MALFORMED_HIGHLIGHT_3_REGEX = Regex("""(?<!=)=([^=\n]+)=(?![=])""")
 internal val HIGHLIGHT_REGEX = Regex("""==([^=\n]+)==""")
 internal val HASHTAG_REGEX = Regex("""#([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)""")
 internal val NOTE_LINK_REGEX = Regex("""\[([^\]]+)\]\(notejs://note/([^\)]+)\)""")
-internal val INLINE_MATH_REGEX = Regex("""\[math:(.*?)\]""")
+internal val INLINE_MATH_REGEX = Regex("""\[math:(.+?)\]""")
 
 internal fun sanitizeHighlightTags(text: String): String {
     var result = text
@@ -176,23 +176,22 @@ internal fun markdownVisualTransformation(isDark: Boolean, amber: Color): Visual
             )
         }
 
-        val mathSpans = INLINE_MATH_REGEX.findAll(fullText).map { match ->
+        val mathSpans = INLINE_MATH_REGEX.findAll(fullText).mapNotNull { match ->
+            val code = match.groupValues[1]
+            if (code.isBlank()) return@mapNotNull null
             val rawStart = match.range.first
             val rawEnd = match.range.last + 1
-            val code = match.groupValues[1]
-            val fullMatchLen = match.value.length
             val prefixLen = 6 // "[math:"
-            val visualText = " $code "
             val suffixLen = 1 // "]"
             SyntaxSpan(
                 type = SyntaxType.INLINE_MATH,
                 rawStart = rawStart,
                 rawEnd = rawEnd,
                 prefixLength = prefixLen,
-                visualText = visualText,
+                visualText = code,
                 suffixLength = suffixLen
             )
-        }
+        }.toList()
 
         val allSpans = (highlightSpans + noteLinkSpans + mathSpans)
             .sortedBy { it.rawStart }
@@ -213,17 +212,7 @@ internal fun markdownVisualTransformation(isDark: Boolean, amber: Color): Visual
                 }
 
                 val visualStart = length
-                
-                if (span.type == SyntaxType.INLINE_MATH) {
-                    val matchStr = fullText.substring(span.rawStart, span.rawEnd)
-                    val latexCodeStr = INLINE_MATH_REGEX.find(matchStr)?.groupValues?.getOrNull(1)
-                    if (latexCodeStr != null) {
-                        appendInlineContent(id = "math_${span.rawStart}", alternateText = latexCodeStr)
-                    }
-                } else {
-                    append(span.visualText)
-                }
-                
+                append(span.visualText)
                 val visualEnd = length
 
                 when (span.type) {
@@ -255,7 +244,26 @@ internal fun markdownVisualTransformation(isDark: Boolean, amber: Color): Visual
                             )
                         }
                     }
-                    SyntaxType.INLINE_MATH -> {}
+                    SyntaxType.INLINE_MATH -> {
+                        val matchStr = fullText.substring(span.rawStart, span.rawEnd)
+                        val latexCodeStr = INLINE_MATH_REGEX.find(matchStr)?.groupValues?.getOrNull(1) ?: span.visualText
+                        addStringAnnotation(
+                            tag = "INLINE_MATH",
+                            annotation = "$latexCodeStr|${span.rawStart}|${span.rawEnd}",
+                            start = visualStart,
+                            end = visualEnd
+                        )
+                        addStyle(
+                            SpanStyle(
+                                color = amber,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                background = amber.copy(alpha = 0.20f)
+                            ),
+                            visualStart,
+                            visualEnd
+                        )
+                    }
                 }
 
                 lastIndex = span.rawEnd
@@ -342,71 +350,6 @@ fun buildInlineMathMap(
     text: String,
     onEditInlineMath: (code: String, rawStart: Int, rawEnd: Int) -> Unit
 ): Map<String, InlineTextContent> {
-    return remember(text) {
-        val map = mutableMapOf<String, InlineTextContent>()
-        INLINE_MATH_REGEX.findAll(text).forEach { match ->
-            val code = match.groupValues[1]
-            val rawStart = match.range.first
-            val rawEnd = match.range.last + 1
-            val id = "math_$rawStart"
-            
-            map[id] = InlineTextContent(
-                Placeholder(
-                    width = (code.length * 0.8).em,
-                    height = 2.em,
-                    placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
-                )
-            ) { 
-                Box(
-                    modifier = Modifier.clickable {
-                        onEditInlineMath(code, rawStart, rawEnd)
-                    }
-                ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            android.webkit.WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            }
-                        },
-                        update = { webView ->
-                            val htmlData = """
-                                <!DOCTYPE html>
-                                <html>
-                                <head>
-                                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-                                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-                                    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-                                    <style>
-                                        body { margin: 0; padding: 0; display: inline-block; background-color: transparent; font-size: 18px; }
-                                    </style>
-                                </head>
-                                <body>
-                                    $$ $code $$
-                                    <script>
-                                        function renderMath() {
-                                            if (window.renderMathInElement) {
-                                                renderMathInElement(document.body, {
-                                                    delimiters: [
-                                                        {left: "$$", right: "$$", display: false}
-                                                    ]
-                                                });
-                                            } else {
-                                                setTimeout(renderMath, 40);
-                                            }
-                                        }
-                                        document.addEventListener("DOMContentLoaded", renderMath);
-                                        setTimeout(renderMath, 80);
-                                    </script>
-                                </body>
-                                </html>
-                            """.trimIndent()
-                            webView.loadDataWithBaseURL("https://katex.org", htmlData, "text/html", "UTF-8", null)
-                        }
-                    )
-                }
-            }
-        }
-        map
-    }
+    return emptyMap()
 }
+

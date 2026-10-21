@@ -19,6 +19,7 @@ import com.example.util.isValidForSync
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -37,6 +38,7 @@ class NoteRepository(
 ) {
 
     private val syncScope = CoroutineScope(Dispatchers.IO)
+    private var cloudSyncJob: Job? = null
     private var currentUserId: String? = null
         get() {
             if (field.isNullOrBlank()) {
@@ -487,9 +489,10 @@ class NoteRepository(
 
     // --- LECTURAS EN TIEMPO REAL (NUBE -> LOCAL) ---
     fun startListeningToCloud(userId: String) {
+        stopListeningToCloud()
         this.currentUserId = userId
 
-        syncScope.launch {
+        cloudSyncJob = syncScope.launch {
             firestoreManager.getNotesFlow(userId).collectLatest { remoteNotesMap ->
                 remoteNotesMap.forEach { map ->
                     val remoteUuid = map["remoteUuid"] as? String ?: return@forEach
@@ -624,5 +627,17 @@ class NoteRepository(
                 }
             }
         }
+    }
+
+    /**
+     * Cancela la recolección activa en segundo plano y cierra el listener de Firestore,
+     * garantizando que no existan lecturas fantasma ni consumo de batería al cerrar sesión
+     * o cambiar de cuenta.
+     */
+    fun stopListeningToCloud() {
+        cloudSyncJob?.cancel()
+        cloudSyncJob = null
+        firestoreManager.clearListeners()
+        currentUserId = null
     }
 }

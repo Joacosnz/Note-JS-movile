@@ -1,9 +1,5 @@
 package com.example.ui.components
 
-import android.annotation.SuppressLint
-import android.view.ViewGroup
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,10 +41,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.example.model.NoteBlock
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun InlineMathBlockItem(
     block: NoteBlock.Math,
@@ -172,81 +166,30 @@ fun InlineMathBlockItem(
             }
         }
     } else {
-        val textColor = if (isDark) "white" else "black"
-        val code = block.latexCode.ifBlank { "\\text{Fórmula vacía}" }
-        val html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-            <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-            <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-            <style>
-                body {
-                    background-color: transparent;
-                    color: $textColor;
-                    margin: 0;
-                    padding: 4px 8px;
-                    font-size: 18px;
-                    text-align: left;
-                    word-wrap: break-word;
-                }
-            </style>
-        </head>
-        <body>
-            <div id="math-root">$ $code $</div>
-            <script>
-                function renderMath() {
-                    if (window.renderMathInElement) {
-                        renderMathInElement(document.body, {
-                            delimiters: [
-                                {left: '$$', right: '$$', display: true},
-                                {left: '$', right: '$', display: false}
-                            ]
-                        });
-                    } else {
-                        setTimeout(renderMath, 40);
-                    }
-                }
-                document.addEventListener("DOMContentLoaded", renderMath);
-                setTimeout(renderMath, 80);
-            </script>
-        </body>
-        </html>
-        """.trimIndent()
-
-        Box(
+        Surface(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(vertical = 2.dp)
-                .clickable { isEditing = true }
+                .padding(vertical = 4.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = if (isDark) Color(0xFF1C1C1E) else Color(0xFFF2F2F7),
+            border = BorderStroke(1.dp, if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA))
         ) {
-            AndroidView(
-                factory = { context ->
-                    WebView(context).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        )
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        webViewClient = WebViewClient()
-                        isVerticalScrollBarEnabled = false
-                        isHorizontalScrollBarEnabled = false
-                    }
-                },
-                update = { webView ->
-                    webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-
             Box(
                 modifier = Modifier
-                    .matchParentSize()
+                    .fillMaxWidth()
                     .clickable { isEditing = true }
-            )
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                NativeMathView(
+                    expression = block.latexCode.ifBlank { "Fórmula vacía" },
+                    isDark = isDark,
+                    fontSize = 17.sp,
+                    color = if (isDark) amber else Color(0xFFB45309),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }

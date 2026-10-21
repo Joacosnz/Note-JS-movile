@@ -846,7 +846,21 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             } else ""
 
             val processedContent = if (noteType == NoteType.MATH) {
-                MathEvaluator.processMathInText(content)
+                if (content.trim().startsWith("[") || content.trim().startsWith("{")) {
+                    try {
+                        val deserialized = NoteBlockSerializer.deserialize(content)
+                        val updated = deserialized.map { blk ->
+                            if (blk is NoteBlock.Text) {
+                                blk.copy(content = MathEvaluator.processMathInText(blk.content))
+                            } else blk
+                        }
+                        NoteBlockSerializer.serialize(updated)
+                    } catch (_: Exception) {
+                        content
+                    }
+                } else {
+                    MathEvaluator.processMathInText(content)
+                }
             } else {
                 content
             }
@@ -1290,6 +1304,15 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteSignatureById(signatureId)
         }
+    }
+
+    fun stopListeningToCloud() {
+        repository.stopListeningToCloud()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        repository.stopListeningToCloud()
     }
 }
 

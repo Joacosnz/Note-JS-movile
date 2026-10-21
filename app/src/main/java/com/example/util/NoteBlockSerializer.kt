@@ -199,7 +199,7 @@ object NoteBlockSerializer {
                     }
                     "callout" -> {
                         val content = obj.optString("content", "")
-                        val bg = obj.optString("bg", null).takeIf { !it.isNullOrBlank() && it != "null" }
+                        val bg = if (obj.has("bg") && !obj.isNull("bg")) obj.optString("bg").takeIf { it.isNotBlank() && it != "null" } else null
                         list.add(NoteBlock.CalloutBox(id = id, content = content, backgroundColorHex = bg))
                     }
                     "drawing" -> {
@@ -219,7 +219,7 @@ object NoteBlockSerializer {
                                     for (c in 0 until rowArray.length()) {
                                         val cellObj = rowArray.optJSONObject(c)
                                         val text = cellObj?.optString("text", "") ?: ""
-                                        val bg = cellObj?.optString("bg", null).takeIf { !it.isNullOrBlank() && it != "null" }
+                                        val bg = if (cellObj != null && cellObj.has("bg") && !cellObj.isNull("bg")) cellObj.optString("bg").takeIf { it.isNotBlank() && it != "null" } else null
                                         rowList.add(TableCell(text = text, backgroundColorHex = bg))
                                     }
                                 }

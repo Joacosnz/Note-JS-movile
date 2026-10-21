@@ -441,6 +441,7 @@ fun SettingsScreen(
 
                                 IconButton(
                                     onClick = {
+                                        viewModel.stopListeningToCloud()
                                         driveManager.getGoogleSignInClient().signOut().addOnCompleteListener {
                                             authManager.signOut()
                                             isDriveConnected = false

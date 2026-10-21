@@ -15,6 +15,16 @@ object ReminderScheduler {
 
     val ALL_POSSIBLE_OFFSETS = listOf(1440, 720, 120, 60, 30, 15, 5, 0)
 
+    /**
+     * Genera un identificador acotado y seguro para PendingIntent y notificaciones.
+     * La máscara `and 0x7FFF` limita el hash a 15 bits positivos (máximo 32767).
+     * Multiplicado por 100 y sumando el offset (< 100), el valor máximo es ~3.27 millones,
+     * garantizando total inmunidad ante Integer Overflow y evitando números negativos.
+     */
+    fun getReminderRequestCode(noteId: Long, offsetMinutes: Int): Int {
+        return ((noteId.hashCode() and 0x7FFF) * 100) + (offsetMinutes % 100)
+    }
+
     fun scheduleReminder(
         context: Context,
         noteId: Long,
@@ -40,7 +50,7 @@ object ReminderScheduler {
                     putExtra(EXTRA_OFFSET, offsetMinutes)
                     putExtra(EXTRA_ORIGINAL_TIME, timestamp)
                 }
-                val requestCode = (noteId.toInt() * 100) + offsetMinutes
+                val requestCode = getReminderRequestCode(noteId, offsetMinutes)
                 val pendingIntent = PendingIntent.getBroadcast(
                     context,
                     requestCode,
@@ -92,7 +102,7 @@ object ReminderScheduler {
     fun cancelReminder(context: Context, noteId: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         for (offsetMinutes in ALL_POSSIBLE_OFFSETS) {
-            val requestCode = (noteId.toInt() * 100) + offsetMinutes
+            val requestCode = getReminderRequestCode(noteId, offsetMinutes)
             val intent = Intent(context, NoteReminderReceiver::class.java)
             val pendingIntent = PendingIntent.getBroadcast(
                 context,

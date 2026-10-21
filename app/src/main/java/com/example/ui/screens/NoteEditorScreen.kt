@@ -13,6 +13,7 @@ import android.os.Build
 import android.speech.RecognizerIntent
 import android.widget.Toast
 import com.example.util.getKeyboardLanguage
+import com.example.util.MathEvaluator
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.AnimatedVisibility
@@ -68,11 +69,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import com.example.ui.components.BasicTextFieldWithInline
-import com.example.ui.components.buildInlineMathMap
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -138,7 +135,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.runtime.derivedStateOf
 import com.example.ui.components.LiquidGlassContainer
-import com.example.ui.components.InlineMathView
 import com.example.ui.components.InlineMathBlockItem
 import com.example.ui.components.InsertInlineMathDialog
 import com.example.ui.components.onInlineMathClick
@@ -234,8 +230,10 @@ import com.example.ui.components.EditorAccessoryBar
 import com.example.ui.components.EditorPaperStyleDialog
 import com.example.ui.components.EditorReminderBottomSheet
 import com.example.ui.components.EditorScannedPdfNameDialog
-import com.example.ui.components.EditorStatsBottomSheet
 import com.example.ui.components.EditorTopAppBar
+import com.example.ui.components.editor.EditorTopBar
+import com.example.ui.components.editor.EditorBlockList
+import com.example.ui.components.editor.EditorDialogs
 import com.example.ui.components.SmartTagItem
 import com.example.ui.components.SmartTagsSuggestionRow
 import com.example.ui.components.NoteLinkSuggestionMenu
@@ -331,6 +329,7 @@ fun NoteEditorScreen(
     var inlineMathDialogTargetBlockId by remember { mutableStateOf<String?>(null) }
     var inlineMathDialogIsEditing by remember { mutableStateOf(false) }
     var inlineMathDialogRange by remember { mutableStateOf<TextRange?>(null) }
+    var showExportPdfChoiceDialog by remember { mutableStateOf(false) }
 
     fun evaluateNoteLinkTrigger(blockId: String, tfv: TextFieldValue) {
         val text = tfv.text
@@ -1271,28 +1270,34 @@ fun NoteEditorScreen(
                     context.startActivity(Intent.createChooser(shareIntent, "Compartir nota"))
                 },
                 onExportPdfClick = {
-                    Toast.makeText(context, "Generando PDF...", Toast.LENGTH_SHORT).show()
-                    coroutineScope.launch {
-                        try {
-                            val pdfFile = NotePdfExporter.exportNote(context, title, blocks)
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.provider",
-                                pdfFile
-                            )
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/pdf"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    val hasTable = blocks.any { it is NoteBlock.Table }
+                    if (hasTable || noteType == NoteType.MATH) {
+                        showExportPdfChoiceDialog = true
+                    } else {
+                        val targetLabel = "nota"
+                        Toast.makeText(context, "Generando PDF con PdfBox...", Toast.LENGTH_SHORT).show()
+                        coroutineScope.launch {
+                            try {
+                                val pdfFile = NotePdfExporter.exportWithPdfBox(context, title, blocks, noteType)
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.provider",
+                                    pdfFile
+                                )
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/pdf"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF ($targetLabel)"))
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                Toast.makeText(
+                                    context,
+                                    "Error al generar el PDF: ${e.message}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF"))
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            Toast.makeText(
-                                context,
-                                "Error al generar el PDF: ${e.message}",
-                                Toast.LENGTH_SHORT
-                            ).show()
                         }
                     }
                 },
@@ -1422,13 +1427,15 @@ fun NoteEditorScreen(
                     BasicTextField(
                         value = titleTextFieldValue,
                         onValueChange = { newValue ->
-                            titleTextFieldValue = newValue
-                            title = newValue.text
-                            evaluateNoteLinkTrigger("TITLE", newValue)
+                            val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, titleTextFieldValue)
+                            val finalValue = solved ?: newValue
+                            titleTextFieldValue = finalValue
+                            title = finalValue.text
+                            evaluateNoteLinkTrigger("TITLE", finalValue)
                             coroutineScope.launch {
                                 val layout = titleTextLayoutResult
                                 if (layout != null) {
-                                    val cursorOffset = newValue.selection.max
+                                    val cursorOffset = finalValue.selection.max
                                     if (cursorOffset in 0..layout.layoutInput.text.length) {
                                         val cursorRect = layout.getCursorRect(cursorOffset)
                                         val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
@@ -1470,6 +1477,14 @@ fun NoteEditorScreen(
                             .fillMaxWidth()
                             .onNoteLinkClick(titleTextLayoutResult) { linkedId ->
                                 viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                            }
+                            .onInlineMathClick(titleTextLayoutResult) { code, start, end ->
+                                inlineMathDialogTargetBlockId = "TITLE"
+                                inlineMathDialogInitialCode = code
+                                inlineMathDialogIsEditing = true
+                                inlineMathDialogRange = TextRange(start, end)
+                                showInlineMathDialog = true
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
                             .onFocusChanged { focusState ->
                                 if (focusState.isFocused) {
@@ -1515,8 +1530,6 @@ fun NoteEditorScreen(
                             var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
 
                             var isFocused by remember(block.id) { mutableStateOf(false) }
-                            val hasMath = block.content.count { it == '$' } >= 2 || block.content.contains("[math:")
-                            val showMathPreview = !isFocused && (targetFocusBlockId != block.id) && hasMath
 
                             val baseFontSize = if (customFontSizeSp != 17) customFontSizeSp.sp else when (block.style) {
                                 TextStyleType.TITLE -> 22.sp
@@ -1537,18 +1550,7 @@ fun NoteEditorScreen(
                             )
                             val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
 
-                            if (showMathPreview) {
-                                InlineMathView(
-                                    content = block.content,
-                                    isDark = isPaperDark,
-                                    onClick = {
-                                        isFocused = true
-                                        focusedBlockId = block.id
-                                        targetFocusBlockId = block.id
-                                    },
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                )
-                            } else if (block.style == TextStyleType.SUBTITLE) {
+                            if (block.style == TextStyleType.SUBTITLE) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1575,18 +1577,12 @@ fun NoteEditorScreen(
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
-                                    BasicTextFieldWithInline(
-                                        inlineContent = buildInlineMathMap(block.content) { code, start, end ->
-                                            inlineMathDialogTargetBlockId = block.id
-                                            inlineMathDialogInitialCode = code
-                                            inlineMathDialogIsEditing = true
-                                            inlineMathDialogRange = TextRange(start, end)
-                                            showInlineMathDialog = true
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        },
+                                    BasicTextField(
                                         value = tfv,
                                         onValueChange = { newValue ->
-                                            val sanitized = sanitizeTextFieldValue(newValue)
+                                            val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
+                                            val effective = solved ?: newValue
+                                            val sanitized = sanitizeTextFieldValue(effective)
                                             evaluateNoteLinkTrigger(block.id, sanitized)
                                             if (sanitized.text.contains('\n')) {
                                                 val realIdx = blocks.indexOfFirst { it.id == block.id }
@@ -1655,6 +1651,14 @@ fun NoteEditorScreen(
                                             .onNoteLinkClick(textLayoutResult) { linkedId ->
                                                 viewModel.navigateTo(Screen.Editor(noteId = linkedId))
                                             }
+                                            .onInlineMathClick(textLayoutResult) { code, start, end ->
+                                                inlineMathDialogTargetBlockId = block.id
+                                                inlineMathDialogInitialCode = code
+                                                inlineMathDialogIsEditing = true
+                                                inlineMathDialogRange = TextRange(start, end)
+                                                showInlineMathDialog = true
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            }
                                             .bringIntoViewRequester(bringIntoViewRequester)
                                             .focusRequester(focusRequester)
                                             .onFocusChanged { focusState ->
@@ -1699,7 +1703,9 @@ fun NoteEditorScreen(
                                 BasicTextField(
                                     value = tfv,
                                     onValueChange = { newValue ->
-                                        val sanitized = sanitizeTextFieldValue(newValue)
+                                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
+                                        val effective = solved ?: newValue
+                                        val sanitized = sanitizeTextFieldValue(effective)
                                         evaluateNoteLinkTrigger(block.id, sanitized)
                                         if ((block.style == TextStyleType.TITLE) && sanitized.text.contains('\n')) {
                                             val realIdx = blocks.indexOfFirst { it.id == block.id }
@@ -1770,6 +1776,14 @@ fun NoteEditorScreen(
                                         .padding(vertical = 4.dp)
                                         .onNoteLinkClick(textLayoutResult) { linkedId ->
                                             viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                        }
+                                        .onInlineMathClick(textLayoutResult) { code, start, end ->
+                                            inlineMathDialogTargetBlockId = block.id
+                                            inlineMathDialogInitialCode = code
+                                            inlineMathDialogIsEditing = true
+                                            inlineMathDialogRange = TextRange(start, end)
+                                            showInlineMathDialog = true
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         }
                                         .bringIntoViewRequester(bringIntoViewRequester)
                                         .focusRequester(focusRequester)
@@ -1854,7 +1868,9 @@ fun NoteEditorScreen(
                                 BasicTextField(
                                     value = tfv,
                                     onValueChange = { newValue ->
-                                        val sanitized = sanitizeTextFieldValue(newValue)
+                                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
+                                        val effective = solved ?: newValue
+                                        val sanitized = sanitizeTextFieldValue(effective)
                                         evaluateNoteLinkTrigger(block.id, sanitized)
                                         blockTextFieldValues[block.id] = sanitized
                                         if (sanitized.text != block.content) {
@@ -1877,6 +1893,14 @@ fun NoteEditorScreen(
                                         .weight(1f)
                                         .onNoteLinkClick(textLayoutResult) { linkedId ->
                                             viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                        }
+                                        .onInlineMathClick(textLayoutResult) { code, start, end ->
+                                            inlineMathDialogTargetBlockId = block.id
+                                            inlineMathDialogInitialCode = code
+                                            inlineMathDialogIsEditing = true
+                                            inlineMathDialogRange = TextRange(start, end)
+                                            showInlineMathDialog = true
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         }
                                         .bringIntoViewRequester(bringIntoViewRequester)
                                         .focusRequester(focusRequester)
@@ -1971,7 +1995,9 @@ fun NoteEditorScreen(
                                 BasicTextField(
                                     value = tfv,
                                     onValueChange = { newValue ->
-                                        val sanitized = sanitizeTextFieldValue(newValue)
+                                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
+                                        val effective = solved ?: newValue
+                                        val sanitized = sanitizeTextFieldValue(effective)
                                         evaluateNoteLinkTrigger(block.id, sanitized)
                                         blockTextFieldValues[block.id] = sanitized
                                         if (sanitized.text != block.content) {
@@ -1994,6 +2020,14 @@ fun NoteEditorScreen(
                                         .weight(1f)
                                         .onNoteLinkClick(textLayoutResult) { linkedId ->
                                             viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                        }
+                                        .onInlineMathClick(textLayoutResult) { code, start, end ->
+                                            inlineMathDialogTargetBlockId = block.id
+                                            inlineMathDialogInitialCode = code
+                                            inlineMathDialogIsEditing = true
+                                            inlineMathDialogRange = TextRange(start, end)
+                                            showInlineMathDialog = true
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         }
                                         .bringIntoViewRequester(bringIntoViewRequester)
                                         .focusRequester(focusRequester)
@@ -2095,18 +2129,12 @@ fun NoteEditorScreen(
                                     val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
                                     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
                                     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-                                    BasicTextFieldWithInline(
-                                        inlineContent = buildInlineMathMap(block.content) { code, start, end ->
-                                            inlineMathDialogTargetBlockId = block.id
-                                            inlineMathDialogInitialCode = code
-                                            inlineMathDialogIsEditing = true
-                                            inlineMathDialogRange = TextRange(start, end)
-                                            showInlineMathDialog = true
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        },
+                                    BasicTextField(
                                         value = tfv,
                                         onValueChange = { newValue ->
-                                            val sanitized = sanitizeTextFieldValue(newValue)
+                                            val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
+                                            val effective = solved ?: newValue
+                                            val sanitized = sanitizeTextFieldValue(effective)
                                             evaluateNoteLinkTrigger(block.id, sanitized)
                                             blockTextFieldValues[block.id] = sanitized
                                             if (sanitized.text != block.content) {
@@ -2129,6 +2157,14 @@ fun NoteEditorScreen(
                                             .fillMaxWidth()
                                             .onNoteLinkClick(textLayoutResult) { linkedId ->
                                                 viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                                            }
+                                            .onInlineMathClick(textLayoutResult) { code, start, end ->
+                                                inlineMathDialogTargetBlockId = block.id
+                                                inlineMathDialogInitialCode = code
+                                                inlineMathDialogIsEditing = true
+                                                inlineMathDialogRange = TextRange(start, end)
+                                                showInlineMathDialog = true
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             }
                                             .bringIntoViewRequester(bringIntoViewRequester)
                                             .focusRequester(focusRequester)
@@ -2298,6 +2334,28 @@ fun NoteEditorScreen(
                                     removeBlock(index)
                                 },
                                 isPaperDark = isPaperDark,
+                                onExportTablePdf = {
+                                    Toast.makeText(context, "Exportando hoja de cálculo con PdfBox...", Toast.LENGTH_SHORT).show()
+                                    coroutineScope.launch {
+                                        try {
+                                            val pdfFile = NotePdfExporter.exportCalculationSheet(context, title, block)
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.provider",
+                                                pdfFile
+                                            )
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "application/pdf"
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Compartir Hoja de Cálculo"))
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                            Toast.makeText(context, "Error al generar el PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
                                 modifier = Modifier.testTag("table_block_$index")
                             )
                         }
@@ -2561,7 +2619,8 @@ fun NoteEditorScreen(
                                 inlineMathDialogTargetBlockId = targetId
                                 inlineMathDialogInitialCode = ""
                                 inlineMathDialogIsEditing = false
-                                inlineMathDialogRange = null
+                                val currentTfv = if (targetId == "TITLE") titleTextFieldValue else (targetId?.let { blockTextFieldValues[it] })
+                                inlineMathDialogRange = currentTfv?.selection
                                 showInlineMathDialog = true
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             },
@@ -2750,7 +2809,7 @@ fun NoteEditorScreen(
             onConfirm = { newLatexCode ->
                 val targetId = inlineMathDialogTargetBlockId
                 if (targetId != null) {
-                    val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                    val currentTfv = if (targetId == "TITLE") titleTextFieldValue else (blockTextFieldValues[targetId] ?: TextFieldValue(""))
                     val text = currentTfv.text
                     val selection = currentTfv.selection
                     val mathTag = "[math:$newLatexCode]"
@@ -2764,8 +2823,8 @@ fun NoteEditorScreen(
                         newText = text.substring(0, start) + mathTag + text.substring(end)
                         newSelection = TextRange(start + mathTag.length)
                     } else if (selection.min != selection.max) {
-                        val start = selection.min
-                        val end = selection.max
+                        val start = selection.min.coerceIn(0, text.length)
+                        val end = selection.max.coerceIn(start, text.length)
                         newText = text.substring(0, start) + mathTag + text.substring(end)
                         newSelection = TextRange(start + mathTag.length)
                     } else {
@@ -2777,13 +2836,24 @@ fun NoteEditorScreen(
                         newSelection = TextRange(cursor + insertStr.length)
                     }
 
-                    blockTextFieldValues[targetId] = TextFieldValue(newText, newSelection)
-                    val realIdx = blocks.indexOfFirst { it.id == targetId }
-                    if (realIdx != -1 && blocks[realIdx] is NoteBlock.Text) {
-                        blocks[realIdx] = (blocks[realIdx] as NoteBlock.Text).copy(content = newText)
+                    if (targetId == "TITLE") {
+                        titleTextFieldValue = TextFieldValue(newText, newSelection)
+                        title = newText
+                    } else {
+                        blockTextFieldValues[targetId] = TextFieldValue(newText, newSelection)
+                        val realIdx = blocks.indexOfFirst { it.id == targetId }
+                        if (realIdx != -1) {
+                            when (val block = blocks[realIdx]) {
+                                is NoteBlock.Text -> blocks[realIdx] = block.copy(content = newText)
+                                is NoteBlock.Checklist -> blocks[realIdx] = block.copy(content = newText)
+                                is NoteBlock.SimpleList -> blocks[realIdx] = block.copy(content = newText)
+                                is NoteBlock.CalloutBox -> blocks[realIdx] = block.copy(content = newText)
+                                else -> {}
+                            }
+                        }
+                        targetFocusBlockId = targetId
+                        focusedBlockId = targetId
                     }
-                    targetFocusBlockId = targetId
-                    focusedBlockId = targetId
                 }
                 showInlineMathDialog = false
             },
@@ -2792,20 +2862,159 @@ fun NoteEditorScreen(
                     val targetId = inlineMathDialogTargetBlockId
                     val range = inlineMathDialogRange
                     if (targetId != null && range != null) {
-                        val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                        val currentTfv = if (targetId == "TITLE") titleTextFieldValue else (blockTextFieldValues[targetId] ?: TextFieldValue(""))
                         val text = currentTfv.text
                         val start = range.min.coerceIn(0, text.length)
                         val end = range.max.coerceIn(start, text.length)
                         val newText = text.substring(0, start) + text.substring(end)
-                        blockTextFieldValues[targetId] = TextFieldValue(newText, TextRange(start))
-                        val realIdx = blocks.indexOfFirst { it.id == targetId }
-                        if (realIdx != -1 && blocks[realIdx] is NoteBlock.Text) {
-                            blocks[realIdx] = (blocks[realIdx] as NoteBlock.Text).copy(content = newText)
+                        val newSelection = TextRange(start)
+                        if (targetId == "TITLE") {
+                            titleTextFieldValue = TextFieldValue(newText, newSelection)
+                            title = newText
+                        } else {
+                            blockTextFieldValues[targetId] = TextFieldValue(newText, newSelection)
+                            val realIdx = blocks.indexOfFirst { it.id == targetId }
+                            if (realIdx != -1) {
+                                when (val block = blocks[realIdx]) {
+                                    is NoteBlock.Text -> blocks[realIdx] = block.copy(content = newText)
+                                    is NoteBlock.Checklist -> blocks[realIdx] = block.copy(content = newText)
+                                    is NoteBlock.SimpleList -> blocks[realIdx] = block.copy(content = newText)
+                                    is NoteBlock.CalloutBox -> blocks[realIdx] = block.copy(content = newText)
+                                    else -> {}
+                                }
+                            }
                         }
                     }
                     showInlineMathDialog = false
                 }
             } else null
+        )
+    }
+
+    if (showExportPdfChoiceDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportPdfChoiceDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.PictureAsPdf,
+                    contentDescription = null,
+                    tint = amber,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Exportar PDF (PdfBox)",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "¿Qué formato de documento PDF deseas generar?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, amber.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showExportPdfChoiceDialog = false
+                                Toast.makeText(context, "Generando PDF con PdfBox...", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch {
+                                    try {
+                                        val pdfFile = NotePdfExporter.exportWithPdfBox(context, title, blocks, noteType)
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.provider",
+                                            pdfFile
+                                        )
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/pdf"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF (Nota)"))
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        Toast.makeText(context, "Error al generar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = amber)
+                            Column {
+                                Text("Documento Completo", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Exporta toda la nota con texto, fórmulas y cuadrículas.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, amber.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showExportPdfChoiceDialog = false
+                                val tableBlock = blocks.filterIsInstance<NoteBlock.Table>().firstOrNull()
+                                Toast.makeText(context, "Generando PDF de hoja de cálculo con PdfBox...", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch {
+                                    try {
+                                        val pdfFile = if (tableBlock != null) {
+                                            NotePdfExporter.exportCalculationSheet(context, title, tableBlock)
+                                        } else {
+                                            NotePdfExporter.exportWithPdfBox(context, title, blocks, noteType)
+                                        }
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.provider",
+                                            pdfFile
+                                        )
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/pdf"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF (Hoja de Cálculo)"))
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        Toast.makeText(context, "Error al generar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(Icons.Default.TableChart, contentDescription = null, tint = amber)
+                            Column {
+                                Text("Hoja de Cálculo / Tabla", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Exporta exclusivamente la cuadrícula con formato de cálculo.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showExportPdfChoiceDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
         )
     }
 }

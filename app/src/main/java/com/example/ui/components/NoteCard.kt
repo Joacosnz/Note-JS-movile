@@ -64,6 +64,7 @@ import com.example.ui.theme.NoteJsSeparatorDark
 import com.example.ui.theme.NoteJsSeparatorLight
 import com.example.ui.theme.isAppInDarkTheme
 import com.example.util.NoteBlockSerializer
+import com.example.util.cleanMarkdownSyntax
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -381,7 +382,7 @@ private fun CompactNoteBlockItem(
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
-                    text = block.content.ifBlank { "Tarea sin texto" },
+                    text = cleanMarkdownSyntax(block.content).ifBlank { "Tarea sin texto" },
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 14.sp,
                         textDecoration = if (block.isChecked) TextDecoration.LineThrough else TextDecoration.None
@@ -394,9 +395,10 @@ private fun CompactNoteBlockItem(
         }
 
         is NoteBlock.Text -> {
-            if (block.content.isNotBlank()) {
+            val cleaned = cleanMarkdownSyntax(block.content)
+            if (cleaned.isNotBlank()) {
                 Text(
-                    text = block.content,
+                    text = cleaned,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
@@ -407,9 +409,10 @@ private fun CompactNoteBlockItem(
         }
 
         is NoteBlock.CalloutBox -> {
-            if (block.content.isNotBlank()) {
+            val cleaned = cleanMarkdownSyntax(block.content)
+            if (cleaned.isNotBlank()) {
                 Text(
-                    text = block.content,
+                    text = cleaned,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
@@ -420,10 +423,11 @@ private fun CompactNoteBlockItem(
         }
 
         is NoteBlock.SimpleList -> {
-            if (block.content.isNotBlank()) {
+            val cleaned = cleanMarkdownSyntax(block.content)
+            if (cleaned.isNotBlank()) {
                 val prefix = if (block.isNumbered) "${block.number}. " else "• "
                 Text(
-                    text = "$prefix${block.content}",
+                    text = "$prefix$cleaned",
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
@@ -489,6 +493,7 @@ private fun CompactNoteBlockItem(
             CompactMediaItem(
                 icon = Icons.Default.Functions,
                 fileName = block.latexCode.ifBlank { "Fórmula Matemática" },
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 modifier = modifier
             )
         }
@@ -499,7 +504,8 @@ private fun CompactNoteBlockItem(
 private fun CompactMediaItem(
     icon: ImageVector,
     fileName: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = null
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -514,7 +520,10 @@ private fun CompactMediaItem(
         )
         Text(
             text = fileName,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 14.sp,
+                fontFamily = fontFamily
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

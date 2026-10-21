@@ -1,9 +1,5 @@
 package com.example.ui.components
 
-import android.annotation.SuppressLint
-import android.view.ViewGroup
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,10 +39,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.example.model.NoteBlock
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun MathBlockItem(
     block: NoteBlock.Math,
@@ -152,35 +146,6 @@ fun MathBlockItem(
                 }
             }
         } else {
-            val textColor = if (isDark) "white" else "black"
-            val html = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-                <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-                <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
-                <style>
-                    body {
-                        background-color: transparent;
-                        color: ${textColor};
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        margin: 0;
-                        padding: 16px 8px;
-                        font-size: 22px;
-                        overflow: visible;
-                        min-height: 60px;
-                    }
-                </style>
-            </head>
-            <body>
-                $$ ${block.latexCode} $$
-            </body>
-            </html>
-            """.trimIndent()
-
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -193,37 +158,17 @@ fun MathBlockItem(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp, horizontal = 8.dp)
+                        .padding(vertical = 12.dp, horizontal = 16.dp)
                         .clickable { isEditing = true },
                     contentAlignment = Alignment.Center
                 ) {
-                    AndroidView(
-                        factory = { context ->
-                            WebView(context).apply {
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.WRAP_CONTENT
-                                )
-                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                webViewClient = WebViewClient()
-                                isVerticalScrollBarEnabled = false
-                                isHorizontalScrollBarEnabled = false
-                            }
-                        },
-                        update = { webView ->
-                            webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp)
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clickable { isEditing = true }
+                    NativeMathView(
+                        expression = block.latexCode.ifBlank { "Fórmula vacía" },
+                        isDark = isDark,
+                        fontSize = 20.sp,
+                        color = if (isDark) amber else Color(0xFFB45309),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

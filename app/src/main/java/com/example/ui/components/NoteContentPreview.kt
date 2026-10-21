@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
 import com.example.util.NoteBlockSerializer
+import com.example.util.cleanMarkdownSyntax
 import java.util.Locale
 
 @Composable
@@ -101,9 +102,10 @@ fun NoteContentPreview(
                 }
 
                 is NoteBlock.Text -> {
-                    if (block.content.isNotBlank()) {
+                    val cleaned = cleanMarkdownSyntax(block.content)
+                    if (cleaned.isNotBlank()) {
                         Text(
-                            text = block.content,
+                            text = cleaned,
                             style = MaterialTheme.typography.bodyMedium,
                             color = textColor,
                             maxLines = 2,
@@ -113,9 +115,10 @@ fun NoteContentPreview(
                 }
 
                 is NoteBlock.CalloutBox -> {
-                    if (block.content.isNotBlank()) {
+                    val cleaned = cleanMarkdownSyntax(block.content)
+                    if (cleaned.isNotBlank()) {
                         Text(
-                            text = block.content,
+                            text = cleaned,
                             style = MaterialTheme.typography.bodyMedium,
                             color = textColor,
                             maxLines = 2,
@@ -125,9 +128,10 @@ fun NoteContentPreview(
                 }
 
                 is NoteBlock.SimpleList -> {
-                    if (block.content.isNotBlank()) {
+                    val cleaned = cleanMarkdownSyntax(block.content)
+                    if (cleaned.isNotBlank()) {
                         Text(
-                            text = block.content,
+                            text = cleaned,
                             style = MaterialTheme.typography.bodyMedium,
                             color = textColor,
                             maxLines = 2,
@@ -137,6 +141,7 @@ fun NoteContentPreview(
                 }
 
                 is NoteBlock.Checklist -> {
+                    val cleaned = cleanMarkdownSyntax(block.content)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -148,7 +153,7 @@ fun NoteContentPreview(
                             color = if (block.isChecked) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.6f)
                         )
                         Text(
-                            text = block.content.ifBlank { "Tarea sin texto" },
+                            text = cleaned.ifBlank { "Tarea sin texto" },
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 textDecoration = if (block.isChecked) TextDecoration.LineThrough else null
                             ),
@@ -221,7 +226,8 @@ fun NoteContentPreview(
                         icon = Icons.Default.Functions,
                         iconTint = MaterialTheme.colorScheme.primary,
                         fileName = block.latexCode.ifBlank { "Fórmula Matemática" },
-                        textColor = textColor
+                        textColor = textColor,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
                 }
             }
@@ -234,7 +240,8 @@ private fun MediaChip(
     icon: ImageVector,
     iconTint: Color,
     fileName: String,
-    textColor: Color
+    textColor: Color,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = null
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -255,7 +262,7 @@ private fun MediaChip(
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = fileName,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = fontFamily),
                 fontWeight = FontWeight.Medium,
                 color = textColor,
                 maxLines = 1,

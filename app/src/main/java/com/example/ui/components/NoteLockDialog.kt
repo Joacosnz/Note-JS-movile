@@ -28,7 +28,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.example.util.BiometricHelper
+import com.example.ui.utils.BiometricAuthManager
 
 @Composable
 fun NoteLockDialog(
@@ -40,11 +40,11 @@ fun NoteLockDialog(
     var pinText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val isBiometricAvailable = remember(context) { BiometricHelper.isBiometricAvailable(context) }
+    val isBiometricAvailable = remember(context) { BiometricAuthManager.isBiometricAvailable(context) }
 
     val triggerBiometric = {
         if (!isSettingPin && isBiometricAvailable) {
-            BiometricHelper.authenticate(
+            BiometricAuthManager.authenticateWithBiometrics(
                 context = context,
                 onSuccess = {
                     if (onUnlockSuccess != null) {
@@ -53,7 +53,7 @@ fun NoteLockDialog(
                         onConfirm("")
                     }
                 },
-                onError = {
+                onError = { _ ->
                     // Si el usuario cancela, falla la autenticación o presiona "Usar PIN",
                     // se mantiene en pantalla el diálogo para ingresar el PIN manualmente.
                 }

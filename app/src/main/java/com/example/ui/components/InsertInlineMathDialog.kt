@@ -1,9 +1,5 @@
 package com.example.ui.components
 
-import android.annotation.SuppressLint
-import android.view.ViewGroup
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,9 +41,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun InsertInlineMathDialog(
     initialCode: String = "",
@@ -61,6 +55,7 @@ fun InsertInlineMathDialog(
     val amber = Color(0xFFFFB800)
 
     val quickTemplates = listOf(
+        "Ec. lineal" to "ax + b = c",
         "Fracción" to "\\frac{a}{b}",
         "Exponente" to "x^{2}",
         "Raíz" to "\\sqrt{x}",
@@ -164,52 +159,6 @@ fun InsertInlineMathDialog(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                val textColor = if (isDark) "white" else "black"
-                val displayCode = latexCode.ifBlank { "\\text{Vista previa}" }
-                val html = remember(latexCode, isDark) {
-                    """
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-                        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-                        <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-                        <style>
-                            body {
-                                background-color: transparent;
-                                color: $textColor;
-                                display: flex;
-                                justify-content: center;
-                                align-items: center;
-                                margin: 0;
-                                padding: 6px;
-                                font-size: 20px;
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <div id="preview">$ $displayCode $</div>
-                        <script>
-                            function doRender() {
-                                if (window.renderMathInElement) {
-                                    renderMathInElement(document.body, {
-                                        delimiters: [
-                                            {left: '${'$'}${'$'}', right: '${'$'}${'$'}', display: true},
-                                            {left: '${'$'}', right: '${'$'}', display: false}
-                                        ]
-                                    });
-                                } else {
-                                    setTimeout(doRender, 40);
-                                }
-                            }
-                            document.addEventListener("DOMContentLoaded", doRender);
-                            setTimeout(doRender, 80);
-                        </script>
-                    </body>
-                    </html>
-                    """.trimIndent()
-                }
-
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = if (isDark) Color(0xFF121212) else Color(0xFFF3F4F6),
@@ -218,26 +167,20 @@ fun InsertInlineMathDialog(
                         .fillMaxWidth()
                         .height(60.dp)
                 ) {
-                    AndroidView(
-                        factory = { context ->
-                            WebView(context).apply {
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                webViewClient = WebViewClient()
-                                isVerticalScrollBarEnabled = false
-                                isHorizontalScrollBarEnabled = false
-                            }
-                        },
-                        update = { webView ->
-                            webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        NativeMathView(
+                            expression = latexCode.ifBlank { "Vista previa" },
+                            isDark = isDark,
+                            fontSize = 17.sp,
+                            color = if (isDark) amber else Color(0xFFB45309),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         },
