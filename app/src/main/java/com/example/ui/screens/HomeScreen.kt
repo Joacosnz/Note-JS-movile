@@ -422,8 +422,8 @@ fun HomeScreen(
                                             item { NoteJsSectionHeader("FIJADAS") }
                                             item {
                                                 Surface(
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    color = MaterialTheme.colorScheme.surface,
+                                                    shape = RoundedCornerShape(16.dp),
+                                                    color = Color(0xFF1C1C1E),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
@@ -433,7 +433,7 @@ fun HomeScreen(
                                                             NoteJsNoteRow(
                                                                 note = note,
                                                                 isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                                showDivider = index < pinned.size - 1,
+                                                                isLastItem = index == pinned.size - 1,
                                                                 onClick = {
                                                                     openNoteOrUnlock(note, viewModel)
                                                                 },
@@ -455,8 +455,8 @@ fun HomeScreen(
                                             }
                                             item {
                                                 Surface(
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    color = MaterialTheme.colorScheme.surface,
+                                                    shape = RoundedCornerShape(16.dp),
+                                                    color = Color(0xFF1C1C1E),
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
@@ -466,7 +466,7 @@ fun HomeScreen(
                                                             NoteJsNoteRow(
                                                                 note = note,
                                                                 isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                                showDivider = index < others.size - 1,
+                                                                isLastItem = index == others.size - 1,
                                                                 onClick = {
                                                                     openNoteOrUnlock(note, viewModel)
                                                                 },
@@ -495,8 +495,8 @@ fun HomeScreen(
                                 ) {
                                     item {
                                         Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surface,
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = Color(0xFF1C1C1E),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Column {
@@ -504,7 +504,7 @@ fun HomeScreen(
                                                     NoteJsNoteRow(
                                                         note = note,
                                                         isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                        showDivider = index < uiState.remindersNotes.size - 1,
+                                                        isLastItem = index == uiState.remindersNotes.size - 1,
                                                         onClick = {
                                                             openNoteOrUnlock(note, viewModel)
                                                         },
@@ -531,8 +531,8 @@ fun HomeScreen(
                                 ) {
                                     item {
                                         Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surface,
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = Color(0xFF1C1C1E),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Column {
@@ -540,7 +540,7 @@ fun HomeScreen(
                                                     NoteJsNoteRow(
                                                         note = note,
                                                         isUnlocked = true,
-                                                        showDivider = index < uiState.archivedNotes.size - 1,
+                                                        isLastItem = index == uiState.archivedNotes.size - 1,
                                                         onClick = { selectedNoteForAction = note },
                                                         onLongClick = { previewNote = note },
                                                         isSelectionMode = uiState.isSelectionMode,
@@ -588,8 +588,8 @@ fun HomeScreen(
                                     ) {
                                         item {
                                             Surface(
-                                                shape = RoundedCornerShape(12.dp),
-                                                color = MaterialTheme.colorScheme.surface,
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = Color(0xFF1C1C1E),
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
                                                 Column {
@@ -597,7 +597,7 @@ fun HomeScreen(
                                                         NoteJsNoteRow(
                                                             note = note,
                                                             isUnlocked = true,
-                                                            showDivider = index < uiState.trashedNotes.size - 1,
+                                                            isLastItem = index == uiState.trashedNotes.size - 1,
                                                             onClick = { selectedNoteForAction = note },
                                                             onLongClick = { previewNote = note },
                                                             isSelectionMode = uiState.isSelectionMode,

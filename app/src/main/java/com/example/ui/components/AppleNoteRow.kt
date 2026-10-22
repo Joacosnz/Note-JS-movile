@@ -57,7 +57,8 @@ fun NoteJsNoteRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
-    showDivider: Boolean = true,
+    isLastItem: Boolean = false,
+    showDivider: Boolean = !isLastItem,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     onSelectToggle: () -> Unit = {}
@@ -73,46 +74,7 @@ fun NoteJsNoteRow(
         Color.Transparent
     }
 
-    val formattedDate = remember(note.updatedAt) {
-        val now = System.currentTimeMillis()
-        val diff = now - note.updatedAt
-        when {
-            diff < (24 * 60 * 60 * 1000) -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(note.updatedAt))
-            diff < (48 * 60 * 60 * 1000) -> "ayer"
-            diff < (7 * 24 * 60 * 60 * 1000) -> SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(note.updatedAt))
-            else -> SimpleDateFormat("d/M/yy", Locale.getDefault()).format(Date(note.updatedAt))
-        }
-    }
-
-    val blocks = remember(note.content) { NoteBlockSerializer.deserialize(note.content) }
-    val checklistBlocks = remember(blocks) { blocks.filterIsInstance<NoteBlock.Checklist>() }
-    val completedCount = checklistBlocks.count { isChecked -> isChecked.isChecked }
-    val totalChecklist = checklistBlocks.size
-
-    val snippetText = remember(blocks, isLockedNote) {
-        val raw = if (isLockedNote) {
-            "Toca para ingresar PIN"
-        } else if (totalChecklist > 0) {
-            "☑️ $completedCount/$totalChecklist tareas completadas"
-        } else {
-            blocks.filter { it !is NoteBlock.Drawing }.joinToString(" ") { block ->
-                 when (block) {
-                    is NoteBlock.Text -> block.content
-                    is NoteBlock.Checklist -> block.content
-                    is NoteBlock.SimpleList -> block.content
-                    is NoteBlock.CalloutBox -> block.content
-                    is NoteBlock.Drawing -> "[Boceto]"
-                    is NoteBlock.Table -> block.matrix.joinToString(" ") { row -> row.joinToString(" ") { it.text } }
-                    is PdfBlock -> "[PDF: ${block.fileName}]"
-                    is NoteBlock.ImageBlock -> "[Imagen]"
-                    is NoteBlock.Image -> "[Imagen: ${block.fileName}]"
-                    is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
-                    is NoteBlock.Math -> "∑ ${block.latexCode.ifBlank { "Fórmula" }}"
-                }
-            }
-        }
-        sanitizeNoteSnippet(raw)
-    }
+    val displayTitle = if (isLockedNote) "Nota Protegida" else note.title.ifBlank { "Nota sin título" }
 
     Column(
         modifier = modifier
@@ -156,77 +118,136 @@ fun NoteJsNoteRow(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val displayTitle = if (isLockedNote) "Nota Protegida" else note.title.ifBlank { "Nota sin título" }
-                    Text(
-                        text = displayTitle,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                Text(
+                    text = displayTitle,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (note.reminderTimestamp != null) {
-                            Icon(
-                                imageVector = Icons.Default.Notifications,
-                                contentDescription = null,
-                                tint = amber,
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                        if (note.isLocked) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "Nota Protegida",
-                                tint = amber,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (note.isPinned) {
-                            Icon(
-                                imageVector = Icons.Default.PushPin,
-                                contentDescription = null,
-                                tint = amber,
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                        Text(
-                            text = formattedDate,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = snippetText.ifBlank { "Sin contenido adicional" },
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = note.contentSnippet,
+                    fontSize = 14.sp,
+                    color = Color.Gray,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(start = 8.dp)
+            ) {
+                if (note.reminderTimestamp != null) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        tint = amber,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                if (note.isLocked) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Nota Protegida",
+                        tint = amber,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                if (note.isPinned) {
+                    Icon(
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = null,
+                        tint = amber,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                Text(
+                    text = note.time,
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+            }
         }
 
-        if (showDivider) {
+        if (!isLastItem && showDivider) {
             HorizontalDivider(
                 modifier = Modifier.padding(start = 16.dp),
                 thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                color = Color.DarkGray.copy(alpha = 0.3f)
             )
         }
     }
 }
+
+@Composable
+fun NoteListItem(
+    note: NoteEntity,
+    isUnlocked: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+    isLastItem: Boolean = false,
+    showDivider: Boolean = !isLastItem,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectToggle: () -> Unit = {}
+) {
+    NoteJsNoteRow(
+        note = note,
+        isUnlocked = isUnlocked,
+        onClick = onClick,
+        onLongClick = onLongClick,
+        modifier = modifier,
+        isLastItem = isLastItem,
+        showDivider = showDivider,
+        isSelectionMode = isSelectionMode,
+        isSelected = isSelected,
+        onSelectToggle = onSelectToggle
+    )
+}
+
+val NoteEntity.contentSnippet: String
+    get() {
+        if (isLocked) return "Toca para ingresar PIN"
+        val blocks = NoteBlockSerializer.deserialize(content)
+        val checklistBlocks = blocks.filterIsInstance<NoteBlock.Checklist>()
+        if (checklistBlocks.isNotEmpty()) {
+            val completedCount = checklistBlocks.count { it.isChecked }
+            return "☑️ $completedCount/${checklistBlocks.size} tareas completadas"
+        }
+        val raw = blocks.filter { it !is NoteBlock.Drawing }.joinToString(" ") { block ->
+            when (block) {
+                is NoteBlock.Text -> block.content
+                is NoteBlock.Checklist -> block.content
+                is NoteBlock.SimpleList -> block.content
+                is NoteBlock.CalloutBox -> block.content
+                is NoteBlock.Drawing -> "[Boceto]"
+                is NoteBlock.Table -> block.matrix.joinToString(" ") { row -> row.joinToString(" ") { it.text } }
+                is PdfBlock -> "[PDF: ${block.fileName}]"
+                is NoteBlock.ImageBlock -> "[Imagen]"
+                is NoteBlock.Image -> "[Imagen: ${block.fileName}]"
+                is AudioBlock -> "[Audio: ${String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)}]"
+                is NoteBlock.Math -> "∑ ${block.latexCode.ifBlank { "Fórmula" }}"
+            }
+        }
+        return sanitizeNoteSnippet(raw).ifBlank { "Sin contenido adicional" }
+    }
+
+val NoteEntity.time: String
+    get() {
+        val now = System.currentTimeMillis()
+        val diff = now - updatedAt
+        return when {
+            diff < (24 * 60 * 60 * 1000) -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(updatedAt))
+            diff < (48 * 60 * 60 * 1000) -> "ayer"
+            diff < (7 * 24 * 60 * 60 * 1000) -> SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(updatedAt))
+            else -> SimpleDateFormat("d/M/yy", Locale.getDefault()).format(Date(updatedAt))
+        }
+    }
+
