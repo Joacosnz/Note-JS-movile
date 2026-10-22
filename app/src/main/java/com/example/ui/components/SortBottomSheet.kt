@@ -74,6 +74,11 @@ private data class SortGroup(
 private fun getSortGroups(): List<SortGroup> {
     return listOf(
         SortGroup(
+            title = "ORDEN MANUAL",
+            icon = Icons.Default.DateRange,
+            options = listOf(SortOption.MANUAL)
+        ),
+        SortGroup(
             title = "POR MODIFICACIÓN",
             icon = Icons.Default.Update,
             options = listOf(SortOption.MODIFIED_DESC, SortOption.MODIFIED_ASC)
@@ -93,6 +98,12 @@ private fun getSortGroups(): List<SortGroup> {
 
 private fun SortOption.getDisplayInfo(): SortOptionDisplayInfo {
     return when (this) {
+        SortOption.MANUAL -> SortOptionDisplayInfo(
+            mainTitle = "Prioridad manual",
+            badgeText = "Arrastrar y soltar",
+            icon = Icons.Default.Update,
+            isAscending = false
+        )
         SortOption.MODIFIED_DESC -> SortOptionDisplayInfo(
             mainTitle = "Última modificación",
             badgeText = "Recientes primero",

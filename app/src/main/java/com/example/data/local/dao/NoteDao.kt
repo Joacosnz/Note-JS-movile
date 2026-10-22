@@ -71,6 +71,12 @@ interface NoteDao {
     @Query("UPDATE notes SET folder = :folder WHERE id IN (:ids)")
     suspend fun updateFolderBatch(ids: List<Long>, folder: String)
 
+    @Query("UPDATE notes SET colorIndex = :colorIndex, updatedAt = :updatedAt WHERE id IN (:ids)")
+    suspend fun updateColorBatch(ids: List<Long>, colorIndex: Int, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE notes SET colorIndex = :colorIndex, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateNoteColor(id: Long, colorIndex: Int, updatedAt: Long = System.currentTimeMillis())
+
     @Query("DELETE FROM notes WHERE isTrashed = 1")
     suspend fun emptyTrash()
 }

@@ -311,7 +311,12 @@ fun EditorBlockList(
                             tfv = tfv,
                             onValueChange = { sanitized ->
                                 blockTextFieldValues[block.id] = sanitized
-                                if (sanitized.text != block.content) {
+                                val trimmed = sanitized.text.trim()
+                                if (trimmed == "$$" || trimmed == "/math" || trimmed == "/equation") {
+                                    // Notion trigger: typing $$ or /math converts text block into a Notion Block Equation
+                                    onUpdateBlock(index, NoteBlock.Math(id = block.id, latexCode = ""))
+                                    onFocusedBlockIdChange(block.id)
+                                } else if (sanitized.text != block.content) {
                                     val nextStyle = if (block.content.isEmpty() && sanitized.text.isEmpty()) TextStyleType.BODY else block.style
                                     onUpdateBlock(index, block.copy(content = sanitized.text, style = nextStyle))
                                 }
@@ -571,7 +576,7 @@ fun EditorBlockList(
                     }
 
                     is NoteBlock.Math -> {
-                        InlineMathBlockItem(
+                        NotionMathBlockItem(
                             block = block,
                             onUpdateBlock = { updatedMath ->
                                 onUpdateBlock(index, updatedMath)
@@ -580,6 +585,7 @@ fun EditorBlockList(
                                 onRemoveBlock(index)
                             },
                             isDark = isPaperDark,
+                            amber = amber,
                             modifier = Modifier.testTag("block_math_$index")
                         )
                     }

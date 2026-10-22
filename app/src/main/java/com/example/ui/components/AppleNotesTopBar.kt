@@ -182,7 +182,7 @@ fun NoteJsTopBar(
             NoteJsSearchBar(
                 query = query,
                 onQueryChange = onQueryChange,
-                placeholderText = "Buscar en notas...",
+                placeholderText = "Buscar por título o contenido...",
             )
         }
     }

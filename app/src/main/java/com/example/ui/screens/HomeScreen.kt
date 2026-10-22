@@ -107,11 +107,13 @@ import com.example.model.NoteType
 import com.example.ui.components.NoteJsBottomToolbar
 import com.example.ui.components.NoteJsNoteRow
 import com.example.ui.components.NoteJsTopBar
+import com.example.ui.components.ReorderableGroupedNotesCard
 import com.example.ui.components.BatchActionBottomBar
 import com.example.ui.components.BatchDeleteDialog
 import com.example.ui.components.BatchFolderBottomSheet
 import com.example.ui.components.BatchTagDialog
 import com.example.ui.components.FolderTreeBottomSheet
+import com.example.ui.components.KeepColorPickerBottomSheet
 import com.example.ui.components.NoteActionBottomSheet
 import com.example.ui.components.NoteCard
 import com.example.ui.components.NoteContentPreview
@@ -151,6 +153,7 @@ fun HomeScreen(
     var showQuickReminderSheet by remember { mutableStateOf(false) }
 
     // Batch Action Dialog States
+    var showBatchColorSheet by remember { mutableStateOf(false) }
     var showBatchTagDialog by remember { mutableStateOf(false) }
     var showBatchFolderSheet by remember { mutableStateOf(false) }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
@@ -270,7 +273,36 @@ fun HomeScreen(
                     )
 
                     if (!uiState.isSelectionMode) {
-                        if (uiState.activeTab == NavTab.NOTES) {
+                        if (uiState.searchQuery.isNotBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${currentList.size} ${if (currentList.size == 1) "nota encontrada" else "notas encontradas"}",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp,
+                                        color = amber
+                                    )
+                                )
+                                TextButton(
+                                    onClick = { viewModel.setSearchQuery("") },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Limpiar búsqueda",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    )
+                                }
+                            }
+                        } else if (uiState.activeTab == NavTab.NOTES) {
                             val userFolders = uiState.availableFolders.filter {
                                 !it.equals("Notas", ignoreCase = true) && !it.equals("Todas las notas", ignoreCase = true)
                             }
@@ -344,12 +376,16 @@ fun HomeScreen(
                                 NoteJsEmptyState(
                                     message = if (isLockedTabSelected)
                                         "Sin notas privadas"
+                                    else if (uiState.searchQuery.isNotBlank())
+                                        "Sin resultados para \"${uiState.searchQuery}\""
                                     else if (isFiltered)
                                         "No se encontraron notas"
                                     else
                                         "Sin notas",
                                     submessage = if (isLockedTabSelected)
                                         "Las notas que protejas con PIN aparecerán aquí."
+                                    else if (uiState.searchQuery.isNotBlank())
+                                        "Intenta buscar por otro título, palabra clave o contenido."
                                     else if (isFiltered)
                                         "Intenta con otra búsqueda, carpeta o etiqueta."
                                     else
@@ -421,63 +457,43 @@ fun HomeScreen(
                                         if (pinned.isNotEmpty()) {
                                             item { NoteJsSectionHeader("FIJADAS") }
                                             item {
-                                                Surface(
-                                                    shape = RoundedCornerShape(16.dp),
-                                                    color = Color(0xFF1C1C1E),
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-                                                ) {
-                                                    Column {
-                                                        pinned.forEachIndexed { index, note ->
-                                                            NoteJsNoteRow(
-                                                                note = note,
-                                                                isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                                isLastItem = index == pinned.size - 1,
-                                                                onClick = {
-                                                                    openNoteOrUnlock(note, viewModel)
-                                                                },
-                                                                onLongClick = { previewNote = note },
-                                                                isSelectionMode = uiState.isSelectionMode,
-                                                                isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                                onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
-                                                            )
-                                                        }
+                                                ReorderableGroupedNotesCard(
+                                                    notes = pinned,
+                                                    unlockedNoteIds = uiState.unlockedNoteIds,
+                                                    selectedNoteIds = uiState.selectedNoteIds,
+                                                    isSelectionMode = uiState.isSelectionMode,
+                                                    onNoteClick = { note -> openNoteOrUnlock(note, viewModel) },
+                                                    onNoteLongClick = { note -> previewNote = note },
+                                                    onSelectToggle = { noteId -> viewModel.toggleNoteSelection(noteId) },
+                                                    onReorder = { reorderedPinned ->
+                                                        val fullOrder = reorderedPinned.map { it.id } + others.map { it.id }
+                                                        viewModel.reorderNotes(fullOrder)
                                                     }
-                                                }
+                                                )
                                             }
                                             item { Spacer(modifier = Modifier.height(16.dp)) }
                                         }
 
                                         if (others.isNotEmpty()) {
-                                            item {
-                                                NoteJsSectionHeader(if (pinned.isNotEmpty()) "NOTAS" else "ANTERIORES")
+                                            if (pinned.isNotEmpty()) {
+                                                item {
+                                                    NoteJsSectionHeader("NOTAS")
+                                                }
                                             }
                                             item {
-                                                Surface(
-                                                    shape = RoundedCornerShape(16.dp),
-                                                    color = Color(0xFF1C1C1E),
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-                                                ) {
-                                                    Column {
-                                                        others.forEachIndexed { index, note ->
-                                                            NoteJsNoteRow(
-                                                                note = note,
-                                                                isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                                isLastItem = index == others.size - 1,
-                                                                onClick = {
-                                                                    openNoteOrUnlock(note, viewModel)
-                                                                },
-                                                                onLongClick = { previewNote = note },
-                                                                isSelectionMode = uiState.isSelectionMode,
-                                                                isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                                onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
-                                                            )
-                                                        }
+                                                ReorderableGroupedNotesCard(
+                                                    notes = others,
+                                                    unlockedNoteIds = uiState.unlockedNoteIds,
+                                                    selectedNoteIds = uiState.selectedNoteIds,
+                                                    isSelectionMode = uiState.isSelectionMode,
+                                                    onNoteClick = { note -> openNoteOrUnlock(note, viewModel) },
+                                                    onNoteLongClick = { note -> previewNote = note },
+                                                    onSelectToggle = { noteId -> viewModel.toggleNoteSelection(noteId) },
+                                                    onReorder = { reorderedOthers ->
+                                                        val fullOrder = pinned.map { it.id } + reorderedOthers.map { it.id }
+                                                        viewModel.reorderNotes(fullOrder)
                                                     }
-                                                }
+                                                )
                                             }
                                         }
                                     }
@@ -623,6 +639,7 @@ fun HomeScreen(
                 // Bottom Toolbar or Floating Batch Action Bar
                 if (uiState.isSelectionMode) {
                     BatchActionBottomBar(
+                        onColorClick = { showBatchColorSheet = true },
                         onTagClick = { showBatchTagDialog = true },
                         onFolderClick = { showBatchFolderSheet = true },
                         onDeleteClick = { showBatchDeleteDialog = true },
@@ -769,6 +786,19 @@ fun HomeScreen(
                 )
             },
             onDismiss = { showFolderSheet = false }
+        )
+    }
+
+    if (showBatchColorSheet) {
+        KeepColorPickerBottomSheet(
+            show = showBatchColorSheet,
+            selectedColorIndex = 0,
+            isDark = isDark,
+            onColorSelected = { selectedColor ->
+                viewModel.batchUpdateColor(selectedColor)
+                showBatchColorSheet = false
+            },
+            onDismissRequest = { showBatchColorSheet = false }
         )
     }
 

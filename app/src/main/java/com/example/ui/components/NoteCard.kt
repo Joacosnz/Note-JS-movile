@@ -136,6 +136,24 @@ fun NoteCard(
         sdf.format(Date(note.updatedAt))
     }
 
+    val titleColor = if (isCustomColor && !isLockedNote) {
+        NoteColors.getContentColor(note.colorIndex, isDark)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    val contentTextColor = if (isCustomColor && !isLockedNote) {
+        NoteColors.getContentColor(note.colorIndex, isDark)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    val dateTextColor = if (isCustomColor && !isLockedNote) {
+        NoteColors.getSecondaryTextColor(note.colorIndex, isDark)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -201,7 +219,8 @@ fun NoteCard(
                             text = displayTitle,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
+                                fontSize = 18.sp,
+                                color = titleColor
                             ),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -297,7 +316,8 @@ fun NoteCard(
                         previewBlocks.forEach { block ->
                             CompactNoteBlockItem(
                                 block = block,
-                                amber = amber
+                                amber = amber,
+                                contentColor = contentTextColor
                             )
                         }
                     }
@@ -313,7 +333,7 @@ fun NoteCard(
                     Text(
                         text = dateFormatted,
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = dateTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -338,6 +358,7 @@ fun NoteCard(
 private fun CompactNoteBlockItem(
     block: NoteBlock,
     amber: Color,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     modifier: Modifier = Modifier
 ) {
     when (block) {
@@ -356,13 +377,13 @@ private fun CompactNoteBlockItem(
                 Icon(
                     imageVector = Icons.Rounded.TableChart,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = contentColor.copy(alpha = 0.8f),
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
                     text = label,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = contentColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -378,7 +399,7 @@ private fun CompactNoteBlockItem(
                 Icon(
                     imageVector = if (block.isChecked) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
                     contentDescription = null,
-                    tint = if (block.isChecked) amber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    tint = if (block.isChecked) amber else contentColor.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
@@ -387,7 +408,7 @@ private fun CompactNoteBlockItem(
                         fontSize = 14.sp,
                         textDecoration = if (block.isChecked) TextDecoration.LineThrough else TextDecoration.None
                     ),
-                    color = if (block.isChecked) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (block.isChecked) contentColor.copy(alpha = 0.6f) else contentColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -400,7 +421,7 @@ private fun CompactNoteBlockItem(
                 Text(
                     text = cleaned,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = contentColor,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     modifier = modifier
@@ -414,7 +435,7 @@ private fun CompactNoteBlockItem(
                 Text(
                     text = cleaned,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = contentColor,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     modifier = modifier
@@ -429,7 +450,7 @@ private fun CompactNoteBlockItem(
                 Text(
                     text = "$prefix$cleaned",
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = contentColor,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     modifier = modifier

@@ -350,6 +350,8 @@ class NoteRepository(
     suspend fun deletePermanentlyBatch(ids: List<Long>) = noteDao.deletePermanentlyBatch(ids)
 
     suspend fun updateFolderBatch(ids: List<Long>, folder: String) = noteDao.updateFolderBatch(ids, folder)
+    suspend fun updateColorBatch(ids: List<Long>, colorIndex: Int) = noteDao.updateColorBatch(ids, colorIndex)
+    suspend fun updateNoteColor(id: Long, colorIndex: Int) = noteDao.updateNoteColor(id, colorIndex)
 
     suspend fun insertFolder(folder: FolderEntity): Long = folderDao.insertFolder(folder)
 

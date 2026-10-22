@@ -121,6 +121,16 @@ class SettingsManager(context: Context) {
         _defaultLockPin.value = pin.trim()
     }
 
+    fun getManualNoteOrder(): List<Long> {
+        val raw = prefs.getString(KEY_MANUAL_NOTE_ORDER, "") ?: ""
+        if (raw.isBlank()) return emptyList()
+        return raw.split(",").mapNotNull { it.trim().toLongOrNull() }
+    }
+
+    fun setManualNoteOrder(order: List<Long>) {
+        prefs.edit().putString(KEY_MANUAL_NOTE_ORDER, order.joinToString(",")).apply()
+    }
+
     companion object {
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_PAPER_THEME_MODE = "key_paper_theme_mode"
@@ -129,5 +139,6 @@ class SettingsManager(context: Context) {
         private const val KEY_DEFAULT_SORT = "key_default_sort"
         private const val KEY_GEMINI_API_KEY = "key_gemini_api_key"
         private const val KEY_DEFAULT_LOCK_PIN = "key_default_lock_pin"
+        private const val KEY_MANUAL_NOTE_ORDER = "key_manual_note_order"
     }
 }

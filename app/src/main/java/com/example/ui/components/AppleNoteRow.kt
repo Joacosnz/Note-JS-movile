@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Notifications
@@ -61,20 +63,44 @@ fun NoteJsNoteRow(
     showDivider: Boolean = !isLastItem,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
-    onSelectToggle: () -> Unit = {}
+    onSelectToggle: () -> Unit = {},
+    isDragging: Boolean = false,
+    showDragHandle: Boolean = false,
+    dragHandleModifier: Modifier = Modifier
 ) {
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val haptics = LocalHapticFeedback.current
     val isLockedNote = note.isLocked && !isUnlocked
 
-    val rowBg = if (note.colorIndex != 0) {
-        NoteColors.getColor(note.colorIndex, isDark).copy(alpha = if (isDark) 0.25f else 0.4f)
+    val isCustomColor = note.colorIndex != 0
+    val rowBg = if (isDragging) {
+        if (isDark) Color(0xFF2C2C2E) else Color(0xFFE5E5EA)
+    } else if (isCustomColor) {
+        NoteColors.getColor(note.colorIndex, isDark)
     } else {
         Color.Transparent
     }
 
-    val displayTitle = if (isLockedNote) "Nota Protegida" else note.title.ifBlank { "Nota sin título" }
+    val titleColor = if (isCustomColor) {
+        NoteColors.getContentColor(note.colorIndex, isDark)
+    } else {
+        Color.White
+    }
+
+    val snippetColor = if (isCustomColor) {
+        NoteColors.getSecondaryTextColor(note.colorIndex, isDark)
+    } else {
+        Color.Gray
+    }
+
+    val timeColor = if (isCustomColor) {
+        NoteColors.getSecondaryTextColor(note.colorIndex, isDark)
+    } else {
+        Color.DarkGray
+    }
+
+    val displayTitle = if (isLockedNote) "Nota Protegida" else if (note.title.isBlank()) "Nota sin título" else note.title
 
     Column(
         modifier = modifier
@@ -122,7 +148,7 @@ fun NoteJsNoteRow(
                     text = displayTitle,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = Color.White,
+                    color = titleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -132,7 +158,7 @@ fun NoteJsNoteRow(
                 Text(
                     text = note.contentSnippet,
                     fontSize = 14.sp,
-                    color = Color.Gray,
+                    color = snippetColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -170,12 +196,28 @@ fun NoteJsNoteRow(
                 Text(
                     text = note.time,
                     fontSize = 12.sp,
-                    color = Color.DarkGray
+                    color = timeColor
                 )
+
+                if (showDragHandle && !isSelectionMode) {
+                    Box(
+                        modifier = dragHandleModifier
+                            .size(28.dp)
+                            .testTag("drag_handle_${note.id}"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DragHandle,
+                            contentDescription = "Arrastrar para reordenar",
+                            tint = if (isDragging) amber else Color.Gray.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
         }
 
-        if (!isLastItem && showDivider) {
+        if (!isLastItem && showDivider && !isDragging) {
             HorizontalDivider(
                 modifier = Modifier.padding(start = 16.dp),
                 thickness = 0.5.dp,
@@ -185,18 +227,22 @@ fun NoteJsNoteRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NoteListItem(
     note: NoteEntity,
-    isUnlocked: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     isLastItem: Boolean = false,
+    isUnlocked: Boolean = true,
+    onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {},
     showDivider: Boolean = !isLastItem,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
-    onSelectToggle: () -> Unit = {}
+    onSelectToggle: () -> Unit = {},
+    isDragging: Boolean = false,
+    showDragHandle: Boolean = false,
+    dragHandleModifier: Modifier = Modifier
 ) {
     NoteJsNoteRow(
         note = note,
@@ -208,7 +254,10 @@ fun NoteListItem(
         showDivider = showDivider,
         isSelectionMode = isSelectionMode,
         isSelected = isSelected,
-        onSelectToggle = onSelectToggle
+        onSelectToggle = onSelectToggle,
+        isDragging = isDragging,
+        showDragHandle = showDragHandle,
+        dragHandleModifier = dragHandleModifier
     )
 }
 

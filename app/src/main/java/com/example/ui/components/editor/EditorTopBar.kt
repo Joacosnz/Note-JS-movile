@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -105,6 +106,7 @@ fun EditorTopBar(
     onTogglePin: () -> Unit,
     onToggleLock: () -> Unit,
     onOpenPaperStyle: () -> Unit,
+    onOpenColorPicker: () -> Unit = {},
     onToggleSync: () -> Unit,
     onOpenStats: () -> Unit,
     onToggleArchive: () -> Unit,
@@ -220,6 +222,18 @@ fun EditorTopBar(
                 )
             }
 
+            // Google Keep Color Palette
+            IconButton(
+                onClick = onOpenColorPicker,
+                modifier = Modifier.testTag("btn_editor_color_palette")
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Palette,
+                    contentDescription = "Color de la nota",
+                    tint = amber
+                )
+            }
+
             Box {
                 IconButton(
                     onClick = { onShowMenuChange(true) },
@@ -314,6 +328,17 @@ fun EditorTopBar(
                                     onClick = {
                                         onTogglePin()
                                         onShowMenuChange(false)
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                )
+                                MenuGridItem(
+                                    icon = Icons.Outlined.Palette,
+                                    label = "Color",
+                                    amber = amber,
+                                    isPaperDark = isPaperDark,
+                                    onClick = {
+                                        onShowMenuChange(false)
+                                        onOpenColorPicker()
                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     }
                                 )

@@ -9,12 +9,57 @@ import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.util.LruCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
 object PdfHelper {
+
+    private val coverBitmapCache = LruCache<String, Bitmap>(50)
+
+    /**
+     * Renderiza la portada (página 0) de un archivo PDF en formato rectangular con caché en memoria.
+     */
+    suspend fun renderPdfCover(context: Context, uri: Uri, path: String, targetWidth: Int = 450): Bitmap? = withContext(Dispatchers.IO) {
+        val cacheKey = if (path.isNotBlank()) path else uri.toString()
+        coverBitmapCache.get(cacheKey)?.let { return@withContext it }
+
+        var pfd: ParcelFileDescriptor? = null
+        var renderer: PdfRenderer? = null
+        var page: PdfRenderer.Page? = null
+        try {
+            pfd = if (path.isNotBlank() && File(path).exists()) {
+                ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+            } else {
+                try {
+                    context.contentResolver.openFileDescriptor(uri, "r")
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            if (pfd == null) return@withContext null
+            renderer = PdfRenderer(pfd)
+            if (renderer.pageCount <= 0) return@withContext null
+
+            page = renderer.openPage(0)
+            val aspectRatio = page.height.toFloat() / page.width.toFloat()
+            val targetHeight = (targetWidth * aspectRatio).toInt().coerceAtLeast(1)
+
+            val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(Color.WHITE)
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            coverBitmapCache.put(cacheKey, bitmap)
+            bitmap
+        } catch (e: Throwable) {
+            null
+        } finally {
+            runCatching { page?.close() }
+            runCatching { renderer?.close() }
+            runCatching { pfd?.close() }
+        }
+    }
 
     /**
      * Renderiza una página específica del PDF en un Bitmap nítido con fondo blanco.

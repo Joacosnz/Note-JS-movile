@@ -1320,6 +1320,7 @@ fun NoteEditorScreen(
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 },
                 onOpenPaperStyle = { showPaperDialog = true },
+                onOpenColorPicker = { showColorDialog = true },
                 onToggleSync = {
                     syncEnabled = !syncEnabled
                     saveAndExit(navigateBack = false)
@@ -1725,7 +1726,12 @@ fun NoteEditorScreen(
         onDismissReminder = { showReminderDialog = false },
         showColorDialog = showColorDialog,
         colorIndex = colorIndex,
-        onColorSelected = { colorIndex = it },
+        onColorSelected = { newColor ->
+            colorIndex = newColor
+            if (noteId > 0) {
+                viewModel.updateNoteColor(noteId, newColor)
+            }
+        },
         onDismissColorDialog = { showColorDialog = false },
         showPaperDialog = showPaperDialog,
         paperStyle = paperStyle,

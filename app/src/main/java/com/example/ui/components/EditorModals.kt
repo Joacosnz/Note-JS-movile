@@ -794,6 +794,7 @@ internal fun EditorStatsBottomSheet(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EditorColorPickerDialog(
     showColorDialog: Boolean,
@@ -803,45 +804,13 @@ internal fun EditorColorPickerDialog(
     onColorSelected: (Int) -> Unit,
     onDismissRequest: () -> Unit
 ) {
-    if (showColorDialog) {
-        AlertDialog(
-            onDismissRequest = onDismissRequest,
-            title = { Text("Color de nota") },
-            text = {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-                ) {
-                    items(6) { idx ->
-                        val col = NoteColors.getColor(idx, isDark)
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(col)
-                                .border(
-                                    width = if (colorIndex == idx) 2.dp else 1.dp,
-                                    color = if (colorIndex == idx) amber else MaterialTheme.colorScheme.outline,
-                                    shape = CircleShape
-                                )
-                                .clickable {
-                                    onColorSelected(idx)
-                                    onDismissRequest()
-                                }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = onDismissRequest) {
-                    Text("Cerrar")
-                }
-            }
-        )
-    }
+    KeepColorPickerBottomSheet(
+        show = showColorDialog,
+        selectedColorIndex = colorIndex,
+        isDark = isDark,
+        onColorSelected = onColorSelected,
+        onDismissRequest = onDismissRequest
+    )
 }
 
 @Composable

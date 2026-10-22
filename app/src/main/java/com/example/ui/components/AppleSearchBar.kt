@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -50,10 +53,11 @@ fun NoteJsSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholderText: String = "Buscar en notas...",
+    placeholderText: String = "Buscar por título o contenido...",
 ) {
     val isDark = isAppInDarkTheme()
     val haptic = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
 
     // Colores Liquid Glass
     val backgroundColor = if (isDark) Color(0xFF141416).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.82f)
@@ -133,12 +137,15 @@ fun NoteJsSearchBar(
 
                 BasicTextField(
                     value = query,
-                    onValueChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onQueryChange(it)
-                    },
+                    onValueChange = onQueryChange,
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { focusManager.clearFocus() }
+                    ),
                     textStyle = TextStyle(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Normal,

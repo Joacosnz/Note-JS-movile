@@ -27,8 +27,11 @@ import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
 import com.example.ui.theme.isAppInDarkTheme
 
+import androidx.compose.material.icons.outlined.Palette
+
 @Composable
 fun BatchActionBottomBar(
+    onColorClick: () -> Unit = {},
     onTagClick: () -> Unit,
     onFolderClick: () -> Unit,
     onDeleteClick: () -> Unit,
@@ -53,10 +56,27 @@ fun BatchActionBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 10.dp),
+                .padding(horizontal = 20.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onColorClick()
+                },
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("action_batch_color")
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Palette,
+                    contentDescription = "Cambiar color",
+                    tint = amber,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
             IconButton(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)

@@ -50,82 +50,109 @@ object NoteColors {
             id = 0,
             name = "Predeterminado",
             lightBg = Color(0xFFFFFFFF),
-            lightBorder = Color(0xFFE5E5EA),
-            darkBg = Color(0xFF000000),
-            darkBorder = Color(0xFF2C2C2E),
-            chipColor = Color(0xFFE5E5EA)
+            lightBorder = Color(0xFFE0E0E0),
+            darkBg = Color(0xFF202124),
+            darkBorder = Color(0xFF5F6368),
+            chipColor = Color.Transparent
         ),
         NoteThemeColor(
             id = 1,
             name = "Coral",
-            lightBg = Color(0xFFFFECE8),
-            lightBorder = Color(0xFFFFCDD2),
-            darkBg = Color(0xFF4A1E22),
-            darkBorder = Color(0xFF6B2D33),
-            chipColor = Color(0xFFEF5350)
+            lightBg = Color(0xFFF28B82),
+            lightBorder = Color(0xFFF28B82),
+            darkBg = Color(0xFF5C2B29),
+            darkBorder = Color(0xFF753634),
+            chipColor = Color(0xFFF28B82)
         ),
         NoteThemeColor(
             id = 2,
-            name = "Ámbar",
-            lightBg = Color(0xFFFFF8E1),
-            lightBorder = Color(0xFFFFECB3),
-            darkBg = Color(0xFF423819),
-            darkBorder = Color(0xFF615324),
-            chipColor = Color(0xFFFFB300)
+            name = "Melocotón",
+            lightBg = Color(0xFFFBBC04),
+            lightBorder = Color(0xFFFBBC04),
+            darkBg = Color(0xFF614A19),
+            darkBorder = Color(0xFF7C5F20),
+            chipColor = Color(0xFFFBBC04)
         ),
         NoteThemeColor(
             id = 3,
-            name = "Menta",
-            lightBg = Color(0xFFE8F5E9),
-            lightBorder = Color(0xFFC8E6C9),
-            darkBg = Color(0xFF1C3D2B),
-            darkBorder = Color(0xFF28563D),
-            chipColor = Color(0xFF66BB6A)
+            name = "Arena",
+            lightBg = Color(0xFFFFF475),
+            lightBorder = Color(0xFFFFF475),
+            darkBg = Color(0xFF5B4E28),
+            darkBorder = Color(0xFF746433),
+            chipColor = Color(0xFFFFF475)
         ),
         NoteThemeColor(
             id = 4,
-            name = "Cielo",
-            lightBg = Color(0xFFE1F5FE),
-            lightBorder = Color(0xFFB3E5FC),
-            darkBg = Color(0xFF16374D),
-            darkBorder = Color(0xFF214E6D),
-            chipColor = Color(0xFF29B6F6)
+            name = "Menta",
+            lightBg = Color(0xFFCCFF90),
+            lightBorder = Color(0xFFCCFF90),
+            darkBg = Color(0xFF345920),
+            darkBorder = Color(0xFF43732A),
+            chipColor = Color(0xFFCCFF90)
         ),
         NoteThemeColor(
             id = 5,
-            name = "Lavanda",
-            lightBg = Color(0xFFF3E5F5),
-            lightBorder = Color(0xFFE1BEE7),
-            darkBg = Color(0xFF3A1E43),
-            darkBorder = Color(0xFF542C61),
-            chipColor = Color(0xFFAB47BC)
+            name = "Salvia",
+            lightBg = Color(0xFFA7FFEB),
+            lightBorder = Color(0xFFA7FFEB),
+            darkBg = Color(0xFF16504B),
+            darkBorder = Color(0xFF1E6C65),
+            chipColor = Color(0xFFA7FFEB)
         ),
         NoteThemeColor(
             id = 6,
-            name = "Rosa",
-            lightBg = Color(0xFFFCE4EC),
-            lightBorder = Color(0xFFF8BBD0),
-            darkBg = Color(0xFF451928),
-            darkBorder = Color(0xFF63253B),
-            chipColor = Color(0xFFEC407A)
+            name = "Niebla",
+            lightBg = Color(0xFFCBF0F8),
+            lightBorder = Color(0xFFCBF0F8),
+            darkBg = Color(0xFF2D555E),
+            darkBorder = Color(0xFF3B6E7A),
+            chipColor = Color(0xFFCBF0F8)
         ),
         NoteThemeColor(
             id = 7,
-            name = "Arena",
-            lightBg = Color(0xFFEFEBE9),
-            lightBorder = Color(0xFFD7CCC8),
-            darkBg = Color(0xFF332D2B),
-            darkBorder = Color(0xFF4E4542),
-            chipColor = Color(0xFF8D6E63)
+            name = "Tormenta",
+            lightBg = Color(0xFFAECBFA),
+            lightBorder = Color(0xFFAECBFA),
+            darkBg = Color(0xFF1E3A5F),
+            darkBorder = Color(0xFF284C7C),
+            chipColor = Color(0xFFAECBFA)
         ),
         NoteThemeColor(
             id = 8,
-            name = "Esmeralda",
-            lightBg = Color(0xFFE0F2F1),
-            lightBorder = Color(0xFFB2DFDB),
-            darkBg = Color(0xFF133935),
-            darkBorder = Color(0xFF1E524D),
-            chipColor = Color(0xFF26A69A)
+            name = "Atardecer",
+            lightBg = Color(0xFFD7AEFB),
+            lightBorder = Color(0xFFD7AEFB),
+            darkBg = Color(0xFF42275E),
+            darkBorder = Color(0xFF56337B),
+            chipColor = Color(0xFFD7AEFB)
+        ),
+        NoteThemeColor(
+            id = 9,
+            name = "Flor",
+            lightBg = Color(0xFFFDCFE8),
+            lightBorder = Color(0xFFFDCFE8),
+            darkBg = Color(0xFF5B2245),
+            darkBorder = Color(0xFF762C5A),
+            chipColor = Color(0xFFFDCFE8)
+        ),
+        NoteThemeColor(
+            id = 10,
+            name = "Arcilla",
+            lightBg = Color(0xFFE6C9A8),
+            lightBorder = Color(0xFFE6C9A8),
+            darkBg = Color(0xFF442F19),
+            darkBorder = Color(0xFF593E21),
+            chipColor = Color(0xFFE6C9A8)
+        ),
+        NoteThemeColor(
+            id = 11,
+            name = "Tiza",
+            lightBg = Color(0xFFE8EAED),
+            lightBorder = Color(0xFFE8EAED),
+            darkBg = Color(0xFF3C3F41),
+            darkBorder = Color(0xFF4F5356),
+            chipColor = Color(0xFFE8EAED)
         )
     )
 
@@ -138,4 +165,18 @@ object NoteColors {
         val theme = options.firstOrNull { it.id == id } ?: options[0]
         return if (isDark) theme.darkBorder else theme.lightBorder
     }
+
+    fun getContentColor(id: Int, isDark: Boolean): Color {
+        return if (isDark) Color(0xFFE8EAED) else Color(0xFF202124)
+    }
+
+    fun getSecondaryTextColor(id: Int, isDark: Boolean): Color {
+        return if (id == 0) {
+            if (isDark) Color(0xFF9AA0A6) else Color(0xFF5F6368)
+        } else {
+            if (isDark) Color(0xFFBDC1C6) else Color(0xFF3C4043)
+        }
+    }
+
+    fun isCustomColor(id: Int): Boolean = id > 0
 }

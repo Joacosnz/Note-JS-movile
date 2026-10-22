@@ -18,10 +18,12 @@ import com.example.data.local.entity.SignatureEntity
 import com.example.data.remote.FirebaseStorageManager
 import com.example.data.remote.FirestoreManager
 import com.example.data.repository.NoteRepository
+import com.example.ui.components.contentSnippet
 import com.example.ui.screens.DrawingPoint
 import com.example.util.SignatureHelper
 import com.example.model.ChecklistItem
 import com.example.model.NoteBlock
+import com.example.model.NoteColors
 import com.example.model.NoteType
 import com.example.model.PdfBlock
 import com.example.model.AudioBlock
@@ -67,7 +69,8 @@ enum class SortOption(val title: String) {
     CREATED_DESC("Fecha de creación (nuevas)"),
     CREATED_ASC("Fecha de creación (antiguas)"),
     TITLE_ASC("Título (A - Z)"),
-    TITLE_DESC("Título (Z - A)")
+    TITLE_DESC("Título (Z - A)"),
+    MANUAL("Prioridad manual")
 }
 
 sealed class Screen {
@@ -307,7 +310,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
         raw.folders.forEach { foldersSet.add(it.name) }
 
-        val baseActive = if (filter.folder != null) {
+        val baseActive = if (filter.folder != null && filter.query.isBlank()) {
             raw.active.filter { it.folder.equals(filter.folder, ignoreCase = true) }
         } else {
             raw.active
@@ -327,14 +330,16 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (filter.query.isNotBlank()) {
                 val q = filter.query.trim().lowercase(Locale.getDefault())
-                filtered = filtered.filter {
-                    it.title.lowercase(Locale.getDefault()).contains(q) ||
-                            it.content.lowercase(Locale.getDefault()).contains(q) ||
-                            it.tags.lowercase(Locale.getDefault()).contains(q) ||
-                            (it.pdfExtractedText?.lowercase(Locale.getDefault())?.contains(q) == true)
+                filtered = filtered.filter { note ->
+                    note.title.lowercase(Locale.getDefault()).contains(q) ||
+                            note.contentSnippet.lowercase(Locale.getDefault()).contains(q) ||
+                            note.content.lowercase(Locale.getDefault()).contains(q) ||
+                            note.searchableText.lowercase(Locale.getDefault()).contains(q) ||
+                            note.tags.lowercase(Locale.getDefault()).contains(q) ||
+                            (note.pdfExtractedText?.lowercase(Locale.getDefault())?.contains(q) == true)
                 }
             }
-            if (filter.tag != null && filter.tag != "Todas" && !isLockedFilter) {
+            if (filter.tag != null && filter.tag != "Todas" && !isLockedFilter && filter.query.isBlank()) {
                 val t = filter.tag.lowercase(Locale.getDefault())
                 filtered = filtered.filter { note ->
                     extractTagsFromNote(note.title, note.content, note.tags).map { it.lowercase(Locale.getDefault()) }.contains(t)
@@ -347,6 +352,15 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 SortOption.CREATED_ASC -> filtered.sortedWith(compareByDescending<NoteEntity> { it.isPinned }.thenBy { it.createdAt })
                 SortOption.TITLE_ASC -> filtered.sortedWith(compareByDescending<NoteEntity> { it.isPinned }.thenBy { it.title.lowercase(Locale.getDefault()) })
                 SortOption.TITLE_DESC -> filtered.sortedWith(compareByDescending<NoteEntity> { it.isPinned }.thenByDescending { it.title.lowercase(Locale.getDefault()) })
+                SortOption.MANUAL -> {
+                    val manualOrder = settingsManager.getManualNoteOrder()
+                    val orderMap = manualOrder.withIndex().associate { it.value to it.index }
+                    filtered.sortedWith(
+                        compareByDescending<NoteEntity> { it.isPinned }
+                            .thenBy { orderMap[it.id] ?: Int.MAX_VALUE }
+                            .thenByDescending { it.updatedAt }
+                    )
+                }
             }
         }
 
@@ -553,6 +567,20 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun reorderNotes(orderedNoteIds: List<Long>) {
+        val currentManual = settingsManager.getManualNoteOrder().toMutableList()
+        val updated = mutableListOf<Long>()
+        updated.addAll(orderedNoteIds)
+        currentManual.forEach { id ->
+            if (!updated.contains(id)) {
+                updated.add(id)
+            }
+        }
+        settingsManager.setManualNoteOrder(updated)
+        _sortOption.value = SortOption.MANUAL
+        settingsManager.setDefaultSortOption(SortOption.MANUAL)
+    }
+
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
@@ -668,6 +696,23 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             repository.addTagBatch(ids, tag)
             _snackbarMessage.value = "Etiqueta #${tag.trim()} aplicada a ${ids.size} notas"
             exitSelectionMode()
+        }
+    }
+
+    fun batchUpdateColor(colorIndex: Int) {
+        val ids = _selectedNoteIds.value.toList()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            repository.updateColorBatch(ids, colorIndex)
+            val colorName = NoteColors.options.firstOrNull { it.id == colorIndex }?.name ?: "Color"
+            _snackbarMessage.value = "$colorName aplicado a ${ids.size} notas"
+            exitSelectionMode()
+        }
+    }
+
+    fun updateNoteColor(noteId: Long, colorIndex: Int) {
+        viewModelScope.launch {
+            repository.updateNoteColor(noteId, colorIndex)
         }
     }
 

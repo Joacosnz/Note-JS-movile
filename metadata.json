@@ -1,6 +1,6 @@
 {
   "name": "Note JS",
-  "description": "Aplicación de notas inspirada en Note JS con lienzo de dibujo, listas interactivas, cálculo matemático y persistencia local Room.",
+  "description": "Aplicación de notas con paleta Google Keep, bloques de ecuaciones Notion KaTeX, reordenación drag-and-drop, lista agrupada iOS y persistencia Room.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

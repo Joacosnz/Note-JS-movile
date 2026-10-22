@@ -22,11 +22,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
+import com.example.util.PdfHelper
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
@@ -335,23 +349,28 @@ fun PdfLibraryScreen(
                 }
 
                 else -> {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 145.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        item {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "${pdfList.size} documento(s) encontrado(s)",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(bottom = 4.dp, start = 4.dp)
+                                    text = "${pdfList.size} documento(s) en la biblioteca",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 OutlinedButton(
                                     onClick = { openDocumentLauncher.launch(arrayOf("application/pdf")) },
@@ -373,8 +392,9 @@ fun PdfLibraryScreen(
                             items = pdfList,
                             key = { it.id.toString() + it.path }
                         ) { pdf ->
-                            PdfItemCard(
+                            PdfGridItemCard(
                                 pdf = pdf,
+                                amberColor = amberColor,
                                 onClick = {
                                     val targetPath = if (pdf.path.isNotBlank() && File(pdf.path).exists()) {
                                         pdf.path
@@ -393,82 +413,157 @@ fun PdfLibraryScreen(
 }
 
 @Composable
-private fun PdfItemCard(
+private fun PdfGridItemCard(
     pdf: PdfItem,
+    amberColor: Color,
     onClick: () -> Unit
 ) {
-    Card(
+    val context = LocalContext.current
+    val isDark = isAppInDarkTheme()
+
+    var coverBitmap by remember(pdf.uri, pdf.path) { mutableStateOf<Bitmap?>(null) }
+    var isLoadingCover by remember(pdf.uri, pdf.path) { mutableStateOf(true) }
+
+    LaunchedEffect(pdf.uri, pdf.path) {
+        val bmp = PdfHelper.renderPdfCover(context, pdf.uri, pdf.path, targetWidth = 450)
+        coverBitmap = bmp
+        isLoadingCover = false
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        horizontalAlignment = Alignment.Start
     ) {
-        Row(
+        // 1. Portada en formato rectangular tipo libro / documento (Aspect ratio vertical A4 ~ 0.72)
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .aspectRatio(0.72f)
+                .shadow(
+                    elevation = 6.dp,
+                    shape = RoundedCornerShape(10.dp),
+                    ambientColor = Color.Black.copy(alpha = 0.20f),
+                    spotColor = Color.Black.copy(alpha = 0.30f)
+                ),
+            shape = RoundedCornerShape(10.dp),
+            color = if (isDark) Color(0xFF222226) else Color(0xFFF3F3F7),
+            border = BorderStroke(
+                0.5.dp,
+                if (isDark) Color(0xFF33333A) else Color(0xFFD6D6DC)
+            )
         ) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFFEF4444).copy(alpha = 0.12f),
-                modifier = Modifier.size(46.dp)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.PictureAsPdf,
-                        contentDescription = null,
-                        tint = Color(0xFFEF4444),
-                        modifier = Modifier.size(26.dp)
+                if (coverBitmap != null) {
+                    Image(
+                        bitmap = coverBitmap!!.asImageBitmap(),
+                        contentDescription = "Portada de ${pdf.name}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
                     )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = pdf.name,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = formatFileSize(pdf.size),
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                } else if (isLoadingCover) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = amberColor
                     )
-
-                    if (pdf.dateModified > 0) {
+                } else {
+                    // Placeholder visual cuando la página no puede ser renderizada
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFEF4444).copy(alpha = 0.14f),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEF4444),
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "  •  ",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = formatDate(pdf.dateModified),
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "PDF",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFEF4444)
+                            )
                         )
                     }
                 }
+
+                // Insignia flotante roja "PDF" en la esquina superior izquierda
+                Surface(
+                    shape = RoundedCornerShape(bottomEnd = 6.dp, topStart = 10.dp),
+                    color = Color(0xFFEF4444).copy(alpha = 0.92f),
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = "PDF",
+                        style = TextStyle(
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            letterSpacing = 0.5.sp
+                        ),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 2. Nombre del PDF DEBAJO de la portada rectangular
+        Text(
+            text = pdf.name,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                lineHeight = 18.sp
+            ),
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // 3. Metadatos de tamaño y fecha debajo del nombre
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = formatFileSize(pdf.size),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (pdf.dateModified > 0) {
+                Text(
+                    text = " • ",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = formatDate(pdf.dateModified).substringBefore(" "),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

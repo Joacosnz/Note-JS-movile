@@ -30,13 +30,16 @@ import com.example.model.NoteBlock
 import com.example.model.PaperStyle
 import com.example.ui.components.CreateTableBottomSheet
 import com.example.ui.components.EditorColorPickerDialog
+import com.example.ui.components.KeepColorPickerBottomSheet
 import com.example.ui.components.EditorFontSizeCarouselSheet
 import com.example.ui.components.EditorPaperStyleDialog
 import com.example.ui.components.EditorReminderBottomSheet
 import com.example.ui.components.EditorScannedPdfNameDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import com.example.ui.components.EditorStatsBottomSheet
 import com.example.ui.components.InsertInlineMathDialog
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorDialogs(
     showFontSizeCarouselSheet: Boolean,
@@ -115,11 +118,10 @@ fun EditorDialogs(
         onDismissRequest = onDismissReminder
     )
 
-    EditorColorPickerDialog(
-        showColorDialog = showColorDialog,
-        colorIndex = colorIndex,
+    KeepColorPickerBottomSheet(
+        show = showColorDialog,
+        selectedColorIndex = colorIndex,
         isDark = isDark,
-        amber = amber,
         onColorSelected = onColorSelected,
         onDismissRequest = onDismissColorDialog
     )

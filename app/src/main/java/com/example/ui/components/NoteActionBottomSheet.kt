@@ -83,31 +83,36 @@ fun NoteActionBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Palette Color selector row
-            Text(
-                text = "Color de la nota",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            val isDark = com.example.ui.theme.isAppInDarkTheme()
+            val selectedTheme = NoteColors.options.firstOrNull { it.id == note.colorIndex } ?: NoteColors.options[0]
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Color",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = selectedTheme.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
             LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(NoteColors.options) { option ->
-                    val isSelected = note.colorIndex == option.id
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(option.chipColor)
-                            .border(
-                                width = if (isSelected) 3.dp else 1.dp,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                shape = CircleShape
-                            )
-                            .clickable { onColorChanged(option.id) }
-                            .testTag("color_option_${option.id}")
+                items(NoteColors.options, key = { it.id }) { option ->
+                    KeepColorSwatchItem(
+                        option = option,
+                        isSelected = note.colorIndex == option.id,
+                        isDark = isDark,
+                        onClick = { onColorChanged(option.id) }
                     )
                 }
             }
