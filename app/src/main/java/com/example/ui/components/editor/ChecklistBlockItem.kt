@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.example.ui.components.editor
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,7 +40,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontStyle
@@ -56,6 +58,7 @@ import com.example.ui.components.sanitizeTextFieldValue
 import com.example.util.MathEvaluator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun ChecklistBlockItem(
@@ -79,10 +82,9 @@ fun ChecklistBlockItem(
     isBoldActive: Boolean,
     isItalicActive: Boolean,
     isHighlightActive: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
 
@@ -129,7 +131,7 @@ fun ChecklistBlockItem(
                 coroutineScope.launch {
                     val layout = textLayoutResult
                     val cursorOffset = sanitized.selection.max
-                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                    if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                         val cursorRect = layout.getCursorRect(cursorOffset)
                         val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                         bringIntoViewRequester.bringIntoView(expandedRect)
@@ -149,10 +151,10 @@ fun ChecklistBlockItem(
                     onFocusChanged(focusState.isFocused)
                     if (focusState.isFocused) {
                         coroutineScope.launch {
-                            delay(100)
+                            delay(100.milliseconds)
                             val layout = textLayoutResult
                             val cursorOffset = tfv.selection.max
-                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                            if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                                 val cursorRect = layout.getCursorRect(cursorOffset)
                                 val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                                 bringIntoViewRequester.bringIntoView(expandedRect)

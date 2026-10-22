@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.example.ui.components.editor
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,6 +46,7 @@ import com.example.ui.components.sanitizeTextFieldValue
 import com.example.util.MathEvaluator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun SimpleListBlockItem(
@@ -64,7 +68,7 @@ fun SimpleListBlockItem(
     isBoldActive: Boolean,
     isItalicActive: Boolean,
     isHighlightActive: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
@@ -75,7 +79,7 @@ fun SimpleListBlockItem(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .testTag("block_simple_list_$index"),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = if (block.isNumbered) "${block.number}." else "•",
@@ -99,7 +103,7 @@ fun SimpleListBlockItem(
                 coroutineScope.launch {
                     val layout = textLayoutResult
                     val cursorOffset = sanitized.selection.max
-                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                    if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                         val cursorRect = layout.getCursorRect(cursorOffset)
                         val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                         bringIntoViewRequester.bringIntoView(expandedRect)
@@ -119,10 +123,10 @@ fun SimpleListBlockItem(
                     onFocusChanged(focusState.isFocused)
                     if (focusState.isFocused) {
                         coroutineScope.launch {
-                            delay(100)
+                            delay(100.milliseconds)
                             val layout = textLayoutResult
                             val cursorOffset = tfv.selection.max
-                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                            if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
                                 val cursorRect = layout.getCursorRect(cursorOffset)
                                 val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                                 bringIntoViewRequester.bringIntoView(expandedRect)

@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.example.ui.components.editor
 
 import androidx.compose.foundation.BorderStroke
@@ -55,8 +57,8 @@ import com.example.ui.components.sanitizeTextFieldValue
 import com.example.util.MathEvaluator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CalloutBlockItem(
     block: NoteBlock.CalloutBox,
@@ -74,18 +76,18 @@ fun CalloutBlockItem(
     paperTextColor: Color,
     paperHintColor: Color,
     isPaperDark: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var showCalloutMenu by remember { mutableStateOf(false) }
-    var showCalloutColorPicker by remember { mutableStateOf(false) }
+    var showCalloutMenu by remember { mutableStateOf(value = false) }
+    var showCalloutColorPicker by remember { mutableStateOf(value = false) }
 
     val calloutBg = if (!block.backgroundColorHex.isNullOrBlank()) {
         runCatching { Color(android.graphics.Color.parseColor(block.backgroundColorHex)) }.getOrDefault(
-            if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+            if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7),
         )
     } else {
         if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
@@ -129,7 +131,7 @@ fun CalloutBlockItem(
                     coroutineScope.launch {
                         val layout = textLayoutResult
                         val cursorOffset = sanitized.selection.max
-                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                        if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
                             val cursorRect = layout.getCursorRect(cursorOffset)
                             val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                             bringIntoViewRequester.bringIntoView(expandedRect)
@@ -143,25 +145,25 @@ fun CalloutBlockItem(
                     .fillMaxWidth()
                     .onNoteLinkClick(textLayoutResult) { linkedId -> onNoteLinkClick(linkedId) }
                     .onInlineMathClick(textLayoutResult) { code, start, end -> onInlineMathClick(code, start, end) }
-                .bringIntoViewRequester(bringIntoViewRequester)
-                .focusRequester(focusRequester)
-                .onFocusChanged { focusState ->
-                    onFocusChanged(focusState.isFocused)
-                    if (focusState.isFocused) {
-                        coroutineScope.launch {
-                            delay(100)
-                            val layout = textLayoutResult
-                            val cursorOffset = tfv.selection.max
-                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                val cursorRect = layout.getCursorRect(cursorOffset)
-                                val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                bringIntoViewRequester.bringIntoView(expandedRect)
-                            } else {
-                                bringIntoViewRequester.bringIntoView()
+                    .bringIntoViewRequester(bringIntoViewRequester)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { focusState ->
+                        onFocusChanged(focusState.isFocused)
+                        if (focusState.isFocused) {
+                            coroutineScope.launch {
+                                delay(100.milliseconds)
+                                val layout = textLayoutResult
+                                val cursorOffset = tfv.selection.max
+                                if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
+                                    val cursorRect = layout.getCursorRect(cursorOffset)
+                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                    bringIntoViewRequester.bringIntoView(expandedRect)
+                                } else {
+                                    bringIntoViewRequester.bringIntoView()
+                                }
                             }
                         }
-                    }
-                },
+                    },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     fontSize = 17.sp,
                     color = paperTextColor,

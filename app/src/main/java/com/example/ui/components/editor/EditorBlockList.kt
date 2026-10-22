@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,14 +83,26 @@ import com.example.ui.components.TableBlockItem
 import com.example.ui.components.markdownVisualTransformation
 import com.example.ui.components.onInlineMathClick
 import com.example.ui.components.onNoteLinkClick
+import com.example.ui.screens.Stroke
+import com.example.ui.screens.deserializeStrokesFromJson
+import com.example.util.FileManager
 import com.example.util.MathEvaluator
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke as DrawScopeStroke
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun EditorBlockList(
     blocks: List<NoteBlock>,
@@ -483,31 +496,13 @@ fun EditorBlockList(
                     }
 
                     is NoteBlock.Drawing -> {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(110.dp)
-                                .padding(vertical = 6.dp)
-                                .clickable { onDrawingClick() },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isPaperDark) Color(0xFF1C1C1E) else Color(0xFFE5E5EA),
-                            border = BorderStroke(1.dp, amber.copy(alpha = 0.4f))
-                        ) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Gesture, contentDescription = null, tint = amber)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Boceto a mano alzada (Toca para editar)",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                        color = paperTextColor
-                                    )
-                                }
-                            }
-                        }
+                        DrawingBlockItem(
+                            block = block,
+                            amber = amber,
+                            isPaperDark = isPaperDark,
+                            paperTextColor = paperTextColor,
+                            onDrawingClick = onDrawingClick
+                        )
                     }
 
                     is NoteBlock.Table -> {
@@ -633,7 +628,7 @@ fun EditorBlockList(
             }
         }
 
-        item {
+                        item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -645,6 +640,81 @@ fun EditorBlockList(
                         onAddBodyBlockBelow()
                     }
             )
+        }
+    }
+}
+
+@Composable
+private fun DrawingBlockItem(
+    block: NoteBlock.Drawing,
+    amber: Color,
+    isPaperDark: Boolean,
+    paperTextColor: Color,
+    onDrawingClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val strokesState = produceState<List<Stroke>>(initialValue = emptyList(), key1 = block.filePath, key2 = block.pathData) {
+        value = withContext(Dispatchers.IO) {
+            val pathOrData = block.filePath.ifBlank { block.pathData }
+            val json = FileManager.readDrawingData(pathOrData)
+            deserializeStrokesFromJson(json)
+        }
+    }
+    val strokes = strokesState.value
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(160.dp)
+            .padding(vertical = 6.dp)
+            .clickable { onDrawingClick() },
+        shape = RoundedCornerShape(12.dp),
+        color = if (isPaperDark) Color(0xFF1C1C1E) else Color(0xFFE5E5EA),
+        border = BorderStroke(1.dp, amber.copy(alpha = 0.4f))
+    ) {
+        if (strokes.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Gesture, contentDescription = null, tint = amber)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Boceto a mano alzada (Toca para editar)",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = paperTextColor
+                    )
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    strokes.forEach { stroke ->
+                        if (stroke.points.isNotEmpty()) {
+                            val path = Path().apply {
+                                moveTo(stroke.points.first().x, stroke.points.first().y)
+                                for (i in 1 until stroke.points.size) {
+                                    lineTo(stroke.points[i].x, stroke.points[i].y)
+                                }
+                            }
+                            drawPath(
+                                path = path,
+                                color = if (stroke.isHighlighter) stroke.color.copy(alpha = 0.35f) else stroke.color,
+                                style = DrawScopeStroke(
+                                    width = stroke.strokeWidth,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

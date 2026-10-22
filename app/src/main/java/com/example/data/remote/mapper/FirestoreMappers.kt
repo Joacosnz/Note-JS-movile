@@ -75,6 +75,7 @@ fun NoteBlock.toFirestoreBlockMap(): Map<String, Any?> {
         is NoteBlock.Drawing -> mapOf(
             "type" to "drawing",
             "id" to id,
+            "filePath" to filePath,
             "pathData" to pathData
         )
         is NoteBlock.Table -> mapOf(

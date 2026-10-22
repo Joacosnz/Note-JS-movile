@@ -1,6 +1,7 @@
 package com.example.util
 
 import android.content.Context
+import android.util.Log
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
 import com.example.model.NoteType
@@ -12,7 +13,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDFont
-import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -23,8 +24,8 @@ import java.util.Locale
 /**
  * Motor de Exportación a PDF para Note JS utilizando la biblioteca PdfBox-Android.
  * Soporta la exportación de notas completas y hojas de cálculo (tablas y matrices numéricas/fórmulas)
- * con paginación automática, tipografía monoespaciada para fórmulas matemáticas y cuadrículas
- * de cálculo estilizadas.
+ * con paginación automática, fuente TrueType embebida (Roboto-Regular.ttf) para soporte UTF-8 masivo,
+ * tipografía para fórmulas matemáticas y cuadrículas de cálculo estilizadas.
  */
 object NotePdfExporter {
 
@@ -48,46 +49,100 @@ object NotePdfExporter {
         }
     }
 
+    private fun loadEmbeddedFont(context: Context, document: PDDocument): PDFont {
+        return try {
+            context.assets.open("fonts/Roboto-Regular.ttf").use { inputStream ->
+                PDType0Font.load(document, inputStream)
+            }
+        } catch (e: Exception) {
+            Log.e("NotePdfExporter", "Error cargando fuente TrueType Roboto-Regular.ttf", e)
+            PDType0Font.load(document, context.assets.open("fonts/Roboto-Regular.ttf"))
+        }
+    }
+
     /**
-     * Sanitiza el texto para compatibilidad con codificación WinAnsi (ISO-8859-1) de fuentes estándar en PDFBox.
-     * Evita caídas por caracteres Unicode no mapeados en fuentes Type1.
+     * Sanitiza el texto para compatibilidad con codificación UTF-8 / TrueType (o WinAnsi de respaldo en PDFBox).
+     * Evita caídas por caracteres de control o glifos no soportados.
      */
-    fun sanitizeForPdfBox(text: String): String {
+    fun sanitizeForPdfBox(text: String, font: PDFont? = null): String {
         if (text.isEmpty()) return ""
         val sb = StringBuilder()
-        for (ch in text) {
-            val code = ch.code
-            if (code in 32..126 || code in 160..255) {
-                sb.append(ch)
-            } else when (ch) {
-                '\n', '\r', '\t' -> sb.append(' ')
-                '•' -> sb.append("*")
-                '—', '–' -> sb.append("-")
-                '“', '”', '«', '»' -> sb.append("\"")
-                '‘', '’' -> sb.append("'")
-                '∑' -> sb.append("SUM")
-                '√' -> sb.append("SQRT")
-                '≠' -> sb.append("!=")
-                '≤' -> sb.append("<=")
-                '≥' -> sb.append(">=")
-                '±' -> sb.append("+/-")
-                '×' -> sb.append("x")
-                '÷' -> sb.append("/")
-                '→', '⇒' -> sb.append("->")
-                '☑' -> sb.append("[X]")
-                '☐' -> sb.append("[ ]")
-                '²' -> sb.append("^2")
-                '³' -> sb.append("^3")
-                '¹' -> sb.append("^1")
-                '⁰' -> sb.append("^0")
-                '⁴' -> sb.append("^4")
-                '⁵' -> sb.append("^5")
-                '⁶' -> sb.append("^6")
-                '⁷' -> sb.append("^7")
-                '⁸' -> sb.append("^8")
-                '⁹' -> sb.append("^9")
-                else -> sb.append(' ')
+        var i = 0
+        while (i < text.length) {
+            val codePoint = text.codePointAt(i)
+            val charCount = Character.charCount(codePoint)
+            val ch = text[i]
+
+            if (codePoint < 32 && ch != '\t') {
+                sb.append(' ')
+            } else if (font is PDType0Font) {
+                if (font.hasGlyph(codePoint)) {
+                    sb.appendCodePoint(codePoint)
+                } else {
+                    when (codePoint) {
+                        '•'.code -> sb.append("*")
+                        '—'.code, '–'.code -> sb.append("-")
+                        '“'.code, '”'.code, '«'.code, '»'.code -> sb.append("\"")
+                        '‘'.code, '’'.code -> sb.append("'")
+                        '∑'.code -> sb.append("SUM")
+                        '√'.code -> sb.append("SQRT")
+                        '≠'.code -> sb.append("!=")
+                        '≤'.code -> sb.append("<=")
+                        '≥'.code -> sb.append(">=")
+                        '±'.code -> sb.append("+/-")
+                        '×'.code -> sb.append("x")
+                        '÷'.code -> sb.append("/")
+                        '→'.code, '⇒'.code -> sb.append("->")
+                        '☑'.code -> sb.append("[X]")
+                        '☐'.code -> sb.append("[ ]")
+                        '²'.code -> sb.append("^2")
+                        '³'.code -> sb.append("^3")
+                        '¹'.code -> sb.append("^1")
+                        '⁰'.code -> sb.append("^0")
+                        '⁴'.code -> sb.append("^4")
+                        '⁵'.code -> sb.append("^5")
+                        '⁶'.code -> sb.append("^6")
+                        '⁷'.code -> sb.append("^7")
+                        '⁸'.code -> sb.append("^8")
+                        '⁹'.code -> sb.append("^9")
+                        else -> sb.append(' ')
+                    }
+                }
+            } else {
+                if (codePoint in 32..126 || codePoint in 160..255) {
+                    sb.appendCodePoint(codePoint)
+                } else {
+                    when (codePoint) {
+                        '•'.code -> sb.append("*")
+                        '—'.code, '–'.code -> sb.append("-")
+                        '“'.code, '”'.code, '«'.code, '»'.code -> sb.append("\"")
+                        '‘'.code, '’'.code -> sb.append("'")
+                        '∑'.code -> sb.append("SUM")
+                        '√'.code -> sb.append("SQRT")
+                        '≠'.code -> sb.append("!=")
+                        '≤'.code -> sb.append("<=")
+                        '≥'.code -> sb.append(">=")
+                        '±'.code -> sb.append("+/-")
+                        '×'.code -> sb.append("x")
+                        '÷'.code -> sb.append("/")
+                        '→'.code, '⇒'.code -> sb.append("->")
+                        '☑'.code -> sb.append("[X]")
+                        '☐'.code -> sb.append("[ ]")
+                        '²'.code -> sb.append("^2")
+                        '³'.code -> sb.append("^3")
+                        '¹'.code -> sb.append("^1")
+                        '⁰'.code -> sb.append("^0")
+                        '⁴'.code -> sb.append("^4")
+                        '⁵'.code -> sb.append("^5")
+                        '⁶'.code -> sb.append("^6")
+                        '⁷'.code -> sb.append("^7")
+                        '⁸'.code -> sb.append("^8")
+                        '⁹'.code -> sb.append("^9")
+                        else -> sb.append(' ')
+                    }
+                }
             }
+            i += charCount
         }
         return sb.toString()
     }
@@ -127,11 +182,14 @@ object NotePdfExporter {
         // Coordenada Y en PDFBox: 0 está en la base de la página. El margen superior empieza en PAGE_HEIGHT - MARGIN.
         var currentY = PAGE_HEIGHT - MARGIN
 
-        val fontTitle: PDFont = PDType1Font.HELVETICA_BOLD
-        val fontHeader: PDFont = PDType1Font.HELVETICA_BOLD
-        val fontRegular: PDFont = PDType1Font.HELVETICA
-        val fontMonospace: PDFont = PDType1Font.COURIER
-        val fontMonospaceBold: PDFont = PDType1Font.COURIER_BOLD
+        // Carga de la fuente TrueType embebida para compatibilidad UTF-8 completa
+        val embeddedFont: PDFont = loadEmbeddedFont(context, document)
+
+        val fontTitle: PDFont = embeddedFont
+        val fontHeader: PDFont = embeddedFont
+        val fontRegular: PDFont = embeddedFont
+        val fontMonospace: PDFont = embeddedFont
+        val fontMonospaceBold: PDFont = embeddedFont
 
         fun checkPageBreak(requiredHeight: Float) {
             if (currentY - requiredHeight < MARGIN + 35f) {
@@ -152,7 +210,7 @@ object NotePdfExporter {
                 contentStream.setFont(fontRegular, 8f)
                 contentStream.setNonStrokingColor(140, 140, 140)
                 contentStream.newLineAtOffset(MARGIN, PAGE_HEIGHT - 30f)
-                contentStream.showText(sanitizeForPdfBox(title.ifBlank { "Nota" }))
+                contentStream.showText(sanitizeForPdfBox(title.ifBlank { "Nota" }, embeddedFont))
                 contentStream.endText()
 
                 // Línea separadora
@@ -165,7 +223,7 @@ object NotePdfExporter {
         }
 
         // --- ENCABEZADO PRINCIPAL DE LA PRIMERA PÁGINA ---
-        val displayTitle = sanitizeForPdfBox(title.ifBlank { "Nota sin título" })
+        val displayTitle = sanitizeForPdfBox(title.ifBlank { "Nota sin título" }, embeddedFont)
         checkPageBreak(50f)
 
         // Barra decorativa ámbar superior
@@ -213,7 +271,7 @@ object NotePdfExporter {
             indentX: Float = 0f,
             lineSpacing: Float = 4f
         ) {
-            val safeText = sanitizeForPdfBox(cleanMarkdownSyntax(text))
+            val safeText = sanitizeForPdfBox(cleanMarkdownSyntax(text), font)
             if (safeText.isBlank()) return
 
             val maxLineWidth = USABLE_WIDTH - indentX
@@ -224,7 +282,11 @@ object NotePdfExporter {
             for (w in words) {
                 if (w.isEmpty()) continue
                 val candidate = if (currentLine.isEmpty()) w else "${currentLine} $w"
-                val widthPt = (font.getStringWidth(candidate) / 1000f) * fontSize
+                val widthPt = try {
+                    (font.getStringWidth(candidate) / 1000f) * fontSize
+                } catch (_: Exception) {
+                    candidate.length * fontSize * 0.5f
+                }
                 if (widthPt > maxLineWidth && currentLine.isNotEmpty()) {
                     lines.add(currentLine.toString())
                     currentLine = StringBuilder(w)
@@ -318,7 +380,7 @@ object NotePdfExporter {
 
                 is NoteBlock.CalloutBox -> {
                     val text = cleanMarkdownSyntax(block.content).ifBlank { "Nota destacada" }
-                    val sanitized = sanitizeForPdfBox(text)
+                    val sanitized = sanitizeForPdfBox(text, embeddedFont)
                     val boxWidth = USABLE_WIDTH
                     val boxHeight = 36f
 
@@ -347,7 +409,7 @@ object NotePdfExporter {
                 is NoteBlock.Math -> {
                     val rawLatex = block.latexCode.ifBlank { "0" }
                     val formatted = MathFormatter.formatLatexToUnicode(rawLatex)
-                    val safeLatex = sanitizeForPdfBox(formatted)
+                    val safeLatex = sanitizeForPdfBox(formatted, embeddedFont)
                     val cardHeight = 38f
 
                     checkPageBreak(cardHeight + 12f)
@@ -421,7 +483,7 @@ object NotePdfExporter {
 
                             // Texto de celda
                             val rawText = block.matrix.getOrNull(r)?.getOrNull(c)?.text ?: ""
-                            val cellText = sanitizeForPdfBox(rawText).trim()
+                            val cellText = sanitizeForPdfBox(rawText, embeddedFont).trim()
                             if (cellText.isNotEmpty()) {
                                 contentStream.beginText()
                                 contentStream.setFont(if (isHeaderRow) fontMonospaceBold else fontMonospace, 9.5f)
@@ -439,28 +501,28 @@ object NotePdfExporter {
 
                 is NoteBlock.Drawing -> {
                     checkPageBreak(24f)
-                    drawBadge(contentStream, fontRegular, "Dibujo / Boceto a mano alzada", currentY, 100, 116, 139)
+                    drawBadge(contentStream, fontRegular, "Dibujo / Boceto a mano alzada", currentY, 100, 116, 139, embeddedFont)
                     currentY -= 28f
                 }
 
                 is AudioBlock -> {
                     checkPageBreak(24f)
                     val durStr = String.format(Locale.getDefault(), "%02d:%02d", block.durationMs / 60000, (block.durationMs % 60000) / 1000)
-                    drawBadge(contentStream, fontRegular, "Grabación de Audio [$durStr]", currentY, 147, 51, 234)
+                    drawBadge(contentStream, fontRegular, "Grabación de Audio [$durStr]", currentY, 147, 51, 234, embeddedFont)
                     currentY -= 28f
                 }
 
                 is NoteBlock.Image -> {
                     checkPageBreak(24f)
                     val name = block.fileName.ifBlank { "Imagen adjunta" }
-                    drawBadge(contentStream, fontRegular, "Imagen: $name", currentY, 59, 130, 246)
+                    drawBadge(contentStream, fontRegular, "Imagen: $name", currentY, 59, 130, 246, embeddedFont)
                     currentY -= 28f
                 }
 
                 is NoteBlock.Pdf -> {
                     checkPageBreak(24f)
                     val name = block.fileName.ifBlank { "Documento PDF" }
-                    drawBadge(contentStream, fontRegular, "PDF Adjunto: $name", currentY, 239, 68, 68)
+                    drawBadge(contentStream, fontRegular, "PDF Adjunto: $name", currentY, 239, 68, 68, embeddedFont)
                     currentY -= 28f
                 }
 
@@ -526,10 +588,12 @@ object NotePdfExporter {
         var stream = PDPageContentStream(document, currentPage)
         var currentY = PAGE_HEIGHT - MARGIN
 
-        val fontTitle: PDFont = PDType1Font.HELVETICA_BOLD
-        val fontHeader: PDFont = PDType1Font.COURIER_BOLD
-        val fontCell: PDFont = PDType1Font.COURIER
-        val fontMeta: PDFont = PDType1Font.HELVETICA
+        val embeddedFont: PDFont = loadEmbeddedFont(context, document)
+
+        val fontTitle: PDFont = embeddedFont
+        val fontHeader: PDFont = embeddedFont
+        val fontCell: PDFont = embeddedFont
+        val fontMeta: PDFont = embeddedFont
 
         val rows = table.rows.coerceAtLeast(1)
         val cols = table.cols.coerceAtLeast(1)
@@ -553,7 +617,7 @@ object NotePdfExporter {
                 stream.setFont(fontMeta, 8f)
                 stream.setNonStrokingColor(130, 130, 130)
                 stream.newLineAtOffset(MARGIN, PAGE_HEIGHT - 30f)
-                stream.showText("Hoja de Cálculo: ${sanitizeForPdfBox(title.ifBlank { "Cálculo" })}")
+                stream.showText("Hoja de Cálculo: ${sanitizeForPdfBox(title.ifBlank { "Cálculo" }, embeddedFont)}")
                 stream.endText()
 
                 stream.setStrokingColor(220, 220, 220)
@@ -574,7 +638,7 @@ object NotePdfExporter {
         stream.setFont(fontTitle, 20f)
         stream.setNonStrokingColor(20, 20, 20)
         stream.newLineAtOffset(MARGIN, currentY - 18f)
-        stream.showText(sanitizeForPdfBox(title.ifBlank { "Hoja de Cálculo" }))
+        stream.showText(sanitizeForPdfBox(title.ifBlank { "Hoja de Cálculo" }, embeddedFont))
         stream.endText()
         currentY -= 26f
 
@@ -614,7 +678,7 @@ object NotePdfExporter {
                 stream.stroke()
 
                 val rawText = table.matrix.getOrNull(r)?.getOrNull(c)?.text ?: ""
-                val cellText = sanitizeForPdfBox(rawText).trim()
+                val cellText = sanitizeForPdfBox(rawText, embeddedFont).trim()
                 if (cellText.isNotEmpty()) {
                     stream.beginText()
                     stream.setFont(if (isHeader) fontHeader else fontCell, 10f)
@@ -667,9 +731,10 @@ object NotePdfExporter {
         y: Float,
         r: Int,
         g: Int,
-        b: Int
+        b: Int,
+        embeddedFont: PDFont? = null
     ) {
-        val safe = sanitizeForPdfBox(label)
+        val safe = sanitizeForPdfBox(label, embeddedFont ?: font)
         stream.beginText()
         stream.setFont(font, 9.5f)
         stream.setNonStrokingColor(r, g, b)

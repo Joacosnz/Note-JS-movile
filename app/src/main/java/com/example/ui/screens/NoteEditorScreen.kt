@@ -205,6 +205,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import com.example.model.SyncState
 import com.example.model.NoteBlock
 import com.example.model.ImageBlock
 import com.example.model.NoteColors
@@ -230,7 +231,8 @@ import com.example.ui.components.EditorAccessoryBar
 import com.example.ui.components.EditorPaperStyleDialog
 import com.example.ui.components.EditorReminderBottomSheet
 import com.example.ui.components.EditorScannedPdfNameDialog
-import com.example.ui.components.EditorTopAppBar
+import com.example.ui.components.EditorStatsBottomSheet
+import com.example.ui.components.editor.EditorTopBar
 import com.example.ui.components.editor.EditorTopBar
 import com.example.ui.components.editor.EditorBlockList
 import com.example.ui.components.editor.EditorDialogs
@@ -242,6 +244,7 @@ import com.example.ui.components.onNoteLinkClick
 import com.example.ui.components.sanitizeTextFieldValue
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
+import com.example.util.FileManager
 import com.example.util.GeminiAudioTranscriber
 import com.example.util.ImageHelper
 import com.example.util.NoteBlockSerializer
@@ -274,6 +277,7 @@ fun NoteEditorScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val uiState by viewModel.uiState.collectAsState()
+    val syncState by viewModel.syncState.collectAsState()
 
     val paperTheme = uiState.paperThemeMode
     val isPaperDark = when (paperTheme) {
@@ -1036,7 +1040,13 @@ fun NoteEditorScreen(
     fun removeBlock(index: Int) {
         if (index in blocks.indices) {
             saveSnapshot()
-            blocks.removeAt(index)
+            val removed = blocks.removeAt(index)
+            if (removed is NoteBlock.Drawing) {
+                FileManager.deleteFile(removed.filePath)
+                if (removed.pathData.isNotBlank()) {
+                    FileManager.deleteFile(removed.pathData)
+                }
+            }
             ensureTextNoteExists()
         }
     }
@@ -1192,7 +1202,7 @@ fun NoteEditorScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            EditorTopAppBar(
+            EditorTopBar(
                 amber = amber,
                 editorBgColor = editorBgColor,
                 isPaperDark = isPaperDark,
@@ -1201,6 +1211,7 @@ fun NoteEditorScreen(
                 isPinned = isPinned,
                 isLocked = isLocked,
                 syncEnabled = syncEnabled,
+                syncState = syncState,
                 isArchived = isArchived,
                 reminderTimestamp = reminderTimestamp,
                 showMenu = showMenu,
@@ -1347,1148 +1358,119 @@ fun NoteEditorScreen(
                 isDark = isPaperDark
             )
 
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 20.dp,
-                    end = 20.dp,
-                    top = 0.dp,
-                    bottom = 90.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Header date & reminder
-                item {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = formattedHeaderDate,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = paperHintColor,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center
-                    )
-
-                    if (reminderTimestamp != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("reminder_chip")
-                                .clickable { showReminderDialog = true },
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF1A365D).copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, Color(0xFF1A365D).copy(alpha = 0.4f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Notifications,
-                                        contentDescription = null,
-                                        tint = Color(0xFF1A365D),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    val formattedReminder = remember(reminderTimestamp) {
-                                        val sdf = SimpleDateFormat("EEE d MMM, HH:mm", Locale.getDefault())
-                                        sdf.format(Date(reminderTimestamp!!))
-                                    }
-                                    Text(
-                                        text = "⏰ Recordatorio: $formattedReminder",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                        color = Color(0xFF1A365D)
-                                    )
-                                }
-
-                                TextButton(
-                                    onClick = {
-                                        reminderTimestamp = null
-                                        if (noteId > 0) {
-                                            viewModel.cancelReminder(context, noteId)
-                                        }
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    }
-                                ) {
-                                    Text(text = "Eliminar", color = Color(0xFF1A365D), fontSize = 12.sp)
-                                }
+            EditorBlockList(
+                blocks = blocks,
+                listState = lazyListState,
+                visibleBlocksWithIndex = visibleBlocksWithIndex,
+                h2SectionBlockIds = h2SectionBlockIds,
+                focusRequesters = focusRequesters,
+                blockTextFieldValues = blockTextFieldValues,
+                targetFocusBlockId = targetFocusBlockId,
+                focusedBlockId = focusedBlockId,
+                onFocusedBlockIdChange = { focusedBlockId = it },
+                formattedHeaderDate = formattedHeaderDate,
+                reminderTimestamp = reminderTimestamp,
+                onReminderClick = { showReminderDialog = true },
+                onDeleteReminder = {
+                    reminderTimestamp = null
+                    if (noteId > 0) {
+                        viewModel.cancelReminder(context, noteId)
+                    }
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                },
+                titleTextFieldValue = titleTextFieldValue,
+                onTitleValueChange = { newValue ->
+                    titleTextFieldValue = newValue
+                    title = newValue.text
+                },
+                onTitleNext = {
+                    if (blocks.isEmpty()) {
+                        ensureTextNoteExists()
+                    }
+                    blocks.firstOrNull()?.id?.let { firstId ->
+                        targetFocusBlockId = firstId
+                        focusedBlockId = firstId
+                    }
+                },
+                onNoteLinkClick = { linkedId ->
+                    viewModel.navigateTo(Screen.Editor(noteId = linkedId))
+                },
+                onInlineMathClick = { targetBlockId, code, isEditing, range ->
+                    inlineMathDialogTargetBlockId = targetBlockId
+                    inlineMathDialogInitialCode = code
+                    inlineMathDialogIsEditing = isEditing
+                    inlineMathDialogRange = range
+                    showInlineMathDialog = true
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                },
+                onUpdateBlock = { idx, updatedBlock ->
+                    blocks[idx] = updatedBlock
+                },
+                onRemoveBlock = { idx ->
+                    removeBlock(idx)
+                },
+                onInsertBlockAt = { idx, newBlock ->
+                    blocks.add(idx, newBlock)
+                },
+                onDrawingClick = {
+                    saveAndExit(navigateBack = false)
+                    viewModel.navigateTo(Screen.Drawing(noteId))
+                },
+                onExportTablePdf = { tableBlock ->
+                    Toast.makeText(context, "Exportando hoja de cálculo con PdfBox...", Toast.LENGTH_SHORT).show()
+                    coroutineScope.launch {
+                        try {
+                            val pdfFile = NotePdfExporter.exportCalculationSheet(context, title, tableBlock)
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.provider",
+                                pdfFile
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/pdf"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
+                            context.startActivity(Intent.createChooser(shareIntent, "Compartir Hoja de Cálculo"))
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(context, "Error al generar el PDF: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Title input
-                    val titleBringIntoViewRequester = remember { BringIntoViewRequester() }
-                    var titleTextLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-                    BasicTextField(
-                        value = titleTextFieldValue,
-                        onValueChange = { newValue ->
-                            val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, titleTextFieldValue)
-                            val finalValue = solved ?: newValue
-                            titleTextFieldValue = finalValue
-                            title = finalValue.text
-                            evaluateNoteLinkTrigger("TITLE", finalValue)
-                            coroutineScope.launch {
-                                val layout = titleTextLayoutResult
-                                if (layout != null) {
-                                    val cursorOffset = finalValue.selection.max
-                                    if (cursorOffset in 0..layout.layoutInput.text.length) {
-                                        val cursorRect = layout.getCursorRect(cursorOffset)
-                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                        titleBringIntoViewRequester.bringIntoView(expandedRect)
-                                    } else {
-                                        titleBringIntoViewRequester.bringIntoView()
-                                    }
-                                } else {
-                                    titleBringIntoViewRequester.bringIntoView()
-                                }
-                            }
-                        },
-                        onTextLayout = { titleTextLayoutResult = it },
-                        textStyle = MaterialTheme.typography.headlineMedium.copy(
-                            color = paperTextColor,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 28.sp,
-                            letterSpacing = (-0.5).sp
-                        ),
-                        cursorBrush = SolidColor(amber),
-                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = {
-                                if (blocks.isEmpty()) {
-                                    ensureTextNoteExists()
-                                }
-                                blocks.firstOrNull()?.id?.let { firstId ->
-                                    targetFocusBlockId = firstId
-                                    focusedBlockId = firstId
-                                }
-                            }
-                        ),
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onNoteLinkClick(titleTextLayoutResult) { linkedId ->
-                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
-                            }
-                            .onInlineMathClick(titleTextLayoutResult) { code, start, end ->
-                                inlineMathDialogTargetBlockId = "TITLE"
-                                inlineMathDialogInitialCode = code
-                                inlineMathDialogIsEditing = true
-                                inlineMathDialogRange = TextRange(start, end)
-                                showInlineMathDialog = true
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                            .onFocusChanged { focusState ->
-                                if (focusState.isFocused) {
-                                    focusedBlockId = "TITLE"
-                                }
-                            }
-                            .bringIntoViewRequester(titleBringIntoViewRequester)
-                            .testTag("notejs_editor_title"),
-                        decorationBox = { innerTextField ->
-                            if (titleTextFieldValue.text.isEmpty()) {
-                                Text(
-                                    text = "Título",
-                                    style = MaterialTheme.typography.headlineMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 28.sp
-                                    ),
-                                    color = paperHintColor.copy(alpha = 0.5f)
-                                )
-                            }
-                            innerTextField()
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                // Mixed-Content Blocks Items
-                itemsIndexed(visibleBlocksWithIndex, key = { _, pair -> pair.second.id }) { _, (index, block) ->
-                    val focusRequester = remember(block.id) { FocusRequester() }
-                    focusRequesters[block.id] = focusRequester
-
-                    val blockIndent = if (block.id in h2SectionBlockIds) 28.dp else 0.dp
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = blockIndent)
-                    ) {
-                        when (block) {
-                        is NoteBlock.Text -> {
-                            // PROHIBIDO MODIFICAR: El texto debe ser una casilla entera continua.
-                            // ImeAction.Default permite saltos de línea (\n) sin crear nuevos bloques.
-                            val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
-                            var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-
-                            var isFocused by remember(block.id) { mutableStateOf(false) }
-
-                            val baseFontSize = if (customFontSizeSp != 17) customFontSizeSp.sp else when (block.style) {
-                                TextStyleType.TITLE -> 22.sp
-                                TextStyleType.SUBTITLE -> 18.sp
-                                TextStyleType.BODY -> 17.sp
-                            }
-                            val baseFontWeight = if (isBoldActive) FontWeight.Bold else when (block.style) {
-                                TextStyleType.TITLE -> FontWeight.Bold
-                                TextStyleType.SUBTITLE -> FontWeight.SemiBold
-                                TextStyleType.BODY -> FontWeight.Normal
-                            }
-                            val textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = baseFontSize,
-                                fontWeight = baseFontWeight,
-                                fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
-                                background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
-                                lineHeight = (baseFontSize.value * 1.4f).sp
-                            )
-                            val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
-
-                            if (block.style == TextStyleType.SUBTITLE) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(end = 4.dp)
-                                            .clip(CircleShape)
-                                            .clickable {
-                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                                if (realIdx != -1) {
-                                                    blocks[realIdx] = block.copy(isCollapsed = !block.isCollapsed)
-                                                }
-                                            }
-                                            .padding(2.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (block.isCollapsed) Icons.AutoMirrored.Rounded.KeyboardArrowRight else Icons.Rounded.KeyboardArrowDown,
-                                            contentDescription = if (block.isCollapsed) "Expandir sección" else "Colapsar sección",
-                                            tint = amber,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    BasicTextField(
-                                        value = tfv,
-                                        onValueChange = { newValue ->
-                                            val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
-                                            val effective = solved ?: newValue
-                                            val sanitized = sanitizeTextFieldValue(effective)
-                                            evaluateNoteLinkTrigger(block.id, sanitized)
-                                            if (sanitized.text.contains('\n')) {
-                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                                if (block.content.isEmpty()) {
-                                                    if (realIdx != -1) {
-                                                        val updated = block.copy(style = TextStyleType.BODY, isCollapsed = false)
-                                                        blocks[realIdx] = updated
-                                                        blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
-                                                        targetFocusBlockId = block.id
-                                                        focusedBlockId = block.id
-                                                    }
-                                                } else {
-                                                    val newlineIndex = sanitized.text.indexOf('\n')
-                                                    val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
-                                                    val headingText = sanitized.text.substring(0, safeNL)
-                                                    val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
-
-                                                    blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
-                                                    if (realIdx != -1) {
-                                                        blocks[realIdx] = block.copy(content = headingText, isCollapsed = false)
-
-                                                        val nextBlock = blocks.getOrNull(realIdx + 1)
-                                                        if (nextBlock is NoteBlock.Text && nextBlock.style == TextStyleType.BODY && nextBlock.isIndented) {
-                                                            val updatedContent = if (remainingText.isNotEmpty()) {
-                                                                if (nextBlock.content.isEmpty()) remainingText else "$remainingText\n${nextBlock.content}"
-                                                            } else nextBlock.content
-                                                            blocks[realIdx + 1] = nextBlock.copy(content = updatedContent)
-                                                            blockTextFieldValues[nextBlock.id] = TextFieldValue(updatedContent, TextRange(remainingText.length))
-                                                            targetFocusBlockId = nextBlock.id
-                                                            focusedBlockId = nextBlock.id
-                                                        } else {
-                                                            val newBodyId = UUID.randomUUID().toString()
-                                                            val newBodyBlock = NoteBlock.Text(id = newBodyId, content = remainingText, style = TextStyleType.BODY, isIndented = true)
-                                                            blocks.add(realIdx + 1, newBodyBlock)
-                                                            blockTextFieldValues[newBodyId] = TextFieldValue(remainingText, TextRange(remainingText.length))
-                                                            targetFocusBlockId = newBodyId
-                                                            focusedBlockId = newBodyId
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                blockTextFieldValues[block.id] = sanitized
-                                                if (sanitized.text != block.content) {
-                                                    val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                                    if (realIdx != -1) {
-                                                        val nextStyle = if (block.content.isEmpty() && sanitized.text.isEmpty()) TextStyleType.BODY else block.style
-                                                        blocks[realIdx] = block.copy(content = sanitized.text, style = nextStyle)
-                                                    }
-                                                }
-                                                coroutineScope.launch {
-                                                    val layout = textLayoutResult
-                                                    val cursorOffset = sanitized.selection.max
-                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                        val cursorRect = layout.getCursorRect(cursorOffset)
-                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                        bringIntoViewRequester.bringIntoView(expandedRect)
-                                                    } else {
-                                                        bringIntoViewRequester.bringIntoView()
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        onTextLayout = { textLayoutResult = it },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .onNoteLinkClick(textLayoutResult) { linkedId ->
-                                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
-                                            }
-                                            .onInlineMathClick(textLayoutResult) { code, start, end ->
-                                                inlineMathDialogTargetBlockId = block.id
-                                                inlineMathDialogInitialCode = code
-                                                inlineMathDialogIsEditing = true
-                                                inlineMathDialogRange = TextRange(start, end)
-                                                showInlineMathDialog = true
-                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            }
-                                            .bringIntoViewRequester(bringIntoViewRequester)
-                                            .focusRequester(focusRequester)
-                                            .onFocusChanged { focusState ->
-                                                isFocused = focusState.isFocused
-                                                if (focusState.isFocused) {
-                                                    focusedBlockId = block.id
-                                                    coroutineScope.launch {
-                                                        delay(100)
-                                                        val layout = textLayoutResult
-                                                        val currentTfv = blockTextFieldValues[block.id]
-                                                        val cursorOffset = currentTfv?.selection?.max ?: 0
-                                                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                            val cursorRect = layout.getCursorRect(cursorOffset)
-                                                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                            bringIntoViewRequester.bringIntoView(expandedRect)
-                                                        } else {
-                                                            bringIntoViewRequester.bringIntoView()
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            .testTag("block_text_$index"),
-                                        textStyle = textStyle.copy(color = paperTextColor),
-                                        cursorBrush = SolidColor(amber),
-                                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                                        decorationBox = { innerTextField ->
-                                            if (block.content.isEmpty()) {
-                                                Text(
-                                                    text = "Subtítulo...",
-                                                    style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
-                                                )
-                                            }
-                                            innerTextField()
-                                        },
-                                        keyboardOptions = KeyboardOptions(
-                                            capitalization = KeyboardCapitalization.Sentences,
-                                            imeAction = ImeAction.Default
-                                        )
-                                    )
-                                }
-                            } else {
-                                BasicTextField(
-                                    value = tfv,
-                                    onValueChange = { newValue ->
-                                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
-                                        val effective = solved ?: newValue
-                                        val sanitized = sanitizeTextFieldValue(effective)
-                                        evaluateNoteLinkTrigger(block.id, sanitized)
-                                        if ((block.style == TextStyleType.TITLE) && sanitized.text.contains('\n')) {
-                                            val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                            if (block.content.isEmpty()) {
-                                                if (realIdx != -1) {
-                                                    val updated = block.copy(style = TextStyleType.BODY, isCollapsed = false, isIndented = false)
-                                                    blocks[realIdx] = updated
-                                                    blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
-                                                    targetFocusBlockId = block.id
-                                                    focusedBlockId = block.id
-                                                }
-                                            } else {
-                                                val newlineIndex = sanitized.text.indexOf('\n')
-                                                val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
-                                                val headingText = sanitized.text.substring(0, safeNL)
-                                                val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
-
-                                                blockTextFieldValues[block.id] = TextFieldValue(headingText, TextRange(headingText.length))
-                                                if (realIdx != -1) {
-                                                    blocks[realIdx] = block.copy(content = headingText, isCollapsed = false)
-
-                                                    val newBodyId = UUID.randomUUID().toString()
-                                                    val newBodyBlock = NoteBlock.Text(id = newBodyId, content = remainingText, style = TextStyleType.BODY, isIndented = true)
-                                                    blocks.add(realIdx + 1, newBodyBlock)
-                                                    blockTextFieldValues[newBodyId] = TextFieldValue(remainingText, TextRange(remainingText.length))
-                                                    targetFocusBlockId = newBodyId
-                                                    focusedBlockId = newBodyId
-                                                }
-                                            }
-                                        } else if (block.isIndented && sanitized.text.endsWith("\n\n")) {
-                                            val trimmedText = sanitized.text.dropLast(2)
-                                            val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                            if (realIdx != -1) {
-                                                blocks[realIdx] = block.copy(content = trimmedText)
-                                                blockTextFieldValues[block.id] = TextFieldValue(trimmedText, TextRange(trimmedText.length))
-
-                                                val newBodyId = UUID.randomUUID().toString()
-                                                val newBodyBlock = NoteBlock.Text(id = newBodyId, content = "", style = TextStyleType.BODY, isIndented = false)
-                                                blocks.add(realIdx + 1, newBodyBlock)
-                                                blockTextFieldValues[newBodyId] = TextFieldValue("", TextRange(0))
-                                                targetFocusBlockId = newBodyId
-                                                focusedBlockId = newBodyId
-                                            }
-                                        } else {
-                                            blockTextFieldValues[block.id] = sanitized
-                                            if (sanitized.text != block.content) {
-                                                val realIdx = blocks.indexOfFirst { it.id == block.id }
-                                                if (realIdx != -1) {
-                                                    blocks[realIdx] = block.copy(content = sanitized.text)
-                                                }
-                                            }
-                                            coroutineScope.launch {
-                                                val layout = textLayoutResult
-                                                val cursorOffset = sanitized.selection.max
-                                                if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                    val cursorRect = layout.getCursorRect(cursorOffset)
-                                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                    bringIntoViewRequester.bringIntoView(expandedRect)
-                                                } else {
-                                                    bringIntoViewRequester.bringIntoView()
-                                                }
-                                            }
-                                        }
-                                    },
-                                    onTextLayout = { textLayoutResult = it },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp)
-                                        .onNoteLinkClick(textLayoutResult) { linkedId ->
-                                            viewModel.navigateTo(Screen.Editor(noteId = linkedId))
-                                        }
-                                        .onInlineMathClick(textLayoutResult) { code, start, end ->
-                                            inlineMathDialogTargetBlockId = block.id
-                                            inlineMathDialogInitialCode = code
-                                            inlineMathDialogIsEditing = true
-                                            inlineMathDialogRange = TextRange(start, end)
-                                            showInlineMathDialog = true
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                        .bringIntoViewRequester(bringIntoViewRequester)
-                                        .focusRequester(focusRequester)
-                                        .onFocusChanged { focusState ->
-                                            isFocused = focusState.isFocused
-                                            if (focusState.isFocused) {
-                                                focusedBlockId = block.id
-                                                coroutineScope.launch {
-                                                    delay(100)
-                                                    val layout = textLayoutResult
-                                                    val currentTfv = blockTextFieldValues[block.id]
-                                                    val cursorOffset = currentTfv?.selection?.max ?: 0
-                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                        val cursorRect = layout.getCursorRect(cursorOffset)
-                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                        bringIntoViewRequester.bringIntoView(expandedRect)
-                                                    } else {
-                                                        bringIntoViewRequester.bringIntoView()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        .testTag("block_text_$index"),
-                                    textStyle = textStyle.copy(color = paperTextColor),
-                                    cursorBrush = SolidColor(amber),
-                                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                                    decorationBox = { innerTextField ->
-                                        if (block.content.isEmpty()) {
-                                            val showPlaceholder = when (block.style) {
-                                                TextStyleType.TITLE -> "Título de sección..."
-                                                else -> if (blocks.size <= 1 && title.isEmpty()) "Escribe algo..." else ""
-                                            }
-                                            if (showPlaceholder.isNotEmpty()) {
-                                                Text(
-                                                    text = showPlaceholder,
-                                                    style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
-                                                )
-                                            }
-                                        }
-                                        innerTextField()
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                                        capitalization = KeyboardCapitalization.Sentences,
-                                        imeAction = ImeAction.Default
-                                    )
-                                )
-                            }
-                        }
-                        is NoteBlock.Checklist -> {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .testTag("block_checklist_$index"),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .clip(CircleShape)
-                                        .border(2.dp, if (block.isChecked) amber else if (isPaperDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.35f), CircleShape)
-                                        .background(if (block.isChecked) amber else Color.Transparent)
-                                        .clickable {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            blocks[index] = block.copy(isChecked = !block.isChecked)
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (block.isChecked) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Completado",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
-                                val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
-                                var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-                                BasicTextField(
-                                    value = tfv,
-                                    onValueChange = { newValue ->
-                                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
-                                        val effective = solved ?: newValue
-                                        val sanitized = sanitizeTextFieldValue(effective)
-                                        evaluateNoteLinkTrigger(block.id, sanitized)
-                                        blockTextFieldValues[block.id] = sanitized
-                                        if (sanitized.text != block.content) {
-                                            blocks[index] = block.copy(content = sanitized.text)
-                                        }
-                                        coroutineScope.launch {
-                                            val layout = textLayoutResult
-                                            val cursorOffset = sanitized.selection.max
-                                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                val cursorRect = layout.getCursorRect(cursorOffset)
-                                                val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                bringIntoViewRequester.bringIntoView(expandedRect)
-                                            } else {
-                                                bringIntoViewRequester.bringIntoView()
-                                            }
-                                        }
-                                    },
-                                    onTextLayout = { textLayoutResult = it },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .onNoteLinkClick(textLayoutResult) { linkedId ->
-                                            viewModel.navigateTo(Screen.Editor(noteId = linkedId))
-                                        }
-                                        .onInlineMathClick(textLayoutResult) { code, start, end ->
-                                            inlineMathDialogTargetBlockId = block.id
-                                            inlineMathDialogInitialCode = code
-                                            inlineMathDialogIsEditing = true
-                                            inlineMathDialogRange = TextRange(start, end)
-                                            showInlineMathDialog = true
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                        .bringIntoViewRequester(bringIntoViewRequester)
-                                        .focusRequester(focusRequester)
-                                        .onFocusChanged { focusState ->
-                                            if (focusState.isFocused) {
-                                                focusedBlockId = block.id
-                                                coroutineScope.launch {
-                                                    delay(100)
-                                                    val layout = textLayoutResult
-                                                    val currentTfv = blockTextFieldValues[block.id]
-                                                    val cursorOffset = currentTfv?.selection?.max ?: 0
-                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                        val cursorRect = layout.getCursorRect(cursorOffset)
-                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                        bringIntoViewRequester.bringIntoView(expandedRect)
-                                                    } else {
-                                                        bringIntoViewRequester.bringIntoView()
-                                                    }
-                                                }
-                                            }
-                                        },
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                        fontSize = customFontSizeSp.sp,
-                                        fontWeight = if (isBoldActive) FontWeight.Bold else FontWeight.Normal,
-                                        fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
-                                        color = if (block.isChecked) paperHintColor else paperTextColor,
-                                        background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
-                                        textDecoration = when {
-                                            block.isChecked -> TextDecoration.LineThrough
-                                            else -> TextDecoration.None
-                                        }
-                                    ),
-                                    cursorBrush = SolidColor(amber),
-                                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                                    decorationBox = { innerTextField ->
-                                        if (block.content.isEmpty()) {
-                                            Text(
-                                                text = "Elemento de lista de tareas...",
-                                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = paperHintColor.copy(alpha = 0.5f))
-                                            )
-                                        }
-                                        innerTextField()
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Next
-                        ),
-                                    keyboardActions = KeyboardActions(
-                                        onNext = {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            if (block.content.isBlank()) {
-                                                blocks[index] = NoteBlock.Text(id = block.id, content = "")
-                                            } else {
-                                                val newId = UUID.randomUUID().toString()
-                                                blocks.add(index + 1, NoteBlock.Checklist(id = newId))
-                                                targetFocusBlockId = newId
-                                            }
-                                        }
-                                    )
-                                )
-                                IconButton(
-                                    onClick = { removeBlock(index) },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Eliminar",
-                                        tint = paperHintColor.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                        is NoteBlock.SimpleList -> {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .testTag("block_simple_list_$index"),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (block.isNumbered) "${block.number}." else "•",
-                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold, color = amber, fontSize = 17.sp),
-                                    modifier = Modifier.width(24.dp),
-                                    textAlign = TextAlign.Center
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
-                                val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
-                                var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-                                BasicTextField(
-                                    value = tfv,
-                                    onValueChange = { newValue ->
-                                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
-                                        val effective = solved ?: newValue
-                                        val sanitized = sanitizeTextFieldValue(effective)
-                                        evaluateNoteLinkTrigger(block.id, sanitized)
-                                        blockTextFieldValues[block.id] = sanitized
-                                        if (sanitized.text != block.content) {
-                                            blocks[index] = block.copy(content = sanitized.text)
-                                        }
-                                        coroutineScope.launch {
-                                            val layout = textLayoutResult
-                                            val cursorOffset = sanitized.selection.max
-                                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                val cursorRect = layout.getCursorRect(cursorOffset)
-                                                val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                bringIntoViewRequester.bringIntoView(expandedRect)
-                                            } else {
-                                                bringIntoViewRequester.bringIntoView()
-                                            }
-                                        }
-                                    },
-                                    onTextLayout = { textLayoutResult = it },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .onNoteLinkClick(textLayoutResult) { linkedId ->
-                                            viewModel.navigateTo(Screen.Editor(noteId = linkedId))
-                                        }
-                                        .onInlineMathClick(textLayoutResult) { code, start, end ->
-                                            inlineMathDialogTargetBlockId = block.id
-                                            inlineMathDialogInitialCode = code
-                                            inlineMathDialogIsEditing = true
-                                            inlineMathDialogRange = TextRange(start, end)
-                                            showInlineMathDialog = true
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                        .bringIntoViewRequester(bringIntoViewRequester)
-                                        .focusRequester(focusRequester)
-                                        .onFocusChanged { focusState ->
-                                            if (focusState.isFocused) {
-                                                focusedBlockId = block.id
-                                                coroutineScope.launch {
-                                                    delay(100)
-                                                    val layout = textLayoutResult
-                                                    val currentTfv = blockTextFieldValues[block.id]
-                                                    val cursorOffset = currentTfv?.selection?.max ?: 0
-                                                    if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                        val cursorRect = layout.getCursorRect(cursorOffset)
-                                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                        bringIntoViewRequester.bringIntoView(expandedRect)
-                                                    } else {
-                                                        bringIntoViewRequester.bringIntoView()
-                                                    }
-                                                }
-                                            }
-                                        },
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                        fontSize = customFontSizeSp.sp,
-                                        fontWeight = if (isBoldActive) FontWeight.Bold else FontWeight.Normal,
-                                        fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
-                                        background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
-                                        color = paperTextColor
-                                    ),
-                                    cursorBrush = SolidColor(amber),
-                                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                                    decorationBox = { innerTextField ->
-                                        if (block.content.isEmpty()) {
-                                            Text(
-                                                text = "Elemento de lista...",
-                                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = paperHintColor.copy(alpha = 0.5f))
-                                            )
-                                        }
-                                        innerTextField()
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Next
-                        ),
-                                    keyboardActions = KeyboardActions(
-                                        onNext = {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            if (block.content.isBlank()) {
-                                                blocks[index] = NoteBlock.Text(id = block.id, content = "")
-                                            } else {
-                                                val nextNumber = if (block.isNumbered) block.number + 1 else 1
-                                                val newId = UUID.randomUUID().toString()
-                                                blocks.add(index + 1, NoteBlock.SimpleList(id = newId, isNumbered = block.isNumbered, number = nextNumber))
-                                                targetFocusBlockId = newId
-                                            }
-                                        }
-                                    )
-                                )
-                            }
-                        }
-                        is NoteBlock.CalloutBox -> {
-                            var showCalloutMenu by remember { mutableStateOf(false) }
-                            var showCalloutColorPicker by remember { mutableStateOf(false) }
-
-                            val calloutBg = if (!block.backgroundColorHex.isNullOrBlank()) {
-                                runCatching { Color(android.graphics.Color.parseColor(block.backgroundColorHex)) }.getOrDefault(
-                                    if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
-                                )
-                            } else {
-                                if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
-                            }
-
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 6.dp)
-                                    .testTag("block_callout_$index")
-                                    .combinedClickable(
-                                        onClick = { },
-                                        onLongClick = {
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            showCalloutMenu = true
-                                        }
-                                    ),
-                                shape = RoundedCornerShape(12.dp),
-                                color = calloutBg,
-                                border = BorderStroke(1.dp, amber.copy(alpha = 0.3f))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(4.dp)
-                                            .height(36.dp)
-                                            .background(amber, RoundedCornerShape(2.dp))
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    val tfv = blockTextFieldValues[block.id] ?: TextFieldValue(block.content)
-                                    val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
-                                    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-                                    BasicTextField(
-                                        value = tfv,
-                                        onValueChange = { newValue ->
-                                            val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
-                                            val effective = solved ?: newValue
-                                            val sanitized = sanitizeTextFieldValue(effective)
-                                            evaluateNoteLinkTrigger(block.id, sanitized)
-                                            blockTextFieldValues[block.id] = sanitized
-                                            if (sanitized.text != block.content) {
-                                                blocks[index] = block.copy(content = sanitized.text)
-                                            }
-                                            coroutineScope.launch {
-                                                val layout = textLayoutResult
-                                                val cursorOffset = sanitized.selection.max
-                                                if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                    val cursorRect = layout.getCursorRect(cursorOffset)
-                                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                    bringIntoViewRequester.bringIntoView(expandedRect)
-                                                } else {
-                                                    bringIntoViewRequester.bringIntoView()
-                                                }
-                                            }
-                                        },
-                                        onTextLayout = { textLayoutResult = it },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .onNoteLinkClick(textLayoutResult) { linkedId ->
-                                                viewModel.navigateTo(Screen.Editor(noteId = linkedId))
-                                            }
-                                            .onInlineMathClick(textLayoutResult) { code, start, end ->
-                                                inlineMathDialogTargetBlockId = block.id
-                                                inlineMathDialogInitialCode = code
-                                                inlineMathDialogIsEditing = true
-                                                inlineMathDialogRange = TextRange(start, end)
-                                                showInlineMathDialog = true
-                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            }
-                                            .bringIntoViewRequester(bringIntoViewRequester)
-                                            .focusRequester(focusRequester)
-                                            .onFocusChanged { focusState ->
-                                                if (focusState.isFocused) {
-                                                    focusedBlockId = block.id
-                                                    coroutineScope.launch {
-                                                        delay(100)
-                                                        val layout = textLayoutResult
-                                                        val currentTfv = blockTextFieldValues[block.id]
-                                                        val cursorOffset = currentTfv?.selection?.max ?: 0
-                                                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
-                                                            val cursorRect = layout.getCursorRect(cursorOffset)
-                                                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                                            bringIntoViewRequester.bringIntoView(expandedRect)
-                                                        } else {
-                                                            bringIntoViewRequester.bringIntoView()
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                            fontSize = 17.sp,
-                                            color = paperTextColor,
-                                            fontStyle = FontStyle.Italic
-                                        ),
-                                        cursorBrush = SolidColor(amber),
-                                        visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                                        decorationBox = { innerTextField ->
-                                            if (block.content.isEmpty()) {
-                                                Text(
-                                                    text = "Cuadro destacado / Nota importante...",
-                                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                                        fontSize = 17.sp,
-                                                        color = paperHintColor.copy(alpha = 0.5f),
-                                                        fontStyle = FontStyle.Italic
-                                                    )
-                                                )
-                                            }
-                                            innerTextField()
-                                        },
-                                        keyboardOptions = KeyboardOptions(
-                                            capitalization = KeyboardCapitalization.Sentences,
-                                            imeAction = ImeAction.Default
-                                        )
-                                    )
-                                }
-                            }
-
-                            if (showCalloutMenu) {
-                                AlertDialog(
-                                    onDismissRequest = { showCalloutMenu = false },
-                                    title = { Text("Opciones de cuadro destacado") },
-                                    text = {
-                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            TextButton(
-                                                onClick = {
-                                                    showCalloutMenu = false
-                                                    showCalloutColorPicker = true
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("🎨 Cambiar color de resalte", color = amber)
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    showCalloutMenu = false
-                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    removeBlock(index)
-                                                },
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .testTag("btn_delete_callout")
-                                            ) {
-                                                Text("🗑️ Eliminar cuadro destacado", color = MaterialTheme.colorScheme.error)
-                                            }
-                                        }
-                                    },
-                                    confirmButton = {
-                                        TextButton(onClick = { showCalloutMenu = false }) {
-                                            Text("Cerrar")
-                                        }
-                                    }
-                                )
-                            }
-
-                            if (showCalloutColorPicker) {
-                                AlertDialog(
-                                    onDismissRequest = { showCalloutColorPicker = false },
-                                    title = { Text("Seleccionar color de resalte") },
-                                    text = {
-                                        val calloutPalette = listOf(
-                                            "Gris neutro" to null,
-                                            "Amarillo pastel" to "#FEF3C7",
-                                            "Azul claro" to "#DBEAFE",
-                                            "Verde menta" to "#D1FAE5",
-                                            "Rosa pastel" to "#FCE7F3"
-                                        )
-                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            calloutPalette.forEach { (name, hex) ->
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clickable {
-                                                            block.backgroundColorHex = hex
-                                                            blocks[index] = block.copy(backgroundColorHex = hex)
-                                                            showCalloutColorPicker = false
-                                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                        },
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    color = if (hex != null) Color(android.graphics.Color.parseColor(hex)) else MaterialTheme.colorScheme.surfaceVariant
-                                                ) {
-                                                    Text(
-                                                        text = name,
-                                                        modifier = Modifier.padding(12.dp),
-                                                        color = if (hex != null) Color.Black else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    },
-                                    confirmButton = {
-                                        TextButton(onClick = { showCalloutColorPicker = false }) {
-                                            Text("Cancelar")
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                        is NoteBlock.Drawing -> {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(110.dp)
-                                    .padding(vertical = 6.dp)
-                                    .clickable {
-                                        saveAndExit(navigateBack = false)
-                                        viewModel.navigateTo(Screen.Drawing(noteId))
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isPaperDark) Color(0xFF1C1C1E) else Color(0xFFE5E5EA),
-                                border = BorderStroke(1.dp, amber.copy(alpha = 0.4f))
-                            ) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Gesture, contentDescription = null, tint = amber)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "Boceto a mano alzada (Toca para editar)",
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                            color = paperTextColor
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        is NoteBlock.Table -> {
-                            TableBlockItem(
-                                block = block,
-                                onUpdateBlock = { updatedTable ->
-                                    blocks[index] = updatedTable
-                                },
-                                onDeleteBlock = {
-                                    removeBlock(index)
-                                },
-                                isPaperDark = isPaperDark,
-                                onExportTablePdf = {
-                                    Toast.makeText(context, "Exportando hoja de cálculo con PdfBox...", Toast.LENGTH_SHORT).show()
-                                    coroutineScope.launch {
-                                        try {
-                                            val pdfFile = NotePdfExporter.exportCalculationSheet(context, title, block)
-                                            val uri = FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.provider",
-                                                pdfFile
-                                            )
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "application/pdf"
-                                                putExtra(Intent.EXTRA_STREAM, uri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Compartir Hoja de Cálculo"))
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
-                                            Toast.makeText(context, "Error al generar el PDF: ${e.message}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.testTag("table_block_$index")
-                            )
-                        }
-                        is PdfBlock -> {
-                            PdfBlockItem(
-                                block = block,
-                                onPageChange = { newIndex ->
-                                    blocks[index] = block.copy(currentPageIndex = newIndex)
-                                },
-                                onToggleExpand = {
-                                    blocks[index] = block.copy(isExpanded = !block.isExpanded)
-                                },
-                                onDeleteBlock = {
-                                    removeBlock(index)
-                                },
-                                onOpenFullScreen = {
-                                    saveAndExit(navigateBack = false)
-                                    viewModel.navigateTo(Screen.PdfViewer(noteId = noteId, pdfPath = block.filePath))
-                                },
-                                modifier = Modifier.testTag("block_pdf_$index")
-                            )
-                        }
-                        is AudioBlock -> {
-                            AudioBlockItem(
-                                block = block,
-                                onToggleTranscription = {
-                                    blocks[index] = block.copy(isTranscriptionVisible = !block.isTranscriptionVisible)
-                                },
-                                onDeleteBlock = {
-                                    val file = File(block.filePath)
-                                    if (file.exists()) file.delete()
-                                    removeBlock(index)
-                                },
-                                modifier = Modifier.testTag("block_audio_$index")
-                            )
-                        }
-                        is ImageBlock -> {
-                            ImageBlockItem(
-                                block = block,
-                                onRemove = { removeBlock(index) },
-                                modifier = Modifier.testTag("block_image_$index")
-                            )
-                        }
-                        is NoteBlock.Image -> {
-                            ImageBlockItem(
-                                block = block,
-                                onDeleteBlock = { removeBlock(index) },
-                                modifier = Modifier.testTag("block_image_$index")
-                            )
-                        }
-                        is NoteBlock.Math -> {
-                            InlineMathBlockItem(
-                                block = block,
-                                onUpdateBlock = { updatedMath ->
-                                    blocks[index] = updatedMath
-                                },
-                                onDeleteBlock = {
-                                    removeBlock(index)
-                                },
-                                isDark = isPaperDark,
-                                modifier = Modifier.testTag("block_math_$index")
-                            )
-                        }
+                },
+                onOpenPdfFullScreen = { pdfPath ->
+                    saveAndExit(navigateBack = false)
+                    viewModel.navigateTo(Screen.PdfViewer(noteId = noteId, pdfPath = pdfPath))
+                },
+                attachedImageUri = attachedImageUri,
+                onRemoveAttachedImage = { attachedImageUri = null },
+                onAddBodyBlockBelow = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    val lastBlock = blocks.lastOrNull()
+                    if (lastBlock is NoteBlock.Text && lastBlock.style == TextStyleType.BODY && !lastBlock.isIndented) {
+                        targetFocusBlockId = lastBlock.id
+                        focusedBlockId = lastBlock.id
+                    } else {
+                        saveSnapshot()
+                        val newId = UUID.randomUUID().toString()
+                        blocks.add(NoteBlock.Text(id = newId, style = TextStyleType.BODY, isIndented = false))
+                        targetFocusBlockId = newId
+                        focusedBlockId = newId
                     }
-                }
-            }
-
-                attachedImageUri?.let { uri ->
-                    item {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            )
-                        ) {
-                            Box(modifier = Modifier.fillMaxWidth()) {
-                                AsyncImage(
-                                    model = uri,
-                                    contentDescription = "Imagen adjunta",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 350.dp)
-                                        .clip(RoundedCornerShape(12.dp)),
-                                    contentScale = ContentScale.Fit
-                                )
-                                IconButton(
-                                    onClick = { attachedImageUri = null },
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(8.dp)
-                                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                                        .size(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Eliminar imagen",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 350.dp)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val lastBlock = blocks.lastOrNull()
-                                if (lastBlock is NoteBlock.Text && lastBlock.style == TextStyleType.BODY && !lastBlock.isIndented) {
-                                    targetFocusBlockId = lastBlock.id
-                                    focusedBlockId = lastBlock.id
-                                } else {
-                                    saveSnapshot()
-                                    val newId = UUID.randomUUID().toString()
-                                    blocks.add(NoteBlock.Text(id = newId, style = TextStyleType.BODY, isIndented = false))
-                                    targetFocusBlockId = newId
-                                    focusedBlockId = newId
-                                }
-                            }
-                    )
-                }
-            }
+                },
+                evaluateNoteLinkTrigger = { blockId, tfv ->
+                    evaluateNoteLinkTrigger(blockId, tfv)
+                },
+                amber = amber,
+                paperTextColor = paperTextColor,
+                paperHintColor = paperHintColor,
+                isPaperDark = isPaperDark,
+                customFontSizeSp = customFontSizeSp,
+                isBoldActive = isBoldActive,
+                isItalicActive = isItalicActive,
+                isHighlightActive = isHighlightActive,
+                title = title
+            )
 
             // Floating Accessory Bar (barra inferior flotante)
             Column(
@@ -2695,45 +1677,32 @@ fun NoteEditorScreen(
         }
     }
 
-    // Carousel Vertical Font Size Bottom Sheet (1 a 150 sp - Rodillo/Rueda vertical)
-    EditorFontSizeCarouselSheet(
+    EditorDialogs(
         showFontSizeCarouselSheet = showFontSizeCarouselSheet,
         customFontSizeSp = customFontSizeSp,
-        isPaperDark = isPaperDark,
-        isDark = isDark,
-        amber = amber,
         onFontSizeChange = { customFontSizeSp = it },
-        onDismissRequest = { showFontSizeCarouselSheet = false }
-    )
-
-    if (showCreateTableDialog) {
-        CreateTableBottomSheet(
-            initialRows = createTableRows,
-            initialCols = createTableCols,
-            onCreateTable = { r, c, header, zebra ->
-                showCreateTableDialog = false
-                saveSnapshot()
-                val newId = UUID.randomUUID().toString()
-                blocks.add(
-                    NoteBlock.Table(
-                        id = newId,
-                        rows = r,
-                        cols = c,
-                        hasHeaderRow = header,
-                        hasZebraStripes = zebra
-                    )
+        onDismissFontSizeCarouselSheet = { showFontSizeCarouselSheet = false },
+        showCreateTableDialog = showCreateTableDialog,
+        createTableRows = createTableRows,
+        createTableCols = createTableCols,
+        onCreateTable = { r, c, header, zebra ->
+            showCreateTableDialog = false
+            saveSnapshot()
+            val newId = UUID.randomUUID().toString()
+            blocks.add(
+                NoteBlock.Table(
+                    id = newId,
+                    rows = r,
+                    cols = c,
+                    hasHeaderRow = header,
+                    hasZebraStripes = zebra
                 )
-                targetFocusBlockId = newId
-            },
-            onDismiss = { showCreateTableDialog = false }
-        )
-    }
-
-    EditorReminderBottomSheet(
+            )
+            targetFocusBlockId = newId
+        },
+        onDismissCreateTable = { showCreateTableDialog = false },
         showReminderDialog = showReminderDialog,
         reminderTimestamp = reminderTimestamp,
-        isDark = isDark,
-        amber = amber,
         onSaveReminder = { selectedTimestamp, offsets ->
             reminderTimestamp = selectedTimestamp
             if (noteId > 0) {
@@ -2753,43 +1722,25 @@ fun NoteEditorScreen(
                 viewModel.cancelReminder(context, noteId)
             }
         },
-        onDismissRequest = { showReminderDialog = false }
-    )
-
-    EditorColorPickerDialog(
+        onDismissReminder = { showReminderDialog = false },
         showColorDialog = showColorDialog,
         colorIndex = colorIndex,
-        isDark = isDark,
-        amber = amber,
         onColorSelected = { colorIndex = it },
-        onDismissRequest = { showColorDialog = false }
-    )
-
-    EditorPaperStyleDialog(
+        onDismissColorDialog = { showColorDialog = false },
         showPaperDialog = showPaperDialog,
         paperStyle = paperStyle,
-        amber = amber,
         onStyleSelected = { paperStyle = it },
-        onDismissRequest = { showPaperDialog = false }
-    )
-
-    EditorStatsBottomSheet(
+        onDismissPaperDialog = { showPaperDialog = false },
         showStatsDialog = showStatsDialog,
         blocks = blocks,
         title = title,
         createdAt = createdAt,
         updatedAt = updatedAt,
-        isPaperDark = isPaperDark,
-        isDark = isDark,
-        amber = amber,
-        onDismissRequest = { showStatsDialog = false }
-    )
-
-    EditorScannedPdfNameDialog(
-        pdfUri = pendingScannedPdfUri,
+        onDismissStatsDialog = { showStatsDialog = false },
+        pendingScannedPdfUri = pendingScannedPdfUri,
         scannedPdfName = scannedPdfName,
-        onNameChange = { scannedPdfName = it },
-        onConfirm = { uri, name ->
+        onScannedPdfNameChange = { scannedPdfName = it },
+        onConfirmScannedPdf = { uri, name ->
             viewModel.insertPdfBlock(uri, customFileName = name) { newBlock ->
                 if (!blocks.any { b -> b.id == newBlock.id }) {
                     blocks.add(newBlock)
@@ -2797,45 +1748,73 @@ fun NoteEditorScreen(
             }
             pendingScannedPdfUriString = null
         },
-        onDismissRequest = { pendingScannedPdfUriString = null }
-    )
+        onDismissScannedPdf = { pendingScannedPdfUriString = null },
+        showInlineMathDialog = showInlineMathDialog,
+        inlineMathDialogInitialCode = inlineMathDialogInitialCode,
+        inlineMathDialogIsEditing = inlineMathDialogIsEditing,
+        onDismissInlineMath = { showInlineMathDialog = false },
+        onConfirmInlineMath = { newLatexCode ->
+            val targetId = inlineMathDialogTargetBlockId
+            if (targetId != null) {
+                val currentTfv = if (targetId == "TITLE") titleTextFieldValue else (blockTextFieldValues[targetId] ?: TextFieldValue(""))
+                val text = currentTfv.text
+                val selection = currentTfv.selection
+                val mathTag = "[math:$newLatexCode]"
+                val newText: String
+                val newSelection: TextRange
 
-    if (showInlineMathDialog) {
-        InsertInlineMathDialog(
-            initialCode = inlineMathDialogInitialCode,
-            isEditing = inlineMathDialogIsEditing,
-            isDark = isPaperDark,
-            onDismiss = { showInlineMathDialog = false },
-            onConfirm = { newLatexCode ->
+                if (inlineMathDialogIsEditing && inlineMathDialogRange != null) {
+                    val range = inlineMathDialogRange!!
+                    val start = range.min.coerceIn(0, text.length)
+                    val end = range.max.coerceIn(start, text.length)
+                    newText = text.substring(0, start) + mathTag + text.substring(end)
+                    newSelection = TextRange(start + mathTag.length)
+                } else if (selection.min != selection.max) {
+                    val start = selection.min.coerceIn(0, text.length)
+                    val end = selection.max.coerceIn(start, text.length)
+                    newText = text.substring(0, start) + mathTag + text.substring(end)
+                    newSelection = TextRange(start + mathTag.length)
+                } else {
+                    val cursor = selection.min.coerceIn(0, text.length)
+                    val prefix = if (cursor > 0 && !text[cursor - 1].isWhitespace()) " " else ""
+                    val suffix = if (cursor < text.length && !text[cursor].isWhitespace()) " " else ""
+                    val insertStr = "$prefix$mathTag$suffix"
+                    newText = text.substring(0, cursor) + insertStr + text.substring(cursor)
+                    newSelection = TextRange(cursor + insertStr.length)
+                }
+
+                if (targetId == "TITLE") {
+                    titleTextFieldValue = TextFieldValue(newText, newSelection)
+                    title = newText
+                } else {
+                    blockTextFieldValues[targetId] = TextFieldValue(newText, newSelection)
+                    val realIdx = blocks.indexOfFirst { it.id == targetId }
+                    if (realIdx != -1) {
+                        when (val block = blocks[realIdx]) {
+                            is NoteBlock.Text -> blocks[realIdx] = block.copy(content = newText)
+                            is NoteBlock.Checklist -> blocks[realIdx] = block.copy(content = newText)
+                            is NoteBlock.SimpleList -> blocks[realIdx] = block.copy(content = newText)
+                            is NoteBlock.CalloutBox -> blocks[realIdx] = block.copy(content = newText)
+                            else -> {}
+                        }
+                    }
+                    targetFocusBlockId = targetId
+                    focusedBlockId = targetId
+                }
+            }
+            showInlineMathDialog = false
+        },
+        onDeleteInlineMath = if (inlineMathDialogIsEditing && inlineMathDialogRange != null) {
+            {
                 val targetId = inlineMathDialogTargetBlockId
-                if (targetId != null) {
+                val range = inlineMathDialogRange
+                if (targetId != null && range != null) {
                     val currentTfv = if (targetId == "TITLE") titleTextFieldValue else (blockTextFieldValues[targetId] ?: TextFieldValue(""))
                     val text = currentTfv.text
-                    val selection = currentTfv.selection
-                    val mathTag = "[math:$newLatexCode]"
-                    val newText: String
-                    val newSelection: TextRange
-
-                    if (inlineMathDialogIsEditing && inlineMathDialogRange != null) {
-                        val range = inlineMathDialogRange!!
-                        val start = range.min.coerceIn(0, text.length)
-                        val end = range.max.coerceIn(start, text.length)
-                        newText = text.substring(0, start) + mathTag + text.substring(end)
-                        newSelection = TextRange(start + mathTag.length)
-                    } else if (selection.min != selection.max) {
-                        val start = selection.min.coerceIn(0, text.length)
-                        val end = selection.max.coerceIn(start, text.length)
-                        newText = text.substring(0, start) + mathTag + text.substring(end)
-                        newSelection = TextRange(start + mathTag.length)
-                    } else {
-                        val cursor = selection.min.coerceIn(0, text.length)
-                        val prefix = if (cursor > 0 && !text[cursor - 1].isWhitespace()) " " else ""
-                        val suffix = if (cursor < text.length && !text[cursor].isWhitespace()) " " else ""
-                        val insertStr = "$prefix$mathTag$suffix"
-                        newText = text.substring(0, cursor) + insertStr + text.substring(cursor)
-                        newSelection = TextRange(cursor + insertStr.length)
-                    }
-
+                    val start = range.min.coerceIn(0, text.length)
+                    val end = range.max.coerceIn(start, text.length)
+                    val newText = text.substring(0, start) + text.substring(end)
+                    val newSelection = TextRange(start)
                     if (targetId == "TITLE") {
                         titleTextFieldValue = TextFieldValue(newText, newSelection)
                         title = newText
@@ -2851,172 +1830,68 @@ fun NoteEditorScreen(
                                 else -> {}
                             }
                         }
-                        targetFocusBlockId = targetId
-                        focusedBlockId = targetId
                     }
                 }
                 showInlineMathDialog = false
-            },
-            onDelete = if (inlineMathDialogIsEditing && inlineMathDialogRange != null) {
-                {
-                    val targetId = inlineMathDialogTargetBlockId
-                    val range = inlineMathDialogRange
-                    if (targetId != null && range != null) {
-                        val currentTfv = if (targetId == "TITLE") titleTextFieldValue else (blockTextFieldValues[targetId] ?: TextFieldValue(""))
-                        val text = currentTfv.text
-                        val start = range.min.coerceIn(0, text.length)
-                        val end = range.max.coerceIn(start, text.length)
-                        val newText = text.substring(0, start) + text.substring(end)
-                        val newSelection = TextRange(start)
-                        if (targetId == "TITLE") {
-                            titleTextFieldValue = TextFieldValue(newText, newSelection)
-                            title = newText
-                        } else {
-                            blockTextFieldValues[targetId] = TextFieldValue(newText, newSelection)
-                            val realIdx = blocks.indexOfFirst { it.id == targetId }
-                            if (realIdx != -1) {
-                                when (val block = blocks[realIdx]) {
-                                    is NoteBlock.Text -> blocks[realIdx] = block.copy(content = newText)
-                                    is NoteBlock.Checklist -> blocks[realIdx] = block.copy(content = newText)
-                                    is NoteBlock.SimpleList -> blocks[realIdx] = block.copy(content = newText)
-                                    is NoteBlock.CalloutBox -> blocks[realIdx] = block.copy(content = newText)
-                                    else -> {}
-                                }
-                            }
-                        }
-                    }
-                    showInlineMathDialog = false
-                }
-            } else null
-        )
-    }
-
-    if (showExportPdfChoiceDialog) {
-        AlertDialog(
-            onDismissRequest = { showExportPdfChoiceDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.PictureAsPdf,
-                    contentDescription = null,
-                    tint = amber,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "Exportar PDF (PdfBox)",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "¿Qué formato de documento PDF deseas generar?",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        } else null,
+        showExportPdfChoiceDialog = showExportPdfChoiceDialog,
+        onDismissExportPdfChoice = { showExportPdfChoiceDialog = false },
+        onExportCompletePdf = {
+            showExportPdfChoiceDialog = false
+            Toast.makeText(context, "Generando PDF con PdfBox...", Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                try {
+                    val pdfFile = NotePdfExporter.exportWithPdfBox(context, title, blocks, noteType)
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        pdfFile
                     )
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, amber.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showExportPdfChoiceDialog = false
-                                Toast.makeText(context, "Generando PDF con PdfBox...", Toast.LENGTH_SHORT).show()
-                                coroutineScope.launch {
-                                    try {
-                                        val pdfFile = NotePdfExporter.exportWithPdfBox(context, title, blocks, noteType)
-                                        val uri = FileProvider.getUriForFile(
-                                            context,
-                                            "${context.packageName}.provider",
-                                            pdfFile
-                                        )
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "application/pdf"
-                                            putExtra(Intent.EXTRA_STREAM, uri)
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF (Nota)"))
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                        Toast.makeText(context, "Error al generar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = amber)
-                            Column {
-                                Text("Documento Completo", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("Exporta toda la nota con texto, fórmulas y cuadrículas.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/pdf"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, amber.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showExportPdfChoiceDialog = false
-                                val tableBlock = blocks.filterIsInstance<NoteBlock.Table>().firstOrNull()
-                                Toast.makeText(context, "Generando PDF de hoja de cálculo con PdfBox...", Toast.LENGTH_SHORT).show()
-                                coroutineScope.launch {
-                                    try {
-                                        val pdfFile = if (tableBlock != null) {
-                                            NotePdfExporter.exportCalculationSheet(context, title, tableBlock)
-                                        } else {
-                                            NotePdfExporter.exportWithPdfBox(context, title, blocks, noteType)
-                                        }
-                                        val uri = FileProvider.getUriForFile(
-                                            context,
-                                            "${context.packageName}.provider",
-                                            pdfFile
-                                        )
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "application/pdf"
-                                            putExtra(Intent.EXTRA_STREAM, uri)
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF (Hoja de Cálculo)"))
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                        Toast.makeText(context, "Error al generar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(Icons.Default.TableChart, contentDescription = null, tint = amber)
-                            Column {
-                                Text("Hoja de Cálculo / Tabla", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("Exporta exclusivamente la cuadrícula con formato de cálculo.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showExportPdfChoiceDialog = false }) {
-                    Text("Cancelar")
+                    context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF (Nota)"))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Error al generar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-        )
-    }
+        },
+        onExportCalculationSheetPdf = {
+            showExportPdfChoiceDialog = false
+            val tableBlock = blocks.filterIsInstance<NoteBlock.Table>().firstOrNull()
+            Toast.makeText(context, "Generando PDF de hoja de cálculo con PdfBox...", Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                try {
+                    val pdfFile = if (tableBlock != null) {
+                        NotePdfExporter.exportCalculationSheet(context, title, tableBlock)
+                    } else {
+                        NotePdfExporter.exportWithPdfBox(context, title, blocks, noteType)
+                    }
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        pdfFile
+                    )
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/pdf"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Compartir PDF (Hoja de Cálculo)"))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Error al generar PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        },
+        isDark = isDark,
+        isPaperDark = isPaperDark,
+        amber = amber
+    )
 }
 
 private fun Context.findActivity(): Activity? = when (this) {

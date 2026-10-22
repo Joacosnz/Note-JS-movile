@@ -309,7 +309,7 @@ class NoteRepository(
                 }
 
                 val success = try {
-                    firestoreManager.pushNote(userId, updatedNote)
+                    firestoreManager.pushNote(userId, updatedNote, context)
                 } catch (e: Exception) {
                     Log.e("NoteRepository", "Error pushing note to firestore", e)
                     false
@@ -493,7 +493,7 @@ class NoteRepository(
         this.currentUserId = userId
 
         cloudSyncJob = syncScope.launch {
-            firestoreManager.getNotesFlow(userId).collectLatest { remoteNotesMap ->
+            firestoreManager.getNotesFlow(userId, context).collectLatest { remoteNotesMap ->
                 remoteNotesMap.forEach { map ->
                     val remoteUuid = map["remoteUuid"] as? String ?: return@forEach
                     val remoteUpdatedAt = (map["updatedAt"] as? Number)?.toLong() ?: 0L

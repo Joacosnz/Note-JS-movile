@@ -25,6 +25,8 @@ import com.example.model.NoteBlock
 import com.example.model.NoteType
 import com.example.model.PdfBlock
 import com.example.model.AudioBlock
+import com.example.model.SyncState
+import com.example.util.FileManager
 import com.example.util.MathEvaluator
 import com.example.util.NoteBlockSerializer
 import com.example.util.PdfModifierUtil
@@ -171,6 +173,9 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val _unlockedNoteIds = MutableStateFlow<Set<Long>>(emptySet())
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     private val _pendingUndoNote = MutableStateFlow<NoteEntity?>(null)
+    val firestoreManager = FirestoreManager()
+    val syncState: StateFlow<SyncState> = firestoreManager.syncState
+
     private val _isSelectionMode = MutableStateFlow(false)
     private val _selectedNoteIds = MutableStateFlow<Set<Long>>(emptySet())
     private val _pdfLastModified = MutableStateFlow<Long>(System.currentTimeMillis())
@@ -180,7 +185,6 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val database = AppDatabase.getDatabase(application)
-        val firestoreManager = FirestoreManager()
         val firebaseStorageManager = FirebaseStorageManager()
         repository = NoteRepository(
             noteDao = database.noteDao(),
@@ -667,11 +671,30 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun cleanupNoteFiles(note: NoteEntity) {
+        if (note.drawingData.isNotBlank()) {
+            FileManager.deleteFile(note.drawingData)
+        }
+        val blocks = NoteBlockSerializer.deserialize(note.content)
+        for (block in blocks) {
+            if (block is NoteBlock.Drawing) {
+                FileManager.deleteFile(block.filePath)
+                if (block.pathData.isNotBlank()) {
+                    FileManager.deleteFile(block.pathData)
+                }
+            }
+        }
+    }
+
     fun batchDelete(isTrashTab: Boolean) {
         val ids = _selectedNoteIds.value.toList()
         if (ids.isEmpty()) return
         viewModelScope.launch {
             if (isTrashTab) {
+                for (id in ids) {
+                    val note = repository.getNoteById(id)
+                    note?.let { cleanupNoteFiles(it) }
+                }
                 repository.deletePermanentlyBatch(ids)
                 _snackbarMessage.value = "${ids.size} notas eliminadas definitivamente"
             } else {
@@ -725,6 +748,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deletePermanently(note: NoteEntity) {
         viewModelScope.launch {
+            cleanupNoteFiles(note)
             repository.deletePermanently(note)
             _snackbarMessage.value = "Nota eliminada definitivamente"
         }
@@ -732,7 +756,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun emptyTrash() {
         viewModelScope.launch {
-            repository.emptyTrash(uiState.value.trashedNotes)
+            val trashed = uiState.value.trashedNotes
+            for (note in trashed) {
+                cleanupNoteFiles(note)
+            }
+            repository.emptyTrash(trashed)
             _snackbarMessage.value = "Papelera vaciada"
         }
     }

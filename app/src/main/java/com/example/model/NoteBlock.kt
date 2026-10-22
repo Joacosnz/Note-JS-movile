@@ -101,6 +101,7 @@ sealed interface NoteBlock {
 
     data class Drawing(
         override val id: String = UUID.randomUUID().toString(),
+        val filePath: String = "",
         val pathData: String = ""
     ) : NoteBlock
 

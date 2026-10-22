@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.example.ui.components.editor
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -49,6 +52,7 @@ import com.example.ui.components.sanitizeTextFieldValue
 import com.example.util.MathEvaluator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun TextBlockItem(
@@ -74,7 +78,7 @@ fun TextBlockItem(
     isItalicActive: Boolean,
     isHighlightActive: Boolean,
     showEmptyPlaceholder: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
@@ -95,7 +99,7 @@ fun TextBlockItem(
         fontWeight = baseFontWeight,
         fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
         background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
-        lineHeight = (baseFontSize.value * 1.4f).sp
+        lineHeight = (baseFontSize.value * 1.4f).sp,
     )
 
     if (block.style == TextStyleType.SUBTITLE) {
@@ -103,7 +107,7 @@ fun TextBlockItem(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
@@ -111,13 +115,13 @@ fun TextBlockItem(
                     .clip(CircleShape)
                     .clickable { onToggleCollapse() }
                     .padding(2.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = if (block.isCollapsed) Icons.AutoMirrored.Rounded.KeyboardArrowRight else Icons.Rounded.KeyboardArrowDown,
                     contentDescription = if (block.isCollapsed) "Expandir sección" else "Colapsar sección",
                     tint = amber,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.dp),
                 )
             }
             BasicTextField(
@@ -142,7 +146,7 @@ fun TextBlockItem(
                         coroutineScope.launch {
                             val layout = textLayoutResult
                             val cursorOffset = sanitized.selection.max
-                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                            if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                                 val cursorRect = layout.getCursorRect(cursorOffset)
                                 val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                                 bringIntoViewRequester.bringIntoView(expandedRect)
@@ -163,10 +167,10 @@ fun TextBlockItem(
                         onFocusChanged(focusState.isFocused)
                         if (focusState.isFocused) {
                             coroutineScope.launch {
-                                delay(100)
+                                delay(100.milliseconds)
                                 val layout = textLayoutResult
                                 val cursorOffset = tfv.selection.max
-                                if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                                if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                                     val cursorRect = layout.getCursorRect(cursorOffset)
                                     val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                                     bringIntoViewRequester.bringIntoView(expandedRect)
@@ -184,15 +188,15 @@ fun TextBlockItem(
                     if (block.content.isEmpty()) {
                         Text(
                             text = "Subtítulo...",
-                            style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
+                            style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f)),
                         )
                     }
                     innerTextField()
                 },
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Default
-                )
+                    imeAction = ImeAction.Default,
+                ),
             )
         }
     } else {
@@ -221,7 +225,7 @@ fun TextBlockItem(
                     coroutineScope.launch {
                         val layout = textLayoutResult
                         val cursorOffset = sanitized.selection.max
-                        if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                        if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                             val cursorRect = layout.getCursorRect(cursorOffset)
                             val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                             bringIntoViewRequester.bringIntoView(expandedRect)
@@ -243,10 +247,10 @@ fun TextBlockItem(
                     onFocusChanged(focusState.isFocused)
                     if (focusState.isFocused) {
                         coroutineScope.launch {
-                            delay(100)
+                            delay(100.milliseconds)
                             val layout = textLayoutResult
                             val cursorOffset = tfv.selection.max
-                            if (layout != null && cursorOffset in 0..layout.layoutInput.text.length) {
+                            if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                                 val cursorRect = layout.getCursorRect(cursorOffset)
                                 val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                                 bringIntoViewRequester.bringIntoView(expandedRect)
@@ -269,7 +273,7 @@ fun TextBlockItem(
                     if (showPlaceholder.isNotEmpty()) {
                         Text(
                             text = showPlaceholder,
-                            style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f))
+                            style = textStyle.copy(color = paperHintColor.copy(alpha = 0.5f)),
                         )
                     }
                 }
@@ -277,8 +281,8 @@ fun TextBlockItem(
             },
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences,
-                imeAction = ImeAction.Default
-            )
+                imeAction = ImeAction.Default,
+            ),
         )
     }
 }

@@ -67,12 +67,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.NoteBlock
 import com.example.model.NoteType
 import com.example.model.PaperStyle
 import com.example.ui.components.PaperBackground
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
 import com.example.ui.theme.isAppInDarkTheme
+import com.example.util.FileManager
+import com.example.util.NoteBlockSerializer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.viewmodel.NotesViewModel
 import org.json.JSONArray
 import org.json.JSONObject
@@ -183,44 +191,107 @@ fun DrawingScreen(
         )
     }
 
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     LaunchedEffect(noteId) {
         if (noteId > 0) {
             val entity = viewModel.getNote(noteId)
             entity?.let {
                 if (it.title.isNotBlank()) title = it.title
                 paperStyle = runCatching { PaperStyle.valueOf(it.paperStyle) }.getOrDefault(PaperStyle.BLANK)
-                if (it.drawingData.isNotBlank() && it.drawingData != "PRESET_SKETCH") {
+                
+                val rawSource = if (it.drawingData.isNotBlank() && it.drawingData != "PRESET_SKETCH") {
+                    it.drawingData
+                } else {
+                    val blocks = NoteBlockSerializer.deserialize(it.content)
+                    val drawingBlock = blocks.filterIsInstance<NoteBlock.Drawing>().firstOrNull()
+                    drawingBlock?.filePath?.ifBlank { drawingBlock.pathData } ?: ""
+                }
+
+                if (rawSource.isNotBlank()) {
                     strokes.clear()
-                    strokes.addAll(deserializeStrokesFromJson(it.drawingData))
+                    val jsonContent = withContext(Dispatchers.IO) {
+                        FileManager.readDrawingData(rawSource)
+                    }
+                    if (jsonContent.isNotBlank()) {
+                        strokes.addAll(deserializeStrokesFromJson(jsonContent))
+                    }
                 }
             }
         }
     }
 
     fun saveAndExit() {
-        val json = serializeStrokesToJson(strokes)
-        viewModel.saveNote(
-            id = noteId,
-            title = title,
-            content = "Boceto de Note JS (${strokes.size} trazos)",
-            noteType = NoteType.DRAWING,
-            paperStyle = paperStyle.name,
-            drawingData = json
-        )
-        viewModel.navigateBack()
+        coroutineScope.launch {
+            val json = serializeStrokesToJson(strokes)
+            val filePath = if (strokes.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    FileManager.saveDrawingData(context, noteId.toString(), "main", json)
+                }
+            } else ""
+
+            val entity = viewModel.getNote(noteId)
+            val currentBlocks = entity?.let { NoteBlockSerializer.deserialize(it.content) } ?: emptyList()
+            val hasDrawingBlock = currentBlocks.any { it is NoteBlock.Drawing }
+
+            val updatedContent = if (hasDrawingBlock) {
+                val newBlocks = currentBlocks.map { block ->
+                    if (block is NoteBlock.Drawing) {
+                        block.copy(filePath = filePath)
+                    } else block
+                }
+                NoteBlockSerializer.serialize(newBlocks)
+            } else {
+                if (strokes.isNotEmpty()) "Boceto de Note JS (${strokes.size} trazos)" else ""
+            }
+
+            viewModel.saveNote(
+                id = noteId,
+                title = title,
+                content = updatedContent,
+                noteType = NoteType.DRAWING,
+                paperStyle = paperStyle.name,
+                drawingData = filePath
+            )
+            viewModel.navigateBack()
+        }
     }
 
     fun saveAndExitToText() {
-        val json = serializeStrokesToJson(strokes)
-        viewModel.saveNote(
-            id = noteId,
-            title = title,
-            content = if (strokes.isNotEmpty()) "Boceto de Note JS (${strokes.size} trazos)" else "",
-            noteType = NoteType.TEXT,
-            paperStyle = paperStyle.name,
-            drawingData = json
-        )
-        viewModel.navigateBack()
+        coroutineScope.launch {
+            val json = serializeStrokesToJson(strokes)
+            val filePath = if (strokes.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    FileManager.saveDrawingData(context, noteId.toString(), "main", json)
+                }
+            } else ""
+
+            val entity = viewModel.getNote(noteId)
+            val currentBlocks = entity?.let { NoteBlockSerializer.deserialize(it.content) } ?: emptyList()
+            val hasDrawingBlock = currentBlocks.any { it is NoteBlock.Drawing }
+
+            val updatedContent = if (hasDrawingBlock) {
+                val newBlocks = currentBlocks.map { block ->
+                    if (block is NoteBlock.Drawing) {
+                        block.copy(filePath = filePath)
+                    } else block
+                }
+                NoteBlockSerializer.serialize(newBlocks)
+            } else {
+                if (strokes.isNotEmpty()) "Boceto de Note JS (${strokes.size} trazos)" else ""
+            }
+
+            viewModel.saveNote(
+                id = noteId,
+                title = title,
+                content = updatedContent,
+                noteType = NoteType.TEXT,
+                paperStyle = paperStyle.name,
+                drawingData = filePath
+            )
+            viewModel.navigateBack()
+        }
     }
 
     BackHandler {

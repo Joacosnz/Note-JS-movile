@@ -47,7 +47,10 @@ object NoteBlockSerializer {
                 is NoteBlock.Drawing -> {
                     obj.put("type", "drawing")
                     obj.put("id", block.id)
-                    obj.put("pathData", block.pathData)
+                    obj.put("filePath", block.filePath)
+                    if (block.pathData.isNotBlank()) {
+                        obj.put("pathData", block.pathData)
+                    }
                 }
                 is NoteBlock.Table -> {
                     obj.put("type", "table")
@@ -203,8 +206,9 @@ object NoteBlockSerializer {
                         list.add(NoteBlock.CalloutBox(id = id, content = content, backgroundColorHex = bg))
                     }
                     "drawing" -> {
+                        val filePath = obj.optString("filePath", "")
                         val pathData = obj.optString("pathData", "")
-                        list.add(NoteBlock.Drawing(id = id, pathData = pathData))
+                        list.add(NoteBlock.Drawing(id = id, filePath = filePath, pathData = pathData))
                     }
                     "table" -> {
                         val rows = obj.optInt("rows", 2)
