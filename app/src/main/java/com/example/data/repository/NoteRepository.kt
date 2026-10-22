@@ -65,6 +65,8 @@ class NoteRepository(
 
     suspend fun getNoteById(id: Long): NoteEntity? = noteDao.getNoteById(id)
 
+    suspend fun getAllNotes(): List<NoteEntity> = noteDao.getAllNotesList()
+
     // --- LÓGICA DE APLANAMIENTO (FLATTEN) Y BÚSQUEDA FTS4 ---
 
     /**

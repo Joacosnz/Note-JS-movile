@@ -24,14 +24,14 @@ class GoogleDriveManager(private val context: Context) {
     private val applicationContext: Context = context.applicationContext
 
     /**
-     * Devuelve las opciones de Google Sign-In configuradas con el scope DRIVE_APPDATA y el ID Token para Firebase.
+     * Devuelve las opciones de Google Sign-In configuradas con los scopes DRIVE_FILE, DRIVE_APPDATA y el ID Token para Firebase.
      */
     fun getGoogleSignInOptions(): GoogleSignInOptions {
         val webClientId = context.getString(R.string.default_web_client_id)
         return GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(webClientId)
             .requestEmail()
-            .requestScopes(Scope(DriveScopes.DRIVE_APPDATA))
+            .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
             .build()
     }
 
@@ -47,7 +47,10 @@ class GoogleDriveManager(private val context: Context) {
      */
     fun getSignedInAccount(): GoogleSignInAccount? {
         val account = GoogleSignIn.getLastSignedInAccount(applicationContext)
-        return if (account != null && GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_APPDATA))) {
+        return if (account != null && (
+                GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_FILE)) ||
+                GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_APPDATA))
+            )) {
             account
         } else {
             null
@@ -62,9 +65,10 @@ class GoogleDriveManager(private val context: Context) {
      */
     fun getDriveService(account: GoogleSignInAccount): Drive {
         val accountObj = account.account ?: account.email?.let { Account(it, "com.google") }
+        val scopes = listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE_APPDATA)
         val credential = GoogleAccountCredential.usingOAuth2(
             applicationContext,
-            Collections.singleton(DriveScopes.DRIVE_APPDATA)
+            scopes
         ).apply {
             if (accountObj != null) {
                 selectedAccount = accountObj
@@ -86,9 +90,10 @@ class GoogleDriveManager(private val context: Context) {
      * Sobrecarga para construir el cliente [Drive] directamente utilizando el nombre de la cuenta (email).
      */
     fun getDriveService(accountName: String): Drive {
+        val scopes = listOf(DriveScopes.DRIVE_FILE, DriveScopes.DRIVE_APPDATA)
         val credential = GoogleAccountCredential.usingOAuth2(
             applicationContext,
-            Collections.singleton(DriveScopes.DRIVE_APPDATA)
+            scopes
         ).apply {
             selectedAccountName = accountName
         }

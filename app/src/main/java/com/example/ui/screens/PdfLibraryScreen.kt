@@ -43,11 +43,13 @@ import androidx.compose.ui.text.TextStyle
 import com.example.util.PdfHelper
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import com.example.ui.components.DriveSyncDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -66,6 +68,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -116,6 +119,15 @@ fun PdfLibraryScreen(
     var pdfList by remember { mutableStateOf<List<PdfItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var hasPermission by remember { mutableStateOf(false) }
+    var showDriveSyncDialog by remember { mutableStateOf(false) }
+
+    val authLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            showDriveSyncDialog = true
+        }
+    }
 
     // Función para escanear archivos PDF con ContentResolver y MediaStore.Files
     fun scanPdfFiles() {
@@ -195,6 +207,16 @@ fun PdfLibraryScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showDriveSyncDialog = true },
+                        modifier = Modifier.testTag("btn_pdf_top_drive_sync")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudSync,
+                            contentDescription = "Sincronizar con Google Drive",
+                            tint = Color(0xFF4285F4)
+                        )
+                    }
                     IconButton(onClick = { openDocumentLauncher.launch(arrayOf("application/pdf")) }) {
                         Icon(
                             imageVector = Icons.Default.FolderOpen,
@@ -372,18 +394,41 @@ fun PdfLibraryScreen(
                                     ),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                OutlinedButton(
-                                    onClick = { openDocumentLauncher.launch(arrayOf("application/pdf")) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(32.dp)
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FolderOpen,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(text = "Abrir otro", fontSize = 12.sp)
+                                    OutlinedButton(
+                                        onClick = { showDriveSyncDialog = true },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("btn_pdf_grid_drive_sync"),
+                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudSync,
+                                            contentDescription = null,
+                                            tint = Color(0xFF4285F4),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(text = "Sincronizar", fontSize = 12.sp)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { openDocumentLauncher.launch(arrayOf("application/pdf")) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.FolderOpen,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = "Abrir otro", fontSize = 12.sp)
+                                    }
                                 }
                             }
                         }
@@ -422,11 +467,13 @@ private fun PdfGridItemCard(
     val isDark = isAppInDarkTheme()
 
     var coverBitmap by remember(pdf.uri, pdf.path) { mutableStateOf<Bitmap?>(null) }
+    var pageCount by remember(pdf.uri, pdf.path) { mutableIntStateOf(0) }
     var isLoadingCover by remember(pdf.uri, pdf.path) { mutableStateOf(true) }
 
     LaunchedEffect(pdf.uri, pdf.path) {
-        val bmp = PdfHelper.renderPdfCover(context, pdf.uri, pdf.path, targetWidth = 450)
-        coverBitmap = bmp
+        val info = PdfHelper.renderPdfCoverAndPageCount(context, pdf.uri, pdf.path, targetWidth = 450)
+        coverBitmap = info.bitmap
+        pageCount = info.pageCount
         isLoadingCover = false
     }
 
@@ -523,6 +570,25 @@ private fun PdfGridItemCard(
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
+
+                // Insignia con el número de páginas superpuesta en la portada
+                if (pageCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(topStart = 6.dp, bottomEnd = 10.dp),
+                        color = Color.Black.copy(alpha = 0.70f),
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    ) {
+                        Text(
+                            text = if (pageCount == 1) "1 pág" else "$pageCount págs",
+                            style = TextStyle(
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            ),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
         }
 
@@ -541,14 +607,35 @@ private fun PdfGridItemCard(
             overflow = TextOverflow.Ellipsis
         )
 
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(3.dp))
 
-        // 3. Metadatos de tamaño y fecha debajo del nombre
+        // 3. Metadatos de tamaño y número de páginas debajo del nombre
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = formatFileSize(pdf.size),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = " • ",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = if (pageCount > 0) {
+                    if (pageCount == 1) "1 pág." else "$pageCount págs."
+                } else if (isLoadingCover) {
+                    "..."
+                } else {
+                    "—"
+                },
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

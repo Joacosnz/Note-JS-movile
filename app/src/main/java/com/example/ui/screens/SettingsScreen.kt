@@ -103,6 +103,7 @@ import com.example.data.drive.DriveRestoreUtil
 import com.example.data.drive.GoogleDriveManager
 import com.example.data.drive.RestoreResult
 import com.example.data.drive.triggerRestart
+import com.example.ui.components.DriveSyncDialog
 import com.example.ui.components.SortBottomSheet
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
@@ -209,6 +210,7 @@ fun SettingsScreen(
     var showPinDialog by remember { mutableStateOf(false) }
     var showConfirmEmptyTrashDialog by remember { mutableStateOf(false) }
     var showDriveOptions by remember { mutableStateOf(false) }
+    var showManualDriveSyncDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var showUploadDialog by remember { mutableStateOf(false) }
     var isUploadingBackup by remember { mutableStateOf(false) }
@@ -468,9 +470,25 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
 
-                            // Única fila de opciones de Note JS Cloud
+                            // Fila de sincronización manual de Notas y PDFs con Google Drive
                             SettingsRow(
                                 icon = Icons.Default.CloudSync,
+                                badgeColor = Color(0xFF34A853),
+                                title = "Sincronizar Notas y PDFs",
+                                subtitle = "Subir notas y PDFs a tu carpeta 'Note JS' en Drive",
+                                onClick = { showManualDriveSyncDialog = true },
+                                testTag = "btn_manual_drive_sync"
+                            )
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 60.dp),
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+
+                            // Única fila de opciones de Note JS Cloud
+                            SettingsRow(
+                                icon = Icons.Default.CloudUpload,
                                 badgeColor = Color(0xFF4285F4),
                                 title = "Copia de seguridad en Drive",
                                 subtitle = "Respaldar o recuperar notas",
@@ -1108,6 +1126,38 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             showDriveOptions = false
+                            showManualDriveSyncDialog = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .testTag("btn_option_sync_notes_pdfs"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF34A853),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudSync,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Sincronizar Notas y PDFs",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            showDriveOptions = false
                             showUploadDialog = true
                         },
                         modifier = Modifier
@@ -1180,6 +1230,15 @@ fun SettingsScreen(
                     Text("Cancelar")
                 }
             }
+        )
+    }
+
+    // DIÁLOGO: SINCRONIZACIÓN MANUAL DE NOTAS Y PDFS CON GOOGLE DRIVE
+    if (showManualDriveSyncDialog) {
+        DriveSyncDialog(
+            viewModel = viewModel,
+            onDismiss = { showManualDriveSyncDialog = false },
+            onAuthRequired = { intent -> authLauncher.launch(intent) }
         )
     }
 

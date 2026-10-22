@@ -21,6 +21,11 @@ import com.example.data.repository.NoteRepository
 import com.example.ui.components.contentSnippet
 import com.example.ui.screens.DrawingPoint
 import com.example.util.SignatureHelper
+import com.example.data.drive.DriveSyncManager
+import com.example.data.drive.DriveSyncProgress
+import com.example.data.drive.DriveSyncResult
+import com.example.data.drive.GoogleDriveManager
+import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import com.example.model.ChecklistItem
 import com.example.model.NoteBlock
 import com.example.model.NoteColors
@@ -184,6 +189,12 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val _pdfLastModified = MutableStateFlow<Long>(System.currentTimeMillis())
     val pdfLastModified: StateFlow<Long> = _pdfLastModified.asStateFlow()
 
+    private val _driveSyncProgress = MutableStateFlow<DriveSyncProgress>(DriveSyncProgress.Idle)
+    val driveSyncProgress: StateFlow<DriveSyncProgress> = _driveSyncProgress.asStateFlow()
+
+    private val _lastDriveSyncTime = MutableStateFlow<Long>(0L)
+    val lastDriveSyncTime: StateFlow<Long> = _lastDriveSyncTime.asStateFlow()
+
     val savedSignatures: StateFlow<List<SignatureEntity>>
 
     init {
@@ -204,6 +215,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
         _isGridView.value = settingsManager.isGridViewDefault()
         _sortOption.value = settingsManager.getDefaultSortOption()
+        _lastDriveSyncTime.value = DriveSyncManager.getLastSyncTime(application)
         savedSignatures = repository.signatures
             .stateIn(
                 scope = viewModelScope,
@@ -1381,6 +1393,79 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopListeningToCloud() {
         repository.stopListeningToCloud()
+    }
+
+    fun resetDriveSyncProgress() {
+        _driveSyncProgress.value = DriveSyncProgress.Idle
+    }
+
+    /**
+     * Sincroniza manualmente todas las notas y archivos PDF locales con Google Drive.
+     */
+    fun syncNotesAndPdfsToDrive(
+        onAuthRequired: (Intent) -> Unit = {},
+        onCompleted: (DriveSyncResult) -> Unit = {}
+    ) {
+        val context = getApplication<Application>()
+        val driveManager = GoogleDriveManager(context)
+        val account = driveManager.getSignedInAccount()
+
+        if (account == null) {
+            val signInIntent = driveManager.getGoogleSignInClient().signInIntent
+            onAuthRequired(signInIntent)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _driveSyncProgress.value = DriveSyncProgress.Syncing(
+                phase = "Iniciando sincronización...",
+                currentItemName = "Conectando con Google Drive...",
+                current = 0,
+                total = 1,
+                percent = 0.05f
+            )
+
+            try {
+                val driveService = driveManager.getDriveService(account)
+                val notes = repository.getAllNotes()
+                val pdfFiles = DriveSyncManager.getLocalPdfFiles(context)
+
+                val result = DriveSyncManager.syncNotesAndPdfs(
+                    context = context,
+                    driveService = driveService,
+                    notes = notes,
+                    pdfFiles = pdfFiles
+                ) { progress ->
+                    _driveSyncProgress.value = progress
+                }
+
+                if (result.success) {
+                    _lastDriveSyncTime.value = System.currentTimeMillis()
+                }
+
+                withContext(Dispatchers.Main) {
+                    onCompleted(result)
+                }
+            } catch (e: UserRecoverableAuthIOException) {
+                _driveSyncProgress.value = DriveSyncProgress.Idle
+                withContext(Dispatchers.Main) {
+                    onAuthRequired(e.intent)
+                }
+            } catch (e: Exception) {
+                val errResult = DriveSyncResult(
+                    success = false,
+                    notesSynced = 0,
+                    pdfsSynced = 0,
+                    totalItems = 0,
+                    message = "Error en sincronización: ${e.localizedMessage ?: e.javaClass.simpleName}",
+                    error = e
+                )
+                _driveSyncProgress.value = DriveSyncProgress.Completed(errResult)
+                withContext(Dispatchers.Main) {
+                    onCompleted(errResult)
+                }
+            }
+        }
     }
 
     override fun onCleared() {

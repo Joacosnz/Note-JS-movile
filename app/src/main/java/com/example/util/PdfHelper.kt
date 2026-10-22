@@ -15,16 +15,26 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
+data class PdfCoverInfo(
+    val bitmap: Bitmap?,
+    val pageCount: Int
+)
+
 object PdfHelper {
 
     private val coverBitmapCache = LruCache<String, Bitmap>(50)
+    private val pageCountCache = LruCache<String, Int>(100)
 
     /**
-     * Renderiza la portada (página 0) de un archivo PDF en formato rectangular con caché en memoria.
+     * Renderiza la portada (página 0) y obtiene el conteo de páginas de un archivo PDF con caché en memoria.
      */
-    suspend fun renderPdfCover(context: Context, uri: Uri, path: String, targetWidth: Int = 450): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun renderPdfCoverAndPageCount(context: Context, uri: Uri, path: String, targetWidth: Int = 450): PdfCoverInfo = withContext(Dispatchers.IO) {
         val cacheKey = if (path.isNotBlank()) path else uri.toString()
-        coverBitmapCache.get(cacheKey)?.let { return@withContext it }
+        val cachedBmp = coverBitmapCache.get(cacheKey)
+        val cachedCount = pageCountCache.get(cacheKey)
+        if (cachedBmp != null && cachedCount != null) {
+            return@withContext PdfCoverInfo(cachedBmp, cachedCount)
+        }
 
         var pfd: ParcelFileDescriptor? = null
         var renderer: PdfRenderer? = null
@@ -39,26 +49,41 @@ object PdfHelper {
                     null
                 }
             }
-            if (pfd == null) return@withContext null
+            if (pfd == null) return@withContext PdfCoverInfo(null, cachedCount ?: 0)
             renderer = PdfRenderer(pfd)
-            if (renderer.pageCount <= 0) return@withContext null
+            val count = renderer.pageCount
+            pageCountCache.put(cacheKey, count)
+            if (count <= 0) return@withContext PdfCoverInfo(null, 0)
 
-            page = renderer.openPage(0)
-            val aspectRatio = page.height.toFloat() / page.width.toFloat()
-            val targetHeight = (targetWidth * aspectRatio).toInt().coerceAtLeast(1)
+            val bitmap = if (cachedBmp != null) {
+                cachedBmp
+            } else {
+                page = renderer.openPage(0)
+                val aspectRatio = page.height.toFloat() / page.width.toFloat()
+                val targetHeight = (targetWidth * aspectRatio).toInt().coerceAtLeast(1)
 
-            val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-            bitmap.eraseColor(Color.WHITE)
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            coverBitmapCache.put(cacheKey, bitmap)
-            bitmap
+                val bmp = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(Color.WHITE)
+                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                coverBitmapCache.put(cacheKey, bmp)
+                bmp
+            }
+
+            PdfCoverInfo(bitmap, count)
         } catch (e: Throwable) {
-            null
+            PdfCoverInfo(null, 0)
         } finally {
             runCatching { page?.close() }
             runCatching { renderer?.close() }
             runCatching { pfd?.close() }
         }
+    }
+
+    /**
+     * Renderiza la portada (página 0) de un archivo PDF en formato rectangular con caché en memoria.
+     */
+    suspend fun renderPdfCover(context: Context, uri: Uri, path: String, targetWidth: Int = 450): Bitmap? {
+        return renderPdfCoverAndPageCount(context, uri, path, targetWidth).bitmap
     }
 
     /**
