@@ -17,13 +17,25 @@ import kotlinx.coroutines.tasks.await
 
 class AuthManager(private val context: Context) {
     private val credentialManager = CredentialManager.create(context)
-    private val firebaseAuth = FirebaseAuth.getInstance()
+    private val firebaseAuth: FirebaseAuth? = try {
+        FirebaseAuth.getInstance()
+    } catch (e: Exception) {
+        Log.w("AuthManager", "FirebaseAuth not available", e)
+        null
+    }
 
     suspend fun signInWithGoogle(activity: Activity): String? {
         try {
-            // El ID del cliente web se genera automáticamente si google-services.json está configurado.
-            // Si esto falla, asegúrate de tener el cliente web de OAuth en Google Cloud.
-            val webClientId = context.getString(R.string.default_web_client_id)
+            val webClientId = try {
+                context.getString(R.string.default_web_client_id)
+            } catch (_: Exception) {
+                ""
+            }
+
+            if (webClientId.isBlank()) {
+                Log.e("AuthManager", "webClientId is blank or missing")
+                return null
+            }
 
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
@@ -62,8 +74,9 @@ class AuthManager(private val context: Context) {
     
     suspend fun signInWithGoogleIdToken(idToken: String): String? {
         return try {
+            val auth = firebaseAuth ?: return null
             val authCredential = GoogleAuthProvider.getCredential(idToken, null)
-            val authResult = firebaseAuth.signInWithCredential(authCredential).await()
+            val authResult = auth.signInWithCredential(authCredential).await()
             authResult.user?.uid
         } catch (e: Exception) {
             Log.e("AuthManager", "Error durante el inicio de sesión con token", e)
@@ -72,6 +85,10 @@ class AuthManager(private val context: Context) {
     }
 
     fun signOut() {
-        firebaseAuth.signOut()
+        try {
+            firebaseAuth?.signOut()
+        } catch (e: Exception) {
+            Log.w("AuthManager", "Error signing out", e)
+        }
     }
 }

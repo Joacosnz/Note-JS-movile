@@ -48,6 +48,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
+import androidx.compose.ui.text.TextRange
+
 @Composable
 fun SimpleListBlockItem(
     block: NoteBlock.SimpleList,
@@ -55,6 +57,7 @@ fun SimpleListBlockItem(
     tfv: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     onNext: () -> Unit,
+    onNextWithText: (remainingText: String) -> Unit = {},
     onNoteLinkClick: (Long) -> Unit,
     onInlineMathClick: (code: String, start: Int, end: Int) -> Unit,
     evaluateNoteLinkTrigger: (String, TextFieldValue) -> Unit,
@@ -99,16 +102,30 @@ fun SimpleListBlockItem(
                 val effective = solved ?: newValue
                 val sanitized = sanitizeTextFieldValue(effective)
                 evaluateNoteLinkTrigger(block.id, sanitized)
-                onValueChange(sanitized)
-                coroutineScope.launch {
-                    val layout = textLayoutResult
-                    val cursorOffset = sanitized.selection.max
-                    if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
-                        val cursorRect = layout.getCursorRect(cursorOffset)
-                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                        bringIntoViewRequester.bringIntoView(expandedRect)
+                if (sanitized.text.contains('\n')) {
+                    val newlineIndex = sanitized.text.indexOf('\n')
+                    val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
+                    val firstPart = sanitized.text.substring(0, safeNL)
+                    val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
+
+                    if (block.content.isEmpty() && firstPart.isEmpty() && remainingText.isEmpty()) {
+                        onNext()
                     } else {
-                        bringIntoViewRequester.bringIntoView()
+                        onValueChange(TextFieldValue(firstPart, TextRange(firstPart.length)))
+                        onNextWithText(remainingText)
+                    }
+                } else {
+                    onValueChange(sanitized)
+                    coroutineScope.launch {
+                        val layout = textLayoutResult
+                        val cursorOffset = sanitized.selection.max
+                        if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
+                            val cursorRect = layout.getCursorRect(cursorOffset)
+                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                            bringIntoViewRequester.bringIntoView(expandedRect)
+                        } else {
+                            bringIntoViewRequester.bringIntoView()
+                        }
                     }
                 }
             },

@@ -114,6 +114,7 @@ fun EditorBlockList(
     targetFocusBlockId: String?,
     focusedBlockId: String?,
     onFocusedBlockIdChange: (String?) -> Unit,
+    onRequestFocus: (String) -> Unit = {},
     formattedHeaderDate: String,
     reminderTimestamp: Long?,
     onReminderClick: () -> Unit,
@@ -315,7 +316,7 @@ fun EditorBlockList(
                                 if (trimmed == "$$" || trimmed == "/math" || trimmed == "/equation") {
                                     // Notion trigger: typing $$ or /math converts text block into a Notion Block Equation
                                     onUpdateBlock(index, NoteBlock.Math(id = block.id, latexCode = ""))
-                                    onFocusedBlockIdChange(block.id)
+                                    onRequestFocus(block.id)
                                 } else if (sanitized.text != block.content) {
                                     val nextStyle = if (block.content.isEmpty() && sanitized.text.isEmpty()) TextStyleType.BODY else block.style
                                     onUpdateBlock(index, block.copy(content = sanitized.text, style = nextStyle))
@@ -332,13 +333,13 @@ fun EditorBlockList(
                                     } else nextBlock.content
                                     onUpdateBlock(index + 1, nextBlock.copy(content = updatedContent))
                                     blockTextFieldValues[nextBlock.id] = TextFieldValue(updatedContent, TextRange(remainingText.length))
-                                    onFocusedBlockIdChange(nextBlock.id)
+                                    onRequestFocus(nextBlock.id)
                                 } else {
                                     val newBodyId = UUID.randomUUID().toString()
                                     val newBodyBlock = NoteBlock.Text(id = newBodyId, content = remainingText, style = TextStyleType.BODY, isIndented = true)
                                     onInsertBlockAt(index + 1, newBodyBlock)
                                     blockTextFieldValues[newBodyId] = TextFieldValue(remainingText, TextRange(remainingText.length))
-                                    onFocusedBlockIdChange(newBodyId)
+                                    onRequestFocus(newBodyId)
                                 }
                             },
                             onDoubleNewlineIndented = { trimmedText ->
@@ -349,7 +350,7 @@ fun EditorBlockList(
                                 val newBodyBlock = NoteBlock.Text(id = newBodyId, content = "", style = TextStyleType.BODY, isIndented = false)
                                 onInsertBlockAt(index + 1, newBodyBlock)
                                 blockTextFieldValues[newBodyId] = TextFieldValue("", TextRange(0))
-                                onFocusedBlockIdChange(newBodyId)
+                                onRequestFocus(newBodyId)
                             },
                             onToggleCollapse = {
                                 onUpdateBlock(index, block.copy(isCollapsed = !block.isCollapsed))
@@ -358,7 +359,7 @@ fun EditorBlockList(
                                 val updated = block.copy(style = TextStyleType.BODY, isCollapsed = false, isIndented = false)
                                 onUpdateBlock(index, updated)
                                 blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
-                                onFocusedBlockIdChange(block.id)
+                                onRequestFocus(block.id)
                             },
                             onNoteLinkClick = onNoteLinkClick,
                             onInlineMathClick = { code, start, end ->
@@ -399,10 +400,25 @@ fun EditorBlockList(
                             onNext = {
                                 if (block.content.isBlank()) {
                                     onUpdateBlock(index, NoteBlock.Text(id = block.id, content = ""))
+                                    blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
+                                    onRequestFocus(block.id)
                                 } else {
                                     val newId = UUID.randomUUID().toString()
-                                    onInsertBlockAt(index + 1, NoteBlock.Checklist(id = newId))
-                                    onFocusedBlockIdChange(newId)
+                                    onInsertBlockAt(index + 1, NoteBlock.Checklist(id = newId, content = ""))
+                                    blockTextFieldValues[newId] = TextFieldValue("", TextRange(0))
+                                    onRequestFocus(newId)
+                                }
+                            },
+                            onNextWithText = { remainingText ->
+                                if (block.content.isBlank() && remainingText.isBlank()) {
+                                    onUpdateBlock(index, NoteBlock.Text(id = block.id, content = ""))
+                                    blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
+                                    onRequestFocus(block.id)
+                                } else {
+                                    val newId = UUID.randomUUID().toString()
+                                    onInsertBlockAt(index + 1, NoteBlock.Checklist(id = newId, content = remainingText))
+                                    blockTextFieldValues[newId] = TextFieldValue(remainingText, TextRange(0))
+                                    onRequestFocus(newId)
                                 }
                             },
                             onDelete = { onRemoveBlock(index) },
@@ -441,11 +457,27 @@ fun EditorBlockList(
                             onNext = {
                                 if (block.content.isBlank()) {
                                     onUpdateBlock(index, NoteBlock.Text(id = block.id, content = ""))
+                                    blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
+                                    onRequestFocus(block.id)
                                 } else {
                                     val nextNumber = if (block.isNumbered) block.number + 1 else 1
                                     val newId = UUID.randomUUID().toString()
-                                    onInsertBlockAt(index + 1, NoteBlock.SimpleList(id = newId, isNumbered = block.isNumbered, number = nextNumber))
-                                    onFocusedBlockIdChange(newId)
+                                    onInsertBlockAt(index + 1, NoteBlock.SimpleList(id = newId, isNumbered = block.isNumbered, number = nextNumber, content = ""))
+                                    blockTextFieldValues[newId] = TextFieldValue("", TextRange(0))
+                                    onRequestFocus(newId)
+                                }
+                            },
+                            onNextWithText = { remainingText ->
+                                if (block.content.isBlank() && remainingText.isBlank()) {
+                                    onUpdateBlock(index, NoteBlock.Text(id = block.id, content = ""))
+                                    blockTextFieldValues[block.id] = TextFieldValue("", TextRange(0))
+                                    onRequestFocus(block.id)
+                                } else {
+                                    val nextNumber = if (block.isNumbered) block.number + 1 else 1
+                                    val newId = UUID.randomUUID().toString()
+                                    onInsertBlockAt(index + 1, NoteBlock.SimpleList(id = newId, isNumbered = block.isNumbered, number = nextNumber, content = remainingText))
+                                    blockTextFieldValues[newId] = TextFieldValue(remainingText, TextRange(0))
+                                    onRequestFocus(newId)
                                 }
                             },
                             onNoteLinkClick = onNoteLinkClick,

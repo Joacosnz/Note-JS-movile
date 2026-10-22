@@ -129,11 +129,27 @@ fun SettingsScreen(
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
 
     val driveManager = remember { GoogleDriveManager(context) }
-    var isDriveConnected by remember { mutableStateOf(driveManager.getSignedInAccount() != null) }
+    var isDriveConnected by remember {
+        mutableStateOf(
+            try {
+                driveManager.getSignedInAccount() != null
+            } catch (_: Exception) {
+                false
+            }
+        )
+    }
 
     val coroutineScope = rememberCoroutineScope()
     val authManager = remember { AuthManager(context) }
-    var isFirebaseConnected by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser != null) }
+    var isFirebaseConnected by remember {
+        mutableStateOf(
+            try {
+                FirebaseAuth.getInstance().currentUser != null
+            } catch (_: Exception) {
+                false
+            }
+        )
+    }
 
     val authLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -353,7 +369,11 @@ fun SettingsScreen(
                             }
                         }
                     } else {
-                        val currentUser = FirebaseAuth.getInstance().currentUser
+                        val currentUser = try {
+                            FirebaseAuth.getInstance().currentUser
+                        } catch (_: Exception) {
+                            null
+                        }
                         val googleAccount = driveManager.getSignedInAccount()
                         val displayName = currentUser?.displayName?.ifBlank { null }
                             ?: googleAccount?.displayName?.ifBlank { null }
@@ -444,7 +464,14 @@ fun SettingsScreen(
                                 IconButton(
                                     onClick = {
                                         viewModel.stopListeningToCloud()
-                                        driveManager.getGoogleSignInClient().signOut().addOnCompleteListener {
+                                        try {
+                                            driveManager.getGoogleSignInClient().signOut().addOnCompleteListener {
+                                                authManager.signOut()
+                                                isDriveConnected = false
+                                                isFirebaseConnected = false
+                                                Toast.makeText(context, "Cuenta de Note JS desvinculada", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } catch (_: Exception) {
                                             authManager.signOut()
                                             isDriveConnected = false
                                             isFirebaseConnected = false

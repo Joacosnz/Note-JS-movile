@@ -423,7 +423,7 @@ object DriveSyncManager {
                         sb.append("📄 **Documento PDF adjunto:** ").append(block.fileName).append("\n\n")
                     }
                     is AudioBlock -> {
-                        sb.append("🎙️ **Audio adjunto:** ").append(block.title).append("\n")
+                        sb.append("🎙️ **Audio adjunto:** ").append(block.filePath).append("\n")
                         if (block.transcription.isNotBlank()) {
                             sb.append("*Transcripción:* ").append(block.transcription).append("\n\n")
                         }
@@ -432,7 +432,7 @@ object DriveSyncManager {
                         sb.append("🖼️ **Imagen adjunta:** ").append(block.fileName).append("\n\n")
                     }
                     is NoteBlock.ImageBlock -> {
-                        sb.append("🖼️ **Imagen:** ").append(block.caption).append("\n\n")
+                        sb.append("🖼️ **Imagen:** ").append("\n\n")
                     }
                     is NoteBlock.Drawing -> {
                         sb.append("✏️ **Dibujo / Apunte a mano incluido**\n\n")

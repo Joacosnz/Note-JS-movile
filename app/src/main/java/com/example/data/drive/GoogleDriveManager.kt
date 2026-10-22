@@ -27,12 +27,22 @@ class GoogleDriveManager(private val context: Context) {
      * Devuelve las opciones de Google Sign-In configuradas con los scopes DRIVE_FILE, DRIVE_APPDATA y el ID Token para Firebase.
      */
     fun getGoogleSignInOptions(): GoogleSignInOptions {
-        val webClientId = context.getString(R.string.default_web_client_id)
-        return GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(webClientId)
+        val webClientId = try {
+            context.getString(R.string.default_web_client_id)
+        } catch (_: Exception) {
+            ""
+        }
+        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
-            .build()
+
+        if (webClientId.isNotBlank()) {
+            try {
+                builder.requestIdToken(webClientId)
+            } catch (_: Exception) {
+            }
+        }
+        return builder.build()
     }
 
     /**
@@ -46,13 +56,17 @@ class GoogleDriveManager(private val context: Context) {
      * Verifica si existe una cuenta previamente autenticada con los permisos solicitados.
      */
     fun getSignedInAccount(): GoogleSignInAccount? {
-        val account = GoogleSignIn.getLastSignedInAccount(applicationContext)
-        return if (account != null && (
-                GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_FILE)) ||
-                GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_APPDATA))
-            )) {
-            account
-        } else {
+        return try {
+            val account = GoogleSignIn.getLastSignedInAccount(applicationContext)
+            if (account != null && (
+                    GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_FILE)) ||
+                    GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_APPDATA))
+                )) {
+                account
+            } else {
+                null
+            }
+        } catch (_: Exception) {
             null
         }
     }

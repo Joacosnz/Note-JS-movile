@@ -83,9 +83,21 @@ fun DriveSyncDialog(
     val notesUiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     val driveManager = remember { GoogleDriveManager(context) }
-    val isAccountConnected = driveManager.getSignedInAccount() != null
-    val localPdfsCount = remember { DriveSyncManager.getLocalPdfFiles(context).size }
-    val totalNotesCount = notesUiState.notes.size
+    val isAccountConnected = remember {
+        try {
+            driveManager.getSignedInAccount() != null
+        } catch (_: Exception) {
+            false
+        }
+    }
+    val localPdfsCount = remember {
+        try {
+            DriveSyncManager.getLocalPdfFiles(context).size
+        } catch (_: Exception) {
+            0
+        }
+    }
+    val totalNotesCount = notesUiState.allActiveNotes.size
 
     val isSyncing = syncProgress is DriveSyncProgress.Syncing
 

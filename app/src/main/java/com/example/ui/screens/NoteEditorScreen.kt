@@ -1369,6 +1369,10 @@ fun NoteEditorScreen(
                 targetFocusBlockId = targetFocusBlockId,
                 focusedBlockId = focusedBlockId,
                 onFocusedBlockIdChange = { focusedBlockId = it },
+                onRequestFocus = { id ->
+                    targetFocusBlockId = id
+                    focusedBlockId = id
+                },
                 formattedHeaderDate = formattedHeaderDate,
                 reminderTimestamp = reminderTimestamp,
                 onReminderClick = { showReminderDialog = true },
