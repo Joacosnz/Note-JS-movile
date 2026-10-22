@@ -48,14 +48,18 @@ object MathFormatter {
      */
     fun formatLatexToUnicode(latex: String): String {
         if (latex.isBlank()) return ""
-        var text = latex.trim()
+        return try {
+            var text = latex.trim()
 
-        // Strip surrounding dollar signs
-        if (text.startsWith("$$") && text.endsWith("$$") && text.length >= 4) {
-            text = text.substring(2, text.length - 2).trim()
-        } else if (text.startsWith("$") && text.endsWith("$") && text.length >= 2) {
-            text = text.substring(1, text.length - 1).trim()
-        }
+            // Support Notion-style multi-line equations (\\)
+            text = text.replace(Regex("""\\\\\s*"""), "\n")
+
+            // Strip surrounding dollar signs
+            if (text.startsWith("$$") && text.endsWith("$$") && text.length >= 4) {
+                text = text.substring(2, text.length - 2).trim()
+            } else if (text.startsWith("$") && text.endsWith("$") && text.length >= 2) {
+                text = text.substring(1, text.length - 1).trim()
+            }
 
         // 1. Fractions: \frac{num}{den} -> num / den
         val fracRegex = Regex("""\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}""")
@@ -146,11 +150,12 @@ object MathFormatter {
             " ${match.groupValues[1]} "
         }
 
-        // Clean redundant spaces
         text = text.replace(Regex("""\s+"""), " ")
-
-        return text.trim()
+        text.trim()
+    } catch (e: Exception) {
+        latex.trim()
     }
+}
 }
 
 /**
