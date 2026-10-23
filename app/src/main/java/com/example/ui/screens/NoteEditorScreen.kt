@@ -270,7 +270,9 @@ fun NoteEditorScreen(
     viewModel: NotesViewModel,
     modifier: Modifier = Modifier,
     initialOpenVoiceDictation: Boolean = false,
-    initialOpenDocumentScanner: Boolean = false
+    initialOpenDocumentScanner: Boolean = false,
+    initialSharedText: String? = null,
+    initialSharedTitle: String? = null
 ) {
     val isDark = isAppInDarkTheme()
     val context = LocalContext.current
@@ -1116,7 +1118,7 @@ fun NoteEditorScreen(
 
     val editorBgColor = NoteColors.getColor(colorIndex, isPaperDark)
 
-    LaunchedEffect(noteId) {
+    LaunchedEffect(noteId, initialSharedText, initialSharedTitle) {
         if (noteId > 0) {
             val entity = viewModel.getNote(noteId)
             entity?.let {
@@ -1144,11 +1146,27 @@ fun NoteEditorScreen(
         } else {
             undoHistory.clear()
             redoHistory.clear()
+            noteType = initialType
             if (initialOpenVoiceDictation && title.isBlank()) {
                 title = "Nota de voz rápida"
                 titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
+            } else if (!initialSharedTitle.isNullOrBlank() && title.isBlank()) {
+                title = initialSharedTitle
+                titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
+            } else if (!initialSharedText.isNullOrBlank()) {
+                title = ""
+                titleTextFieldValue = TextFieldValue("")
             }
-            if (blocks.isEmpty()) {
+            val sharedContent = initialSharedText?.trim() ?: ""
+            if (sharedContent.isNotEmpty()) {
+                val initialId = UUID.randomUUID().toString()
+                blocks.clear()
+                blockTextFieldValues.clear()
+                blocks.add(NoteBlock.Text(id = initialId, content = sharedContent))
+                blockTextFieldValues[initialId] = TextFieldValue(sharedContent, TextRange(sharedContent.length))
+                targetFocusBlockId = initialId
+                focusedBlockId = initialId
+            } else if (blocks.isEmpty()) {
                 val initialId = UUID.randomUUID().toString()
                 if (initialType == NoteType.CHECKLIST) {
                     blocks.add(NoteBlock.Checklist(id = initialId))

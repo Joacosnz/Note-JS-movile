@@ -54,6 +54,8 @@ class MainActivity : FragmentActivity() {
     private var openVoiceDictationState by mutableStateOf(false)
     private var openDocumentScannerState by mutableStateOf(false)
     private var openPdfUriState by mutableStateOf<String?>(null)
+    private var sharedTextState by mutableStateOf<String?>(null)
+    private var sharedTitleState by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,12 +68,16 @@ class MainActivity : FragmentActivity() {
                 initialOpenVoiceDictation = openVoiceDictationState,
                 initialOpenDocumentScanner = openDocumentScannerState,
                 initialOpenPdfUri = openPdfUriState,
+                initialSharedText = sharedTextState,
+                initialSharedTitle = sharedTitleState,
                 onNoteOpened = {
                     openNoteIdState = 0L
                     createNewNoteState = false
                     openVoiceDictationState = false
                     openDocumentScannerState = false
                     openPdfUriState = null
+                    sharedTextState = null
+                    sharedTitleState = null
                 }
             )
         }
@@ -99,6 +105,49 @@ class MainActivity : FragmentActivity() {
                 createNewNoteState = false
                 openVoiceDictationState = false
                 openDocumentScannerState = false
+                sharedTextState = null
+                sharedTitleState = null
+                intent.action = null
+                return
+            }
+        }
+
+        if (action == Intent.ACTION_PROCESS_TEXT) {
+            val selectedText = (intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)
+                ?: intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT_READONLY))
+                ?.toString()?.trim()
+            if (!selectedText.isNullOrEmpty()) {
+                openNoteIdState = 0L
+                createNewNoteState = true
+                openVoiceDictationState = false
+                openDocumentScannerState = false
+                openPdfUriState = null
+                sharedTextState = selectedText
+                sharedTitleState = null
+                intent.action = null
+                return
+            }
+        }
+
+        if (action == Intent.ACTION_SEND && type?.startsWith("text/") == true) {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+            val sharedSubject = (intent.getStringExtra(Intent.EXTRA_SUBJECT)
+                ?: intent.getStringExtra(Intent.EXTRA_TITLE))?.trim()
+            val fullContent = when {
+                !sharedSubject.isNullOrEmpty() && !sharedText.isNullOrEmpty() && !sharedText.contains(sharedSubject) ->
+                    "$sharedSubject\n$sharedText"
+                !sharedText.isNullOrEmpty() -> sharedText
+                !sharedSubject.isNullOrEmpty() -> sharedSubject
+                else -> null
+            }
+            if (!fullContent.isNullOrEmpty()) {
+                openNoteIdState = 0L
+                createNewNoteState = true
+                openVoiceDictationState = false
+                openDocumentScannerState = false
+                openPdfUriState = null
+                sharedTextState = fullContent
+                sharedTitleState = null
                 intent.action = null
                 return
             }
@@ -111,6 +160,8 @@ class MainActivity : FragmentActivity() {
                 openVoiceDictationState = false
                 openDocumentScannerState = false
                 openPdfUriState = null
+                sharedTextState = null
+                sharedTitleState = null
             }
             createNew || action == ACTION_QUICK_NOTE || action == "com.example.ACTION_NEW_NOTE" -> {
                 openNoteIdState = 0L
@@ -118,6 +169,8 @@ class MainActivity : FragmentActivity() {
                 openVoiceDictationState = false
                 openDocumentScannerState = false
                 openPdfUriState = null
+                sharedTextState = null
+                sharedTitleState = null
             }
             action == ACTION_QUICK_VOICE || action == "com.example.ACTION_VOICE_NOTE" -> {
                 openNoteIdState = 0L
@@ -125,6 +178,8 @@ class MainActivity : FragmentActivity() {
                 openVoiceDictationState = true
                 openDocumentScannerState = false
                 openPdfUriState = null
+                sharedTextState = null
+                sharedTitleState = null
             }
             action == ACTION_QUICK_SCAN || action == "com.example.ACTION_SCAN_DOCUMENT" -> {
                 openNoteIdState = 0L
@@ -132,6 +187,8 @@ class MainActivity : FragmentActivity() {
                 openDocumentScannerState = true
                 openVoiceDictationState = false
                 openPdfUriState = null
+                sharedTextState = null
+                sharedTitleState = null
             }
         }
         
@@ -148,6 +205,8 @@ fun NotesApp(
     initialOpenVoiceDictation: Boolean = false,
     initialOpenDocumentScanner: Boolean = false,
     initialOpenPdfUri: String? = null,
+    initialSharedText: String? = null,
+    initialSharedTitle: String? = null,
     onNoteOpened: () -> Unit = {},
     viewModel: NotesViewModel = viewModel()
 ) {
@@ -189,19 +248,29 @@ fun NotesApp(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
-            LaunchedEffect(initialOpenNoteId, initialCreateNewNote, initialOpenVoiceDictation, initialOpenDocumentScanner, initialOpenPdfUri) {
+            LaunchedEffect(
+                initialOpenNoteId,
+                initialCreateNewNote,
+                initialOpenVoiceDictation,
+                initialOpenDocumentScanner,
+                initialOpenPdfUri,
+                initialSharedText,
+                initialSharedTitle
+            ) {
                 if (!initialOpenPdfUri.isNullOrEmpty()) {
                     viewModel.navigateTo(Screen.PdfViewer(noteId = 0L, pdfPath = initialOpenPdfUri))
                     onNoteOpened()
                 } else if (initialOpenNoteId > 0L) {
                     viewModel.navigateTo(Screen.Editor(noteId = initialOpenNoteId))
                     onNoteOpened()
-                } else if (initialCreateNewNote || initialOpenVoiceDictation || initialOpenDocumentScanner) {
+                } else if (initialCreateNewNote || initialOpenVoiceDictation || initialOpenDocumentScanner || !initialSharedText.isNullOrEmpty() || !initialSharedTitle.isNullOrEmpty()) {
                     viewModel.navigateTo(
                         Screen.Editor(
                             noteId = 0L,
                             openVoiceDictation = initialOpenVoiceDictation,
-                            openDocumentScanner = initialOpenDocumentScanner
+                            openDocumentScanner = initialOpenDocumentScanner,
+                            initialSharedText = initialSharedText,
+                            initialSharedTitle = initialSharedTitle
                         )
                     )
                     onNoteOpened()
@@ -236,6 +305,8 @@ fun NotesApp(
                             initialType = screen.initialType,
                             initialOpenVoiceDictation = screen.openVoiceDictation,
                             initialOpenDocumentScanner = screen.openDocumentScanner,
+                            initialSharedText = screen.initialSharedText,
+                            initialSharedTitle = screen.initialSharedTitle,
                             viewModel = viewModel
                         )
                     }

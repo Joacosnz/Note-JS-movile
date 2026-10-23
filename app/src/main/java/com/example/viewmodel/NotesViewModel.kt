@@ -90,7 +90,9 @@ sealed class Screen {
         val noteId: Long = 0,
         val initialType: NoteType = NoteType.TEXT,
         val openVoiceDictation: Boolean = false,
-        val openDocumentScanner: Boolean = false
+        val openDocumentScanner: Boolean = false,
+        val initialSharedText: String? = null,
+        val initialSharedTitle: String? = null
     ) : Screen()
     data class Drawing(val noteId: Long = 0) : Screen()
     data class PdfViewer(val noteId: Long = 0, val pdfPath: String = "") : Screen()

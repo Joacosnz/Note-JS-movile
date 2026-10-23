@@ -8,4 +8,5 @@
     <string name="shortcut_voice_note_long">Crear nota de voz</string>
     <string name="shortcut_scan_document_short">Escanear Documento</string>
     <string name="shortcut_scan_document_long">Escanear un documento</string>
+    <string name="process_text_create_note">Crear nota</string>
 </resources>
