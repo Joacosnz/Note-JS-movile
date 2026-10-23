@@ -315,13 +315,41 @@ fun NoteContentPreview(
                 }
 
                 is NoteBlock.Math -> {
-                    MediaChip(
-                        icon = Icons.Default.Functions,
-                        iconTint = MaterialTheme.colorScheme.primary,
-                        fileName = block.latexCode.ifBlank { "Fórmula Matemática" },
-                        textColor = textColor,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    )
+                    if (block.latexCode.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, amber.copy(alpha = 0.35f)),
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Functions,
+                                    contentDescription = null,
+                                    tint = amber,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                NativeMathView(
+                                    expression = block.latexCode,
+                                    isDark = isDark,
+                                    fontSize = androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp),
+                                    color = textColor,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Start
+                                )
+                            }
+                        }
+                    } else {
+                        MediaChip(
+                            icon = Icons.Default.Functions,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            fileName = "Fórmula Matemática",
+                            textColor = textColor
+                        )
+                    }
                 }
             }
         }

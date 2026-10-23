@@ -5,37 +5,30 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Subtle Ambient Drop Shadow -->
+    <!-- Fondo de hoja de papel (cambia entre claro #F5F5F7 y oscuro #1C1C1E) -->
     <path
-        android:fillColor="#1F000000"
-        android:pathData="M39,28.5h30a10,10 0 0,1 10,10v34a10,10 0 0,1 -10,10h-30a10,10 0 0,1 -10,-10v-34a10,10 0 0,1 10,-10z" />
+        android:fillColor="@color/ic_launcher_paper_bg"
+        android:pathData="M0,39.5h108v68.5h-108z" />
 
-    <!-- Notebook Paper Body -->
+    <!-- Franja superior amarilla de notas -->
     <path
-        android:fillColor="#F6F6F4"
-        android:strokeColor="#C8C8C8"
-        android:strokeWidth="0.8"
-        android:pathData="M39,27h30a10,10 0 0,1 10,10v34a10,10 0 0,1 -10,10h-30a10,10 0 0,1 -10,-10v-34a10,10 0 0,1 10,-10z" />
+        android:fillColor="@color/ic_launcher_header_yellow"
+        android:pathData="M0,0h108v39.5h-108z" />
 
-    <!-- Yellow Header -->
+    <!-- Línea divisoria bajo el encabezado amarillo -->
     <path
-        android:fillColor="#F8CB2E"
-        android:pathData="M39,27h30a10,10 0 0,1 10,10v6.5h-50v-6.5a10,10 0 0,1 10,-10z" />
+        android:strokeColor="@color/ic_launcher_header_border"
+        android:strokeWidth="1.0"
+        android:pathData="M0,39.5h108" />
 
-    <!-- Header Bottom Line -->
+    <!-- Fila de puntos de perforación -->
     <path
-        android:strokeColor="#DCB020"
-        android:strokeWidth="0.8"
-        android:pathData="M29,43.5h50" />
+        android:fillColor="@color/ic_launcher_dots"
+        android:pathData="M15.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M18.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M21.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M24.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M27.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M30.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M33.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M36.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M39.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M42.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M45.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M48.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M51.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M54.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M57.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M60.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M63.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M66.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M69.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M72.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M75.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M78.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M81.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M84.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M87.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M90.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z" />
 
-    <!-- Perforation Hole Row -->
+    <!-- Renglones horizontales de la nota -->
     <path
-        android:fillColor="#787878"
-        android:pathData="M32.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M35.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M37.6,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M40.2,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M42.8,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M45.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M48.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M50.6,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M53.2,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M55.8,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M58.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M61.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M63.6,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M66.2,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M68.8,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M71.4,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z M74.0,47a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0z" />
-
-    <!-- Notebook Ruled Lines -->
-    <path
-        android:strokeColor="#B5B8BC"
-        android:strokeWidth="0.8"
-        android:pathData="M32,54h44 M32,62h44 M32,70h44" />
+        android:strokeColor="@color/ic_launcher_lines"
+        android:strokeWidth="0.95"
+        android:pathData="M0,54.5h108 M0,66.5h108 M0,78.5h108" />
 </vector>

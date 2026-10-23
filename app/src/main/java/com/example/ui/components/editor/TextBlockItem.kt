@@ -298,6 +298,15 @@ fun TextBlockItem(
             )
         }
 
+        com.example.ui.components.InlineMathPreviewRow(
+            text = tfv.text,
+            isDark = isPaperDark,
+            amber = amber,
+            onEditInlineMath = { code, start, end ->
+                onInlineMathClick(code, start, end)
+            }
+        )
+
         RichLinkPreviewList(
             text = tfv.text,
             amber = amber,

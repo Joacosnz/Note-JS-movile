@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Colores del icono adaptativo (Modo Oscuro) -->
+    <color name="ic_launcher_paper_bg">#1C1C1E</color>
+    <color name="ic_launcher_header_yellow">#FDD62B</color>
+    <color name="ic_launcher_header_border">#3A3A3C</color>
+    <color name="ic_launcher_dots">#8E8E93</color>
+    <color name="ic_launcher_lines">#545458</color>
+</resources>

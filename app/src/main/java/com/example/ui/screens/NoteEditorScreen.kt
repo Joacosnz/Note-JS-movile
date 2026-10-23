@@ -1821,17 +1821,21 @@ fun NoteEditorScreen(
                     val range = inlineMathDialogRange!!
                     val start = range.min.coerceIn(0, text.length)
                     val end = range.max.coerceIn(start, text.length)
-                    newText = text.substring(0, start) + mathTag + text.substring(end)
-                    newSelection = TextRange(start + mathTag.length)
+                    val suffix = if (end < text.length && text[end].isWhitespace()) "" else " "
+                    val replacement = "$mathTag$suffix"
+                    newText = text.substring(0, start) + replacement + text.substring(end)
+                    newSelection = TextRange(start + replacement.length)
                 } else if (selection.min != selection.max) {
                     val start = selection.min.coerceIn(0, text.length)
                     val end = selection.max.coerceIn(start, text.length)
-                    newText = text.substring(0, start) + mathTag + text.substring(end)
-                    newSelection = TextRange(start + mathTag.length)
+                    val suffix = if (end < text.length && text[end].isWhitespace()) "" else " "
+                    val replacement = "$mathTag$suffix"
+                    newText = text.substring(0, start) + replacement + text.substring(end)
+                    newSelection = TextRange(start + replacement.length)
                 } else {
                     val cursor = selection.min.coerceIn(0, text.length)
                     val prefix = if (cursor > 0 && !text[cursor - 1].isWhitespace()) " " else ""
-                    val suffix = if (cursor < text.length && !text[cursor].isWhitespace()) " " else ""
+                    val suffix = if (cursor < text.length && text[cursor].isWhitespace()) "" else " "
                     val insertStr = "$prefix$mathTag$suffix"
                     newText = text.substring(0, cursor) + insertStr + text.substring(cursor)
                     newSelection = TextRange(cursor + insertStr.length)

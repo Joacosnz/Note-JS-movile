@@ -7,4 +7,11 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Colores del icono adaptativo (Modo Claro) -->
+    <color name="ic_launcher_paper_bg">#F5F5F7</color>
+    <color name="ic_launcher_header_yellow">#FDD62B</color>
+    <color name="ic_launcher_header_border">#D8B21B</color>
+    <color name="ic_launcher_dots">#8E8E93</color>
+    <color name="ic_launcher_lines">#C5C5C7</color>
 </resources>

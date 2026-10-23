@@ -229,7 +229,7 @@ fun EditorBlockList(
                 value = titleTextFieldValue,
                 onValueChange = { newValue ->
                     val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, titleTextFieldValue)
-                    val finalValue = solved ?: newValue
+                    val finalValue = com.example.ui.components.sanitizeTextFieldValue(solved ?: newValue)
                     onTitleValueChange(finalValue)
                     evaluateNoteLinkTrigger("TITLE", finalValue)
                     coroutineScope.launch {
@@ -295,6 +295,15 @@ fun EditorBlockList(
                         )
                     }
                     innerTextField()
+                }
+            )
+
+            com.example.ui.components.InlineMathPreviewRow(
+                text = titleTextFieldValue.text,
+                isDark = isPaperDark,
+                amber = amber,
+                onEditInlineMath = { code, start, end ->
+                    onInlineMathClick("TITLE", code, true, TextRange(start, end))
                 }
             )
 
