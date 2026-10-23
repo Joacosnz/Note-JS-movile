@@ -30,6 +30,11 @@ object NoteBlockSerializer {
                     obj.put("id", block.id)
                     obj.put("content", block.content)
                     obj.put("isChecked", block.isChecked)
+                    if (block.reminderTimestamp != null) {
+                        obj.put("reminderTimestamp", block.reminderTimestamp)
+                    }
+                    obj.put("isReminderDone", block.isReminderDone)
+                    obj.put("priority", block.priority)
                 }
                 is NoteBlock.SimpleList -> {
                     obj.put("type", "simpleList")
@@ -192,7 +197,21 @@ object NoteBlockSerializer {
                     "checklist" -> {
                         val content = obj.optString("content", "")
                         val isChecked = obj.optBoolean("isChecked", false)
-                        list.add(NoteBlock.Checklist(id = id, content = content, isChecked = isChecked))
+                        val reminderTimestamp = if (obj.has("reminderTimestamp") && !obj.isNull("reminderTimestamp")) {
+                            obj.optLong("reminderTimestamp")
+                        } else null
+                        val isReminderDone = obj.optBoolean("isReminderDone", false)
+                        val priority = obj.optInt("priority", 0)
+                        list.add(
+                            NoteBlock.Checklist(
+                                id = id,
+                                content = content,
+                                isChecked = isChecked,
+                                reminderTimestamp = reminderTimestamp,
+                                isReminderDone = isReminderDone,
+                                priority = priority
+                            )
+                        )
                     }
                     "simpleList" -> {
                         val content = obj.optString("content", "")

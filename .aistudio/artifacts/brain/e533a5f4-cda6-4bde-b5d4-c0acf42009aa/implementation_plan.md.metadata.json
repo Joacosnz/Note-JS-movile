@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan de implementación para crear notas simples con título vacío desde el menú contextual de selección de texto de Android (\"Crear nota\" en Note JS).",
-  "updatedAt":  "2026-10-23T14:00:06.266614349Z",
+  "summary":  "Plan de implementación para la integración bidireccional de Recordatorios y Checklists con enlaces profundos a notas en Note JS. Incluye la arquitectura de datos para tareas con fecha y hora, sincronización instantánea de estados entre checklists y tareas globales, pantalla dedicada de Recordatorios con deep links a las notas de origen y programación de notificaciones nativas con AlarmManager/ReminderScheduler.",
+  "updatedAt":  "2026-10-23T22:54:36.653579858Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

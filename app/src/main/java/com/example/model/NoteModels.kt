@@ -17,9 +17,28 @@ enum class PaperStyle(val title: String) {
 }
 
 data class ChecklistItem(
-    val id: String,
+    val id: String = java.util.UUID.randomUUID().toString(),
     val text: String,
     val isChecked: Boolean = false,
+    val reminderTimestamp: Long? = null,
+    val isReminderDone: Boolean = false,
+    val priority: Int = 0 // 0=Normal, 1=Baja, 2=Media, 3=Alta/Urgente
+)
+
+/**
+ * Modelo unificado que representa un recordatorio de lista o de nota general con enlace profundo a la nota de origen.
+ */
+data class UnifiedReminderItem(
+    val id: String, // ID único: "${noteId}_${checkItemId}" o "${noteId}_note"
+    val noteId: Long,
+    val noteTitle: String,
+    val noteColorIndex: Int,
+    val noteFolder: String,
+    val checkItemId: String? = null, // null si corresponde al recordatorio de la nota completa
+    val title: String,
+    val isCompleted: Boolean,
+    val reminderTimestamp: Long,
+    val priority: Int = 0
 )
 
 data class DrawingPoint(

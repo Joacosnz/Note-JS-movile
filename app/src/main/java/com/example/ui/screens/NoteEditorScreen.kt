@@ -1210,6 +1210,22 @@ fun NoteEditorScreen(
                 if (reminderTimestamp != null) {
                     viewModel.setReminder(context, savedId, reminderTimestamp!!, finalTitle, serializedContent)
                 }
+                for (blk in blocks) {
+                    if (blk is NoteBlock.Checklist) {
+                        if (blk.reminderTimestamp != null && !blk.isChecked && blk.reminderTimestamp!! > System.currentTimeMillis()) {
+                            com.example.util.ReminderScheduler.scheduleItemReminder(
+                                context = context,
+                                noteId = savedId,
+                                itemId = blk.id,
+                                timestamp = blk.reminderTimestamp!!,
+                                title = finalTitle.ifBlank { "Recordatorio de lista" },
+                                content = blk.content.ifBlank { "Elemento de lista" }
+                            )
+                        } else if (blk.isChecked || blk.reminderTimestamp == null) {
+                            com.example.util.ReminderScheduler.cancelItemReminder(context, savedId, blk.id)
+                        }
+                    }
+                }
             }
         )
         if (navigateBack) viewModel.navigateBack()

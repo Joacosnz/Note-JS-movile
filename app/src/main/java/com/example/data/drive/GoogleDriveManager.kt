@@ -34,6 +34,10 @@ class GoogleDriveManager(private val context: Context) {
         val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestProfile()
+            .requestScopes(
+                com.google.android.gms.common.api.Scope(DriveScopes.DRIVE_FILE),
+                com.google.android.gms.common.api.Scope(DriveScopes.DRIVE_APPDATA)
+            )
 
         if (webClientId.isNotBlank()) {
             try {

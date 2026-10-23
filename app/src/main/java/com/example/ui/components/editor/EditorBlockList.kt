@@ -447,7 +447,18 @@ fun EditorBlockList(
                                 }
                             },
                             onToggleCheck = {
-                                onUpdateBlock(index, block.copy(isChecked = !block.isChecked))
+                                val newChecked = !block.isChecked
+                                onUpdateBlock(index, block.copy(isChecked = newChecked, isReminderDone = newChecked))
+                            },
+                            onScheduleReminder = { timestamp, priority ->
+                                onUpdateBlock(
+                                    index,
+                                    block.copy(
+                                        reminderTimestamp = timestamp,
+                                        priority = priority,
+                                        isReminderDone = if (timestamp == null) false else block.isChecked
+                                    )
+                                )
                             },
                             onNext = {
                                 if (block.content.isBlank()) {

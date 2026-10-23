@@ -83,7 +83,10 @@ sealed interface NoteBlock {
     data class Checklist(
         override val id: String = UUID.randomUUID().toString(),
         var content: String = "",
-        var isChecked: Boolean = false
+        var isChecked: Boolean = false,
+        var reminderTimestamp: Long? = null,
+        var isReminderDone: Boolean = false,
+        var priority: Int = 0
     ) : NoteBlock
 
     data class SimpleList(

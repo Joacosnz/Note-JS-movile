@@ -113,4 +113,53 @@ object ReminderScheduler {
             alarmManager.cancel(pendingIntent)
         }
     }
+
+    fun getItemReminderRequestCode(noteId: Long, itemId: String): Int {
+        return ((noteId.hashCode() xor itemId.hashCode()) and 0x7FFF) * 100
+    }
+
+    fun scheduleItemReminder(
+        context: Context,
+        noteId: Long,
+        itemId: String,
+        timestamp: Long,
+        title: String,
+        content: String
+    ) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val currentTime = System.currentTimeMillis()
+
+        cancelItemReminder(context, noteId, itemId)
+
+        if (timestamp > currentTime) {
+            val intent = Intent(context, NoteReminderReceiver::class.java).apply {
+                putExtra(EXTRA_NOTE_ID, noteId)
+                putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_CONTENT, content)
+                putExtra(EXTRA_OFFSET, 0)
+                putExtra(EXTRA_ORIGINAL_TIME, timestamp)
+            }
+            val requestCode = getItemReminderRequestCode(noteId, itemId)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            scheduleAlarm(alarmManager, timestamp, pendingIntent)
+        }
+    }
+
+    fun cancelItemReminder(context: Context, noteId: Long, itemId: String) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val requestCode = getItemReminderRequestCode(noteId, itemId)
+        val intent = Intent(context, NoteReminderReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pendingIntent)
+    }
 }

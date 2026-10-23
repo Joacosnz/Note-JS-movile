@@ -62,14 +62,16 @@ data class NoteEntity(
     val searchableText: String = "", // Texto aplanado centralizado para FTS4
     val syncEnabled: Boolean = true
 ) {
+    val timestamp: Long
+        @androidx.room.Ignore get() = updatedAt
+
+    val color: Int
+        @androidx.room.Ignore get() = colorIndex
+
     companion object {
         const val LOCAL_ANONYMOUS_USER_ID = "LOCAL_ANONYMOUS"
     }
 }
 
-/**
- * Typealias to allow referencing 'Note' objects directly as Room entities
- * for offline persistence of titles, content, and metadata.
- */
-typealias Note = NoteEntity
+
 

@@ -2,11 +2,14 @@ package com.example
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -35,6 +38,7 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.NoteEditorScreen
 import com.example.ui.screens.PdfLibraryScreen
 import com.example.ui.screens.PdfViewerScreen
+import com.example.ui.screens.RemindersScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.util.LauncherIconManager
@@ -242,6 +246,17 @@ fun NotesApp(
     LaunchedEffect(isSystemDark) {
         LauncherIconManager.syncLauncherIcon(context, isDarkOverride = isSystemDark)
     }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val notificationPermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { _ -> }
+
+        LaunchedEffect(Unit) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     val isDarkTheme = when (uiState.themeMode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
@@ -354,6 +369,9 @@ fun NotesApp(
                     }
                     is Screen.Settings -> {
                         SettingsScreen(viewModel = viewModel)
+                    }
+                    is Screen.Reminders -> {
+                        RemindersScreen(viewModel = viewModel)
                     }
                 }
             }

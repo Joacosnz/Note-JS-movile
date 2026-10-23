@@ -378,15 +378,15 @@ fun FoldersScreen(
 
                                 FolderRowItem(
                                     icon = Icons.Default.Notifications,
-                                    title = "Con recordatorio",
+                                    title = "Recordatorios y Tareas",
                                     count = uiState.remindersCount,
                                     tint = MaterialTheme.colorScheme.secondary,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.selectTab(NavTab.REMINDERS)
+                                        viewModel.navigateTo(Screen.Reminders)
                                     },
                                     testTag = "folder_reminders",
-                                    showTrailingIcon = false
+                                    showTrailingIcon = true
                                 )
 
                                 HorizontalDivider(

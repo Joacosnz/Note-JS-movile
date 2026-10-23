@@ -16,6 +16,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.channels.awaitClose
@@ -29,6 +30,12 @@ sealed interface AuthResult {
     data class Error(val message: String, val throwable: Throwable? = null) : AuthResult
 }
 
+/**
+ * Gestor de autenticación que coordina FirebaseAuth y Jetpack Credential Manager.
+ * Utiliza el recurso `R.string.default_web_client_id` generado por el plugin de Google Services
+ * para garantizar la coincidencia exacta de la audiencia (OAuth 2.0 Web Client ID) y evitar
+ * errores de FirebaseAuthInvalidCredentialsException por mismatch de proyecto.
+ */
 class AuthManager(private val context: Context) {
     private val appContext = context.applicationContext
     private val credentialManager = CredentialManager.create(appContext)
@@ -40,7 +47,7 @@ class AuthManager(private val context: Context) {
             }
             FirebaseAuth.getInstance()
         } catch (e: Exception) {
-            Log.w("AuthManager", "FirebaseAuth not available", e)
+            Log.w(TAG, "FirebaseAuth no disponible en este entorno", e)
             null
         }
 
@@ -48,7 +55,25 @@ class AuthManager(private val context: Context) {
         get() = firebaseAuth?.currentUser
 
     /**
-     * Flujo reactivo que emite el [FirebaseUser] actual cada vez que cambia el estado de sesión.
+     * Obtiene de forma segura el Web Client ID configurado desde los recursos de la aplicación.
+     * Este valor proviene directamente de `google-services.json` (oauth_client tipo 3).
+     */
+    fun getWebClientId(): String {
+        return try {
+            val resId = appContext.resources.getIdentifier("default_web_client_id", "string", appContext.packageName)
+            if (resId != 0) {
+                appContext.getString(resId)
+            } else {
+                appContext.getString(R.string.default_web_client_id)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo resolver default_web_client_id desde recursos: ${e.message}")
+            ""
+        }
+    }
+
+    /**
+     * Flujo reactivo que emite el [FirebaseUser] actual cada vez que cambia el estado de sesión en Firebase Auth.
      */
     val currentUserFlow: Flow<FirebaseUser?> = callbackFlow {
         val auth = firebaseAuth
@@ -67,7 +92,7 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * Intenta iniciar sesión automáticamente de forma silenciosa con cuentas previamente autorizadas.
+     * Intenta iniciar sesión automáticamente de forma silenciosa con cuentas previamente autorizadas en el dispositivo.
      */
     suspend fun attemptAutoSignIn(activity: Activity): AuthResult {
         val existingUser = currentUser
@@ -75,14 +100,11 @@ class AuthManager(private val context: Context) {
             return AuthResult.Success(existingUser)
         }
 
-        val webClientId = try {
-            appContext.getString(R.string.default_web_client_id)
-        } catch (_: Exception) {
-            ""
-        }
-
+        val webClientId = getWebClientId()
         if (webClientId.isBlank()) {
-            return AuthResult.Error("Falta configurar default_web_client_id en google-services.json")
+            val msg = "default_web_client_id no está disponible en los recursos. Verifica google-services.json."
+            Log.e(TAG, msg)
+            return AuthResult.Error(msg)
         }
 
         return try {
@@ -111,6 +133,7 @@ class AuthManager(private val context: Context) {
                 val authResult = auth.signInWithCredential(firebaseCredential).await()
                 val user = authResult.user
                 if (user != null) {
+                    Log.i(TAG, "Inicio de sesión silencioso exitoso: ${user.uid}")
                     AuthResult.Success(user)
                 } else {
                     AuthResult.Error("Firebase Auth no devolvió un usuario válido")
@@ -119,26 +142,30 @@ class AuthManager(private val context: Context) {
                 AuthResult.Error("Tipo de credencial no soportada: ${credential.type}")
             }
         } catch (e: GetCredentialCancellationException) {
-            Log.w("AuthManager", "Auto sign-in cancelled or dismissed: ${e.message}", e)
+            Log.d(TAG, "Auto sign-in cancelado o no hay cuenta previamente autorizada")
             AuthResult.Cancelled
+        } catch (e: FirebaseAuthInvalidCredentialsException) {
+            Log.w(TAG, "Credencial silenciosa inválida o caducada para Firebase: ${e.message}")
+            try {
+                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            } catch (_: Exception) {}
+            AuthResult.Error("Credencial de Google no válida para el proyecto actual", e)
         } catch (e: Exception) {
+            Log.d(TAG, "No hay sesión silenciosa previa: ${e.message}")
             AuthResult.Error(e.localizedMessage ?: "No hay sesión silenciosa disponible", e)
         }
     }
 
     /**
-     * Inicia sesión interactivamente con Google utilizando Credential Manager
-     * ([GetSignInWithGoogleOption]) vinculada a Firebase Auth.
+     * Inicia sesión interactivamente con Google utilizando Credential Manager ([GetSignInWithGoogleOption])
+     * y autentica el token resultante en FirebaseAuth con la audiencia correcta.
      */
     suspend fun signInWithCredentialManager(activity: Activity): AuthResult {
-        val webClientId = try {
-            appContext.getString(R.string.default_web_client_id)
-        } catch (_: Exception) {
-            ""
-        }
-
+        val webClientId = getWebClientId()
         if (webClientId.isBlank()) {
-            return AuthResult.Error("Falta configurar default_web_client_id en google-services.json")
+            val msg = "default_web_client_id no está disponible en los recursos. Verifica google-services.json."
+            Log.e(TAG, msg)
+            return AuthResult.Error(msg)
         }
 
         return try {
@@ -164,6 +191,7 @@ class AuthManager(private val context: Context) {
                 val authResult = auth.signInWithCredential(firebaseCredential).await()
                 val user = authResult.user
                 if (user != null) {
+                    Log.i(TAG, "Inicio de sesión interactivo exitoso: ${user.uid}")
                     AuthResult.Success(user)
                 } else {
                     AuthResult.Error("Firebase Auth no devolvió un usuario válido")
@@ -172,45 +200,73 @@ class AuthManager(private val context: Context) {
                 AuthResult.Error("Tipo de credencial no soportada: ${credential.type}")
             }
         } catch (e: GetCredentialCancellationException) {
-            Log.w("AuthManager", "Google Sign-In cancelled or dismissed: ${e.message}", e)
+            Log.w(TAG, "Google Sign-In cancelado por el usuario: ${e.message}")
             AuthResult.Cancelled
         } catch (e: GoogleIdTokenParsingException) {
-            Log.e("AuthManager", "Token de Google inválido", e)
+            Log.e(TAG, "Token de Google malformado o no parseable", e)
             AuthResult.Error("Token de Google inválido", e)
+        } catch (e: FirebaseAuthInvalidCredentialsException) {
+            Log.e(TAG, "Error de validación de credencial o audiencia en Firebase: ${e.message}", e)
+            try {
+                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            } catch (_: Exception) {}
+            AuthResult.Error("La credencial de Google no es válida para este proyecto Firebase. Vuelve a intentarlo.", e)
         } catch (e: GetCredentialException) {
-            Log.e("AuthManager", "Error de Credential Manager", e)
+            Log.e(TAG, "Error de Credential Manager", e)
             AuthResult.Error(e.errorMessage?.toString() ?: "No se pudo obtener la credencial de Google", e)
         } catch (e: Exception) {
-            Log.e("AuthManager", "Error autenticando con Firebase", e)
+            Log.e(TAG, "Error autenticando con Firebase", e)
             AuthResult.Error(e.localizedMessage ?: "Error autenticando con Firebase", e)
         }
     }
 
+    /**
+     * Inicia sesión utilizando Credential Manager y Firebase Auth.
+     */
+    suspend fun signIn(activity: Activity): AuthResult = signInWithCredentialManager(activity)
+
+    /**
+     * Atajo para iniciar sesión y retornar el UID del usuario autenticado si es exitoso.
+     */
     suspend fun signInWithGoogle(activity: Activity): String? {
-        return when (val res = signInWithCredentialManager(activity)) {
+        return when (val res = signIn(activity)) {
             is AuthResult.Success -> res.user.uid
             else -> null
         }
     }
 
+    /**
+     * Inicia sesión con un idToken de Google explícito si es requerido, manejando posibles desajustes
+     * de credenciales de manera segura.
+     */
     suspend fun signInWithGoogleIdToken(idToken: String): String? {
         return try {
             val auth = firebaseAuth ?: return null
             val authCredential = GoogleAuthProvider.getCredential(idToken, null)
             val authResult = auth.signInWithCredential(authCredential).await()
             authResult.user?.uid
+        } catch (e: FirebaseAuthInvalidCredentialsException) {
+            Log.w(TAG, "Audiencia o token de Google no autorizado para este proyecto Firebase: ${e.message}")
+            try {
+                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            } catch (_: Exception) {}
+            null
         } catch (e: Exception) {
-            Log.e("AuthManager", "Error durante el inicio de sesión con token", e)
+            Log.w(TAG, "Error durante el inicio de sesión con token: ${e.message}")
             null
         }
     }
 
+    /**
+     * Cierra la sesión en FirebaseAuth y purga el estado de credenciales en CredentialManager.
+     */
     suspend fun signOutAsync() {
         try {
             firebaseAuth?.signOut()
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            Log.i(TAG, "Sesión cerrada correctamente en Firebase y CredentialManager")
         } catch (e: Exception) {
-            Log.w("AuthManager", "Error cerrando sesión en CredentialManager", e)
+            Log.w(TAG, "Error cerrando sesión en CredentialManager", e)
         }
     }
 
@@ -218,7 +274,11 @@ class AuthManager(private val context: Context) {
         try {
             firebaseAuth?.signOut()
         } catch (e: Exception) {
-            Log.w("AuthManager", "Error signing out", e)
+            Log.w(TAG, "Error signing out", e)
         }
+    }
+
+    companion object {
+        private const val TAG = "AuthManager"
     }
 }

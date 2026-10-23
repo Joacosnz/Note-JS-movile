@@ -2,10 +2,12 @@
 
 package com.example.ui.components.editor
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,16 +19,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,12 +99,14 @@ fun ChecklistBlockItem(
     isItalicActive: Boolean,
     isHighlightActive: Boolean,
     modifier: Modifier = Modifier,
+    onScheduleReminder: (timestamp: Long?, priority: Int) -> Unit = { _, _ -> }
 ) {
     val coroutineScope = rememberCoroutineScope()
     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     var previewingWebUrl by remember { mutableStateOf<String?>(null) }
     var linkModeRefreshTrigger by remember { mutableIntStateOf(0) }
+    var showReminderDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -221,6 +231,19 @@ fun ChecklistBlockItem(
                 )
             )
             IconButton(
+                onClick = { showReminderDialog = true },
+                modifier = Modifier
+                    .size(28.dp)
+                    .testTag("block_checklist_clock_$index")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Schedule,
+                    contentDescription = "Programar recordatorio",
+                    tint = if (block.reminderTimestamp != null) amber else paperHintColor.copy(alpha = 0.5f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            IconButton(
                 onClick = { onDelete() },
                 modifier = Modifier.size(28.dp)
             ) {
@@ -231,6 +254,81 @@ fun ChecklistBlockItem(
                     modifier = Modifier.size(16.dp)
                 )
             }
+        }
+
+        if (block.reminderTimestamp != null) {
+            val formattedTime = remember(block.reminderTimestamp) {
+                val sdf = SimpleDateFormat("EEE d MMM, HH:mm", Locale("es", "ES"))
+                sdf.format(Date(block.reminderTimestamp!!))
+            }
+            val isOverdue = block.reminderTimestamp!! < System.currentTimeMillis() && !block.isChecked
+            val badgeTint = when {
+                isOverdue -> Color(0xFFEF4444)
+                block.priority == 3 -> Color(0xFFEF4444)
+                block.priority == 2 -> Color(0xFFF59E0B)
+                else -> amber
+            }
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = badgeTint.copy(alpha = 0.12f),
+                border = BorderStroke(0.5.dp, badgeTint.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .padding(start = 36.dp, top = 2.dp, bottom = 4.dp)
+                    .clickable { showReminderDialog = true }
+                    .testTag("block_checklist_badge_$index")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = badgeTint,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = if (isOverdue) "Vencido: $formattedTime" else formattedTime,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = badgeTint
+                    )
+                    if (block.priority > 0) {
+                        val prioLabel = when (block.priority) {
+                            3 -> "Urgente"
+                            2 -> "Media"
+                            1 -> "Baja"
+                            else -> ""
+                        }
+                        Text(
+                            text = "• $prioLabel",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeTint
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showReminderDialog) {
+            ChecklistItemReminderDialog(
+                initialTimestamp = block.reminderTimestamp,
+                initialPriority = block.priority,
+                itemTitle = block.content,
+                amber = amber,
+                onDismiss = { showReminderDialog = false },
+                onSave = { ts, prio ->
+                    onScheduleReminder(ts, prio)
+                    showReminderDialog = false
+                },
+                onRemove = {
+                    onScheduleReminder(null, 0)
+                    showReminderDialog = false
+                }
+            )
         }
 
         RichLinkPreviewList(

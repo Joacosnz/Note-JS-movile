@@ -114,4 +114,48 @@ class NoteRoomPersistenceTest {
         assertEquals(1, searchByContent.size)
         assertEquals("Reunión de Equipo", searchByContent[0].title)
     }
+
+    @Test
+    fun retrieveAllNotes_orderedByCreationDate() = runTest {
+        val olderNote = Note(
+            title = "Nota Antigua",
+            content = "Creada primero",
+            createdAt = 1000L
+        )
+        val newerNote = Note(
+            title = "Nota Reciente",
+            content = "Creada después",
+            createdAt = 5000L
+        )
+        val middleNote = Note(
+            title = "Nota Intermedia",
+            content = "Creada en medio",
+            createdAt = 3000L
+        )
+
+        noteDao.insert(olderNote)
+        noteDao.insert(newerNote)
+        noteDao.insert(middleNote)
+
+        val notesOrderedDesc = noteDao.getAllNotesOrderedByCreationDate().first()
+        assertEquals(3, notesOrderedDesc.size)
+        assertEquals("Nota Reciente", notesOrderedDesc[0].title)
+        assertEquals("Nota Intermedia", notesOrderedDesc[1].title)
+        assertEquals("Nota Antigua", notesOrderedDesc[2].title)
+
+        val notesOrderedAsc = noteDao.getAllNotesByCreatedAtAsc().first()
+        assertEquals("Nota Antigua", notesOrderedAsc[0].title)
+        assertEquals("Nota Intermedia", notesOrderedAsc[1].title)
+        assertEquals("Nota Reciente", notesOrderedAsc[2].title)
+    }
+
+    @Test
+    fun deleteAllNotes_clearsAllStoredNotes() = runTest {
+        noteDao.insert(Note(title = "N1", content = "C1"))
+        noteDao.insert(Note(title = "N2", content = "C2"))
+
+        assertEquals(2, noteDao.getAllNotes().first().size)
+        noteDao.deleteAll()
+        assertEquals(0, noteDao.getAllNotes().first().size)
+    }
 }

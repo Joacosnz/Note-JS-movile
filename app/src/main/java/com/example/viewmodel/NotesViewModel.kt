@@ -30,6 +30,7 @@ import com.example.data.drive.DriveSyncResult
 import com.example.data.drive.GoogleDriveManager
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import com.example.model.ChecklistItem
+import com.example.model.UnifiedReminderItem
 import com.example.model.NoteBlock
 import com.example.model.NoteColors
 import com.example.model.NoteType
@@ -55,6 +56,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -98,6 +100,7 @@ sealed class Screen {
     data class PdfViewer(val noteId: Long = 0, val pdfPath: String = "") : Screen()
     data object PdfLibrary : Screen()
     data object Settings : Screen()
+    data object Reminders : Screen()
 }
 
 data class NotesUiState(
@@ -171,7 +174,10 @@ private data class SettingsState(
     val defaultLockPin: String
 )
 
-class NotesViewModel(application: Application) : AndroidViewModel(application) {
+class NotesViewModel(
+    application: Application,
+    customRepository: NoteRepository? = null
+) : AndroidViewModel(application) {
 
     val repository: NoteRepository
     val settingsManager = SettingsManager(application)
@@ -214,16 +220,80 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     val savedSignatures: StateFlow<List<SignatureEntity>>
 
+    /**
+     * Flujo reactivo con todas las notas almacenadas en la base de datos Room (ordenadas por fecha de creación).
+     */
+    val allNotes: StateFlow<List<NoteEntity>>
+
+    /**
+     * Flujo reactivo con las notas activas (no archivadas ni en papelera).
+     */
+    val activeNotes: StateFlow<List<NoteEntity>>
+
+    /**
+     * Flujo principal de notas activas para observadores de UI y pruebas.
+     */
+    val notes: StateFlow<List<NoteEntity>>
+
+    /**
+     * Flujo unificado y reactivo de recordatorios (nivel nota y elementos de checklist) con enlaces bidireccionales.
+     */
+    val unifiedReminders: StateFlow<List<UnifiedReminderItem>>
+
+    /**
+     * Flujo reactivo de notas archivadas.
+     */
+    val archivedNotes: StateFlow<List<NoteEntity>>
+
+    /**
+     * Flujo reactivo de notas en papelera.
+     */
+    val trashedNotes: StateFlow<List<NoteEntity>>
+
     init {
         val database = AppDatabase.getDatabase(application)
         val firebaseStorageManager = FirebaseStorageManager()
-        repository = NoteRepository(
+        repository = customRepository ?: NoteRepository(
             noteDao = database.noteDao(),
             folderDao = database.folderDao(),
             signatureDao = database.signatureDao(),
             firestoreManager = firestoreManager,
             firebaseStorageManager = firebaseStorageManager,
             context = application.applicationContext
+        )
+
+        allNotes = repository.allNotes.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+        activeNotes = repository.activeNotes.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+        notes = activeNotes
+
+        unifiedReminders = repository.activeNotes.map { notesList ->
+            extractUnifiedReminders(notesList)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+        archivedNotes = repository.archivedNotes.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+        trashedNotes = repository.trashedNotes.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
         )
 
         pendingSyncCount = repository.pendingSyncCount.stateIn(
@@ -237,22 +307,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 if (user != null) {
                     repository.startListeningToCloud(user.uid)
                 } else {
-                    val driveAccount = try {
-                        GoogleDriveManager(application).getSignedInAccount()
-                    } catch (_: Exception) {
-                        null
-                    }
-                    val idToken = driveAccount?.idToken
-                    if (!idToken.isNullOrBlank()) {
-                        val fbUid = authManager.signInWithGoogleIdToken(idToken)
-                        if (!fbUid.isNullOrBlank()) {
-                            repository.startListeningToCloud(fbUid)
-                        } else {
-                            repository.stopListeningToCloud(resetToAnonymous = true)
-                        }
-                    } else {
-                        repository.stopListeningToCloud(resetToAnonymous = true)
-                    }
+                    repository.stopListeningToCloud(resetToAnonymous = true)
                 }
             }
         }
@@ -1003,6 +1058,127 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- MÉTODOS CRUD BÁSICOS PARA ROOM Y GESTIÓN DE NOTAS ---
+
+    /**
+     * Inserta una nota en la base de datos Room mediante el repositorio y maneja persistencia offline.
+     */
+    fun insertNote(note: NoteEntity, onComplete: ((Long) -> Unit)? = null) {
+        viewModelScope.launch {
+            val id = repository.insert(note)
+            _snackbarMessage.value = "Nota guardada"
+            onComplete?.invoke(id)
+        }
+    }
+
+    fun insert(note: NoteEntity, onComplete: ((Long) -> Unit)? = null) = insertNote(note, onComplete)
+
+    fun insertNote(
+        title: String,
+        content: String = "",
+        folder: String = "Notas",
+        colorIndex: Int = 0,
+        isPinned: Boolean = false,
+        onComplete: ((Long) -> Unit)? = null
+    ) {
+        val now = System.currentTimeMillis()
+        val note = NoteEntity(
+            title = title,
+            content = content,
+            folder = folder,
+            colorIndex = colorIndex,
+            isPinned = isPinned,
+            createdAt = now,
+            updatedAt = now,
+            lastModifiedLocal = now
+        )
+        insertNote(note, onComplete)
+    }
+
+    /**
+     * Actualiza una nota existente en la base de datos Room.
+     */
+    fun updateNote(note: NoteEntity, onComplete: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            repository.update(note)
+            _snackbarMessage.value = "Nota actualizada"
+            onComplete?.invoke()
+        }
+    }
+
+    fun update(note: NoteEntity, onComplete: (() -> Unit)? = null) = updateNote(note, onComplete)
+
+    fun updateTitleAndContent(
+        id: Long,
+        title: String,
+        content: String,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            val existing = repository.getNoteById(id)
+            if (existing != null) {
+                val updated = existing.copy(
+                    title = title,
+                    content = content,
+                    updatedAt = System.currentTimeMillis(),
+                    lastModifiedLocal = System.currentTimeMillis()
+                )
+                repository.update(updated)
+                _snackbarMessage.value = "Nota actualizada"
+                onComplete?.invoke()
+            }
+        }
+    }
+
+    /**
+     * Elimina una nota permanentemente de la base de datos Room.
+     */
+    fun deleteNote(note: NoteEntity, onComplete: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            cleanupNoteFiles(note)
+            repository.delete(note)
+            _snackbarMessage.value = "Nota eliminada"
+            onComplete?.invoke()
+        }
+    }
+
+    fun delete(note: NoteEntity, onComplete: (() -> Unit)? = null) = deleteNote(note, onComplete)
+
+    fun deleteNoteById(id: Long, onComplete: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            val note = repository.getNoteById(id)
+            if (note != null) {
+                cleanupNoteFiles(note)
+                repository.delete(note)
+            } else {
+                repository.deleteById(id)
+            }
+            _snackbarMessage.value = "Nota eliminada"
+            onComplete?.invoke()
+        }
+    }
+
+    fun deleteById(id: Long, onComplete: (() -> Unit)? = null) = deleteNoteById(id, onComplete)
+
+    suspend fun insertNoteSuspending(note: NoteEntity): Long = repository.insert(note)
+
+    suspend fun updateNoteSuspending(note: NoteEntity) = repository.update(note)
+
+    suspend fun deleteNoteSuspending(note: NoteEntity) {
+        cleanupNoteFiles(note)
+        repository.delete(note)
+    }
+
+    suspend fun deleteNoteByIdSuspending(id: Long) {
+        val note = repository.getNoteById(id)
+        if (note != null) {
+            cleanupNoteFiles(note)
+            repository.delete(note)
+        } else {
+            repository.deleteById(id)
+        }
+    }
+
     fun deletePermanently(note: NoteEntity) {
         viewModelScope.launch {
             cleanupNoteFiles(note)
@@ -1076,6 +1252,250 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun extractUnifiedReminders(notes: List<NoteEntity>): List<UnifiedReminderItem> {
+        val list = mutableListOf<UnifiedReminderItem>()
+        for (note in notes) {
+            // 1. Recordatorio a nivel de Nota
+            if (note.reminderTimestamp != null) {
+                list.add(
+                    UnifiedReminderItem(
+                        id = "${note.id}_note",
+                        noteId = note.id,
+                        noteTitle = note.title.ifBlank { "Sin título" },
+                        noteColorIndex = note.colorIndex,
+                        noteFolder = note.folder,
+                        checkItemId = null,
+                        title = note.title.ifBlank { "Nota sin título" },
+                        isCompleted = note.isReminderDone,
+                        reminderTimestamp = note.reminderTimestamp,
+                        priority = 0
+                    )
+                )
+            }
+
+            // 2. Bloques Checklist dentro del contenido JSON enriquecido
+            if (note.content.isNotBlank() && note.content.trim().startsWith("[")) {
+                try {
+                    val blocks = NoteBlockSerializer.deserialize(note.content)
+                    for (block in blocks) {
+                        if (block is NoteBlock.Checklist && block.reminderTimestamp != null) {
+                            list.add(
+                                UnifiedReminderItem(
+                                    id = "${note.id}_${block.id}",
+                                    noteId = note.id,
+                                    noteTitle = note.title.ifBlank { "Sin título" },
+                                    noteColorIndex = note.colorIndex,
+                                    noteFolder = note.folder,
+                                    checkItemId = block.id,
+                                    title = block.content.ifBlank { "Elemento de lista" },
+                                    isCompleted = block.isChecked || block.isReminderDone,
+                                    reminderTimestamp = block.reminderTimestamp!!,
+                                    priority = block.priority
+                                )
+                            )
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // 3. Elementos en checklistData (compatibilidad)
+            if (note.checklistData.isNotBlank() && note.checklistData.trim().startsWith("[")) {
+                try {
+                    val array = JSONArray(note.checklistData)
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i) ?: continue
+                        val itemId = obj.optString("id", "")
+                        if (itemId.isBlank()) continue
+                        if (list.any { it.noteId == note.id && it.checkItemId == itemId }) continue
+                        if (obj.has("reminderTimestamp") && !obj.isNull("reminderTimestamp")) {
+                            val ts = obj.optLong("reminderTimestamp")
+                            val isChecked = obj.optBoolean("isChecked", false)
+                            val isDone = obj.optBoolean("isReminderDone", false)
+                            val text = obj.optString("text", "Elemento de lista")
+                            val priority = obj.optInt("priority", 0)
+                            list.add(
+                                UnifiedReminderItem(
+                                    id = "${note.id}_$itemId",
+                                    noteId = note.id,
+                                    noteTitle = note.title.ifBlank { "Sin título" },
+                                    noteColorIndex = note.colorIndex,
+                                    noteFolder = note.folder,
+                                    checkItemId = itemId,
+                                    title = text.ifBlank { "Elemento de lista" },
+                                    isCompleted = isChecked || isDone,
+                                    reminderTimestamp = ts,
+                                    priority = priority
+                                )
+                            )
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+        return list.sortedBy { it.reminderTimestamp }
+    }
+
+    /**
+     * Sincronización inmediata bidireccional: al marcar completado en Recordatorios
+     * se actualiza la nota correspondiente en Room y Firestore, y viceversa.
+     */
+    fun toggleUnifiedReminder(item: UnifiedReminderItem) {
+        viewModelScope.launch {
+            val note = repository.getNoteById(item.noteId) ?: return@launch
+            val context = getApplication<Application>()
+            val newCompleted = !item.isCompleted
+
+            if (item.checkItemId == null) {
+                // Recordatorio a nivel de Nota
+                val updated = note.copy(
+                    isReminderDone = newCompleted,
+                    updatedAt = System.currentTimeMillis()
+                )
+                repository.update(updated)
+                if (newCompleted) {
+                    ReminderScheduler.cancelReminder(context, note.id)
+                } else if (note.reminderTimestamp != null && note.reminderTimestamp > System.currentTimeMillis()) {
+                    ReminderScheduler.scheduleReminder(
+                        context = context,
+                        noteId = note.id,
+                        timestamp = note.reminderTimestamp,
+                        title = note.title.ifBlank { "Recordatorio" },
+                        content = note.content
+                    )
+                }
+            } else {
+                // Recordatorio de un elemento de checklist específico
+                var updatedContent = note.content
+                if (note.content.isNotBlank() && note.content.trim().startsWith("[")) {
+                    try {
+                        val blocks = NoteBlockSerializer.deserialize(note.content).toMutableList()
+                        val idx = blocks.indexOfFirst { it.id == item.checkItemId }
+                        if (idx >= 0) {
+                            val blk = blocks[idx]
+                            if (blk is NoteBlock.Checklist) {
+                                blocks[idx] = blk.copy(
+                                    isChecked = newCompleted,
+                                    isReminderDone = newCompleted
+                                )
+                                updatedContent = NoteBlockSerializer.serialize(blocks)
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                var updatedChecklistData = note.checklistData
+                if (note.checklistData.isNotBlank() && note.checklistData.trim().startsWith("[")) {
+                    try {
+                        val array = JSONArray(note.checklistData)
+                        for (i in 0 until array.length()) {
+                            val obj = array.optJSONObject(i) ?: continue
+                            if (obj.optString("id") == item.checkItemId) {
+                                obj.put("isChecked", newCompleted)
+                                obj.put("isReminderDone", newCompleted)
+                            }
+                        }
+                        updatedChecklistData = array.toString()
+                    } catch (_: Exception) {}
+                }
+
+                val updated = note.copy(
+                    content = updatedContent,
+                    checklistData = updatedChecklistData,
+                    updatedAt = System.currentTimeMillis()
+                )
+                repository.update(updated)
+
+                if (newCompleted) {
+                    ReminderScheduler.cancelItemReminder(context, note.id, item.checkItemId)
+                } else if (item.reminderTimestamp > System.currentTimeMillis()) {
+                    ReminderScheduler.scheduleItemReminder(
+                        context = context,
+                        noteId = note.id,
+                        itemId = item.checkItemId,
+                        timestamp = item.reminderTimestamp,
+                        title = note.title.ifBlank { "Recordatorio de lista" },
+                        content = item.title
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Programa o cancela la fecha, hora y prioridad de un elemento de lista de checklist.
+     */
+    fun setChecklistItemReminder(noteId: Long, itemId: String, timestamp: Long?, priority: Int = 0) {
+        viewModelScope.launch {
+            val note = repository.getNoteById(noteId) ?: return@launch
+            val context = getApplication<Application>()
+            var itemTitle = ""
+            var updatedContent = note.content
+
+            if (note.content.isNotBlank() && note.content.trim().startsWith("[")) {
+                try {
+                    val blocks = NoteBlockSerializer.deserialize(note.content).toMutableList()
+                    val idx = blocks.indexOfFirst { it.id == itemId }
+                    if (idx >= 0) {
+                        val blk = blocks[idx]
+                        if (blk is NoteBlock.Checklist) {
+                            itemTitle = blk.content
+                            blocks[idx] = blk.copy(
+                                reminderTimestamp = timestamp,
+                                priority = priority,
+                                isReminderDone = if (timestamp == null) false else blk.isChecked
+                            )
+                            updatedContent = NoteBlockSerializer.serialize(blocks)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            var updatedChecklistData = note.checklistData
+            if (note.checklistData.isNotBlank() && note.checklistData.trim().startsWith("[")) {
+                try {
+                    val array = JSONArray(note.checklistData)
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i) ?: continue
+                        if (obj.optString("id") == itemId) {
+                            if (itemTitle.isBlank()) itemTitle = obj.optString("text")
+                            if (timestamp != null) {
+                                obj.put("reminderTimestamp", timestamp)
+                            } else {
+                                obj.remove("reminderTimestamp")
+                            }
+                            obj.put("priority", priority)
+                        }
+                    }
+                    updatedChecklistData = array.toString()
+                } catch (_: Exception) {}
+            }
+
+            val updated = note.copy(
+                content = updatedContent,
+                checklistData = updatedChecklistData,
+                updatedAt = System.currentTimeMillis()
+            )
+            repository.update(updated)
+
+            if (timestamp != null && timestamp > System.currentTimeMillis()) {
+                ReminderScheduler.scheduleItemReminder(
+                    context = context,
+                    noteId = note.id,
+                    itemId = itemId,
+                    timestamp = timestamp,
+                    title = note.title.ifBlank { "Recordatorio de lista" },
+                    content = itemTitle.ifBlank { "Elemento de lista" }
+                )
+                _snackbarMessage.value = "Recordatorio programado para la tarea"
+            } else {
+                ReminderScheduler.cancelItemReminder(context, note.id, itemId)
+                if (timestamp == null) {
+                    _snackbarMessage.value = "Recordatorio eliminado de la tarea"
+                }
+            }
+        }
+    }
+
     private val keepImageUri: Uri = Uri.parse("aura_notes://keep_image_uri")
     private val keepReminderTimestamp: Long = Long.MIN_VALUE
     private val keepPdfPath: String = "\u0000KEEP_PDF_PATH\u0000"
@@ -1125,6 +1545,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     obj.put("id", item.id)
                     obj.put("text", item.text)
                     obj.put("isChecked", item.isChecked)
+                    if (item.reminderTimestamp != null) {
+                        obj.put("reminderTimestamp", item.reminderTimestamp)
+                    }
+                    obj.put("isReminderDone", item.isReminderDone)
+                    obj.put("priority", item.priority)
                     array.put(obj)
                 }
                 array.toString()
@@ -1595,6 +2020,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         repository.stopListeningToCloud(resetToAnonymous = true)
     }
 
+    fun signIn(
+        activity: Activity,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) = signInWithCredentialManager(activity, onComplete)
+
     /**
      * Inicia sesión con Google mediante la API moderna Credential Manager vinculada a Firebase Auth,
      * reclamando las notas anónimas ('LOCAL_ANONYMOUS') y drenando la cola de sincronización offline.
@@ -1650,18 +2080,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun syncPendingNotesNow() {
         viewModelScope.launch(Dispatchers.IO) {
-            var uid = resolveEffectiveCloudUserId()
-            if (uid == null) {
-                val driveAccount = try {
-                    GoogleDriveManager(getApplication()).getSignedInAccount()
-                } catch (_: Exception) {
-                    null
-                }
-                val idToken = driveAccount?.idToken
-                if (!idToken.isNullOrBlank()) {
-                    uid = authManager.signInWithGoogleIdToken(idToken)
-                }
-            }
+            val uid = resolveEffectiveCloudUserId()
 
             if (uid != null) {
                 firestoreManager.setSyncState(SyncState.SYNCING)
@@ -1710,10 +2129,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 percent = 0.05f
             )
 
-            var activeUid = effectiveUid
-            if (activeUid == null && account?.idToken != null) {
-                activeUid = authManager.signInWithGoogleIdToken(account.idToken!!)
-            }
+            val activeUid = effectiveUid
 
             if (activeUid != null) {
                 repository.syncPendingNotesSuspending(activeUid, forcePushAll = true)

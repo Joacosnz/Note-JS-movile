@@ -105,6 +105,7 @@ import com.example.data.drive.GoogleDriveManager
 import com.example.data.drive.RestoreResult
 import com.example.data.drive.triggerRestart
 import com.example.ui.components.DriveSyncDialog
+import com.example.ui.components.GoogleSignInButton
 import com.example.ui.components.SortBottomSheet
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
@@ -176,33 +177,11 @@ fun SettingsScreen(
                 if (account != null) {
                     isDriveConnected = true
                     DriveBackupWorker.schedule(context)
-
-                    account.idToken?.let { idToken ->
-                        coroutineScope.launch {
-                            val uid = authManager.signInWithGoogleIdToken(idToken)
-                            if (uid != null) {
-                                isFirebaseConnected = true
-                                viewModel.repository.startListeningToCloud(uid)
-                                Toast.makeText(
-                                    context,
-                                    "Sesión iniciada correctamente (Respaldo y Sincronización)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Error al autenticar con Firebase Cloud",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                    } ?: run {
-                        Toast.makeText(
-                            context,
-                            "Sesión iniciada en Drive (token de Firebase no disponible)",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    Toast.makeText(
+                        context,
+                        "Copia de seguridad en Google Drive conectada",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             } catch (e: ApiException) {
                 Toast.makeText(context, "Error API de Note JS: ${e.statusCode}", Toast.LENGTH_LONG).show()
@@ -351,58 +330,26 @@ fun SettingsScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            Button(
-                                onClick = {
-                                    val activity = context as? Activity
-                                    if (activity != null) {
-                                        viewModel.signInWithCredentialManager(activity) { success, message ->
-                                            if (success) {
-                                                isFirebaseConnected = true
-                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                // Fallback al cliente unificado de Google Sign-In si Credential Manager no tiene cuenta configurada
-                                                googleDriveLauncher.launch(driveManager.getGoogleSignInClient().signInIntent)
-                                            }
-                                        }
-                                    } else {
-                                        googleDriveLauncher.launch(driveManager.getGoogleSignInClient().signInIntent)
-                                    }
+                            GoogleSignInButton(
+                                authManager = authManager,
+                                isLoading = isSigningIn,
+                                text = "Continuar con Google",
+                                onSuccess = { user ->
+                                    isFirebaseConnected = true
+                                    viewModel.repository.startListeningToCloud(user.uid)
+                                    val displayName = user.displayName ?: user.email ?: "Usuario"
+                                    Toast.makeText(context, "Sesión iniciada como $displayName", Toast.LENGTH_SHORT).show()
                                 },
-                                enabled = !isSigningIn,
+                                onError = { msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                },
+                                onCancelled = {
+                                    Toast.makeText(context, "Inicio de sesión cancelado", Toast.LENGTH_SHORT).show()
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("btn_sign_in_google_unified"),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF4285F4),
-                                    contentColor = Color.White
-                                )
-                            ) {
-                                if (isSigningIn) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                        color = Color.White
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.CloudUpload,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (isSigningIn) "Conectando con Google..." else "Continuar con Google",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 15.sp
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                                    .testTag("btn_sign_in_google_unified")
+                            )
                         }
                     } else {
                         val fbUser = currentUser ?: try {

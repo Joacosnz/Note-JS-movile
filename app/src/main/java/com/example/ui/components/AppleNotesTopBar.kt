@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.rounded.Folder
@@ -52,6 +53,7 @@ fun NoteJsTopBar(
     onSelectAll: () -> Unit = {},
     onDeselectAll: () -> Unit = {},
     onOpenSettings: (() -> Unit)? = null,
+    onOpenReminders: (() -> Unit)? = null,
     isGridView: Boolean = true,
     onToggleGridView: (() -> Unit)? = null,
     availableFolders: List<String> = emptyList(),
@@ -221,6 +223,20 @@ fun NoteJsTopBar(
                             Icon(
                                 imageVector = if (isGridView) Icons.Default.ViewAgenda else Icons.Default.GridView,
                                 contentDescription = if (isGridView) "Ver como lista" else "Ver como cuadrícula",
+                                tint = amber,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+
+                    if (onOpenReminders != null) {
+                        IconButton(
+                            onClick = onOpenReminders,
+                            modifier = Modifier.testTag("btn_open_reminders")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = "Recordatorios y Tareas",
                                 tint = amber,
                                 modifier = Modifier.size(26.dp)
                             )

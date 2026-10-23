@@ -19,6 +19,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -253,6 +254,7 @@ fun HomeScreen(
                         onSelectAll = { viewModel.selectAllNotes(currentListIds) },
                         onDeselectAll = { viewModel.deselectAllNotes() },
                         onOpenSettings = { viewModel.navigateTo(Screen.Settings) },
+                        onOpenReminders = { viewModel.navigateTo(Screen.Reminders) },
                         isGridView = uiState.isGridView,
                         onToggleGridView = { viewModel.toggleViewMode() },
                         availableFolders = uiState.availableFolders,
@@ -500,13 +502,51 @@ fun HomeScreen(
                         }
 
                         NavTab.REMINDERS -> {
-                            if (uiState.remindersNotes.isEmpty()) {
-                                NoteJsEmptyState("No hay recordatorios pendientes", "Las notas con recordatorios programados aparecerán aquí.")
-                            } else {
-                                LazyColumn(
-                                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
-                                    modifier = Modifier.fillMaxSize()
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = amber.copy(alpha = 0.15f),
+                                    border = BorderStroke(1.dp, amber.copy(alpha = 0.35f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        .clickable { viewModel.navigateTo(Screen.Reminders) }
+                                        .testTag("btn_open_reminders_screen")
                                 ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Notifications,
+                                                contentDescription = null,
+                                                tint = amber,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Panel de Recordatorios y Tareas",
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = amber
+                                            )
+                                        }
+                                        Text(
+                                            text = "Ver todo ➔",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = amber
+                                        )
+                                    }
+                                }
+
+                                if (uiState.remindersNotes.isEmpty()) {
+                                    NoteJsEmptyState("No hay recordatorios pendientes", "Las notas con recordatorios programados aparecerán aquí.")
+                                } else {
+                                    LazyColumn(
+                                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 100.dp),
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
                                     item {
                                         Surface(
                                             shape = RoundedCornerShape(16.dp),
@@ -534,6 +574,7 @@ fun HomeScreen(
                                 }
                             }
                         }
+                    }
 
                         NavTab.ARCHIVED -> {
                             if (uiState.archivedNotes.isEmpty()) {
@@ -682,7 +723,7 @@ fun HomeScreen(
                             }
                         },
                         onReminder = {
-                            showQuickReminderSheet = true
+                            viewModel.navigateTo(Screen.Reminders)
                         },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )

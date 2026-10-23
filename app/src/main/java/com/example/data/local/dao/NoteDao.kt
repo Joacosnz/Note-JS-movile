@@ -15,7 +15,7 @@ interface NoteDao {
 
     @Query("""
         SELECT * FROM notes
-        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS')
+        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS' OR userId = '' OR userId IS NULL)
           AND pendingDelete = 0
           AND isTrashed = 0
           AND isArchived = 0
@@ -25,7 +25,7 @@ interface NoteDao {
 
     @Query("""
         SELECT * FROM notes
-        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS')
+        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS' OR userId = '' OR userId IS NULL)
           AND pendingDelete = 0
           AND isTrashed = 0
           AND isArchived = 1
@@ -35,7 +35,7 @@ interface NoteDao {
 
     @Query("""
         SELECT * FROM notes
-        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS')
+        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS' OR userId = '' OR userId IS NULL)
           AND pendingDelete = 0
           AND isTrashed = 1
         ORDER BY updatedAt DESC
@@ -109,8 +109,26 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT * FROM notes WHERE pendingDelete = 0 ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE pendingDelete = 0 ORDER BY createdAt DESC")
     fun getAllNotes(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE pendingDelete = 0 ORDER BY createdAt DESC")
+    fun getAllNotesOrderedByCreationDate(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE pendingDelete = 0 ORDER BY createdAt DESC")
+    fun getAllNotesByCreationDate(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE pendingDelete = 0 ORDER BY createdAt DESC")
+    fun getAllNotesByCreatedAt(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE pendingDelete = 0 ORDER BY createdAt ASC")
+    fun getAllNotesByCreatedAtAsc(): Flow<List<NoteEntity>>
+
+    @Query("DELETE FROM notes")
+    suspend fun deleteAllNotes()
+
+    @Query("DELETE FROM notes")
+    suspend fun deleteAll()
 
     @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
     fun observeNoteById(id: Long): Flow<NoteEntity?>
@@ -225,7 +243,7 @@ interface NoteDao {
         UPDATE notes
         SET userId = :newUserId,
             isSynced = 0
-        WHERE userId = 'LOCAL_ANONYMOUS'
+        WHERE userId = 'LOCAL_ANONYMOUS' OR userId = '' OR userId IS NULL
     """)
     suspend fun claimAnonymousNotes(newUserId: String)
 
