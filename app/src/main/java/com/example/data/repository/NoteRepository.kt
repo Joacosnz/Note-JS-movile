@@ -96,6 +96,13 @@ class NoteRepository(
         noteDao.observePendingSyncCount(uid)
     }
 
+    /**
+     * Flujo reactivo de todas las notas locales no eliminadas (persistencia offline Room).
+     */
+    val allNotes: Flow<List<NoteEntity>> = noteDao.getAllNotes()
+
+    fun observeNoteById(id: Long): Flow<NoteEntity?> = noteDao.observeNoteById(id)
+
     val folders: Flow<List<FolderEntity>> = folderDao.getAllFolders()
     val signatures: Flow<List<SignatureEntity>> = signatureDao.getAllSignatures()
 

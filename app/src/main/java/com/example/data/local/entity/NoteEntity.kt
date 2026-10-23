@@ -67,3 +67,9 @@ data class NoteEntity(
     }
 }
 
+/**
+ * Typealias to allow referencing 'Note' objects directly as Room entities
+ * for offline persistence of titles, content, and metadata.
+ */
+typealias Note = NoteEntity
+

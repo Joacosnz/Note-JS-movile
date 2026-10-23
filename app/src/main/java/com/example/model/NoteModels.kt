@@ -180,3 +180,8 @@ object NoteColors {
 
     fun isCustomColor(id: Int): Boolean = id > 0
 }
+
+/**
+ * Typealias for 'Note' referencing the Room persistence entity [com.example.data.local.entity.NoteEntity].
+ */
+typealias Note = com.example.data.local.entity.NoteEntity

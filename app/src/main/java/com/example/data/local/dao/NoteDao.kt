@@ -85,14 +85,60 @@ interface NoteDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNote(note: NoteEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(note: NoteEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(notes: List<NoteEntity>)
+
     @Update
     suspend fun updateNote(note: NoteEntity)
+
+    @Update
+    suspend fun update(note: NoteEntity)
 
     @Delete
     suspend fun deleteNote(note: NoteEntity)
 
+    @Delete
+    suspend fun delete(note: NoteEntity)
+
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteNoteById(id: Long)
+
+    @Query("DELETE FROM notes WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("SELECT * FROM notes WHERE pendingDelete = 0 ORDER BY updatedAt DESC")
+    fun getAllNotes(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
+    fun observeNoteById(id: Long): Flow<NoteEntity?>
+
+    @Query("""
+        UPDATE notes
+        SET title = :title,
+            content = :content,
+            updatedAt = :updatedAt,
+            lastModifiedLocal = :updatedAt,
+            isSynced = 0
+        WHERE id = :id
+    """)
+    suspend fun updateTitleAndContent(
+        id: Long,
+        title: String,
+        content: String,
+        updatedAt: Long = System.currentTimeMillis()
+    )
+
+    @Query("""
+        SELECT * FROM notes
+        WHERE (title LIKE '%' || :query || '%' OR content LIKE '%' || :query || '%')
+          AND pendingDelete = 0
+          AND isTrashed = 0
+        ORDER BY updatedAt DESC
+    """)
+    fun searchByTitleOrContent(query: String): Flow<List<NoteEntity>>
 
     @Query("UPDATE notes SET isTrashed = 1, isPinned = 0, isSynced = 0, updatedAt = :timestamp, lastModifiedLocal = :timestamp WHERE id IN (:ids)")
     suspend fun moveToTrashBatch(ids: List<Long>, timestamp: Long = System.currentTimeMillis())
