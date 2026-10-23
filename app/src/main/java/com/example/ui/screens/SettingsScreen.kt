@@ -176,9 +176,6 @@ fun SettingsScreen(
                 if (account != null) {
                     isDriveConnected = true
                     DriveBackupWorker.schedule(context)
-                    val fallbackUid = account.id?.takeIf { it.isNotBlank() }
-                        ?: account.email?.takeIf { it.isNotBlank() }
-                        ?: "google_user"
 
                     account.idToken?.let { idToken ->
                         coroutineScope.launch {
@@ -186,20 +183,23 @@ fun SettingsScreen(
                             if (uid != null) {
                                 isFirebaseConnected = true
                                 viewModel.repository.startListeningToCloud(uid)
+                                Toast.makeText(
+                                    context,
+                                    "Sesión iniciada correctamente (Respaldo y Sincronización)",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             } else {
-                                viewModel.repository.startListeningToCloud(fallbackUid)
+                                Toast.makeText(
+                                    context,
+                                    "Error al autenticar con Firebase Cloud",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
-                            Toast.makeText(
-                                context,
-                                "Sesión iniciada correctamente (Respaldo y Sincronización)",
-                                Toast.LENGTH_SHORT
-                            ).show()
                         }
                     } ?: run {
-                        viewModel.repository.startListeningToCloud(fallbackUid)
                         Toast.makeText(
                             context,
-                            "Sesión iniciada correctamente (Respaldo y Sincronización)",
+                            "Sesión iniciada en Drive (token de Firebase no disponible)",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -1505,9 +1505,13 @@ fun SettingsScreen(
                                     driveService = driveService,
                                     dbName = DriveBackupWorker.DB_NAME
                                 )
-                                isRestoringBackup = false
                                 when (result) {
                                     is RestoreResult.Success -> {
+                                        val firebaseUid = authManager.currentUser?.uid
+                                        if (firebaseUid != null) {
+                                            viewModel.repository.pullRemoteNotesSuspending(firebaseUid)
+                                        }
+                                        isRestoringBackup = false
                                         showRestoreDialog = false
                                         Toast.makeText(
                                             context,
@@ -1517,18 +1521,55 @@ fun SettingsScreen(
                                         context.triggerRestart()
                                     }
                                     is RestoreResult.NotFound -> {
-                                        showRestoreDialog = false
-                                        Toast.makeText(
-                                            context,
-                                            "No se encontró ninguna copia de seguridad en Note JS Cloud.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                        val firebaseUid = authManager.currentUser?.uid
+                                        if (firebaseUid != null) {
+                                            val pulledCount = viewModel.repository.pullRemoteNotesSuspending(firebaseUid)
+                                            isRestoringBackup = false
+                                            showRestoreDialog = false
+                                            if (pulledCount > 0) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Se sincronizaron $pulledCount notas desde Note JS Cloud.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "No se encontró ninguna copia ni notas remotas en Note JS Cloud.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        } else {
+                                            isRestoringBackup = false
+                                            showRestoreDialog = false
+                                            Toast.makeText(
+                                                context,
+                                                "No se encontró ninguna copia de seguridad en Note JS Cloud.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
                                     }
                                     is RestoreResult.AuthRequired -> {
+                                        isRestoringBackup = false
                                         showRestoreDialog = false
                                         authLauncher.launch(result.intent)
                                     }
                                     is RestoreResult.Error -> {
+                                        val firebaseUid = authManager.currentUser?.uid
+                                        if (firebaseUid != null) {
+                                            val pulledCount = viewModel.repository.pullRemoteNotesSuspending(firebaseUid)
+                                            isRestoringBackup = false
+                                            showRestoreDialog = false
+                                            if (pulledCount > 0) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Se sincronizaron $pulledCount notas desde Note JS Cloud.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                return@launch
+                                            }
+                                        }
+                                        isRestoringBackup = false
                                         showRestoreDialog = false
                                         Toast.makeText(
                                             context,

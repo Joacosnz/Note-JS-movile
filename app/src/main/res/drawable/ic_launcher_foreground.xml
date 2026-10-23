@@ -5,30 +5,30 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Fondo de hoja de papel (cambia entre claro #F5F5F7 y oscuro #1C1C1E) -->
+    <!-- Fondo de hoja de papel clara (#F5F5F7) -->
     <path
-        android:fillColor="@color/ic_launcher_paper_bg"
+        android:fillColor="#F5F5F7"
         android:pathData="M0,39.5h108v68.5h-108z" />
 
-    <!-- Franja superior amarilla de notas -->
+    <!-- Franja superior amarilla de notas (#FDD62B) -->
     <path
-        android:fillColor="@color/ic_launcher_header_yellow"
+        android:fillColor="#FDD62B"
         android:pathData="M0,0h108v39.5h-108z" />
 
     <!-- Línea divisoria bajo el encabezado amarillo -->
     <path
-        android:strokeColor="@color/ic_launcher_header_border"
+        android:strokeColor="#D8B21B"
         android:strokeWidth="1.0"
         android:pathData="M0,39.5h108" />
 
     <!-- Fila de puntos de perforación -->
     <path
-        android:fillColor="@color/ic_launcher_dots"
+        android:fillColor="#8E8E93"
         android:pathData="M15.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M18.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M21.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M24.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M27.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M30.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M33.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M36.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M39.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M42.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M45.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M48.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M51.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M54.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M57.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M60.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M63.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M66.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M69.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M72.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M75.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M78.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M81.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M84.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M87.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z M90.0,43.2a0.75,0.75 0 1,0 1.5,0a0.75,0.75 0 1,0 -1.5,0z" />
 
     <!-- Renglones horizontales de la nota -->
     <path
-        android:strokeColor="@color/ic_launcher_lines"
+        android:strokeColor="#C5C5C7"
         android:strokeWidth="0.95"
         android:pathData="M0,54.5h108 M0,66.5h108 M0,78.5h108" />
 </vector>

@@ -14,6 +14,7 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -21,8 +22,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
-import java.security.SecureRandom
-import java.util.Base64
 
 sealed interface AuthResult {
     data class Success(val user: FirebaseUser) : AuthResult
@@ -31,13 +30,19 @@ sealed interface AuthResult {
 }
 
 class AuthManager(private val context: Context) {
-    private val credentialManager = CredentialManager.create(context)
-    private val firebaseAuth: FirebaseAuth? = try {
-        FirebaseAuth.getInstance()
-    } catch (e: Exception) {
-        Log.w("AuthManager", "FirebaseAuth not available", e)
-        null
-    }
+    private val appContext = context.applicationContext
+    private val credentialManager = CredentialManager.create(appContext)
+
+    private val firebaseAuth: FirebaseAuth?
+        get() = try {
+            if (FirebaseApp.getApps(appContext).isEmpty()) {
+                FirebaseApp.initializeApp(appContext)
+            }
+            FirebaseAuth.getInstance()
+        } catch (e: Exception) {
+            Log.w("AuthManager", "FirebaseAuth not available", e)
+            null
+        }
 
     val currentUser: FirebaseUser?
         get() = firebaseAuth?.currentUser
@@ -67,7 +72,7 @@ class AuthManager(private val context: Context) {
      */
     suspend fun signInWithCredentialManager(activity: Activity): AuthResult {
         val webClientId = try {
-            context.getString(R.string.default_web_client_id)
+            appContext.getString(R.string.default_web_client_id)
         } catch (_: Exception) {
             ""
         }
@@ -77,8 +82,7 @@ class AuthManager(private val context: Context) {
         }
 
         return try {
-            val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(serverClientId = webClientId)
-                .setNonce(generateSecureNonce())
+            val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(webClientId)
                 .build()
 
             val primaryRequest = GetCredentialRequest.Builder()
@@ -93,7 +97,6 @@ class AuthManager(private val context: Context) {
             } catch (e: GetCredentialCancellationException) {
                 throw e
             } catch (_: GetCredentialException) {
-                // Fallback a GetGoogleIdOption para máxima compatibilidad en dispositivos
                 val googleIdOption = GetGoogleIdOption.Builder()
                     .setFilterByAuthorizedAccounts(false)
                     .setServerClientId(webClientId)
@@ -173,11 +176,5 @@ class AuthManager(private val context: Context) {
         } catch (e: Exception) {
             Log.w("AuthManager", "Error signing out", e)
         }
-    }
-
-    private fun generateSecureNonce(): String {
-        val randomBytes = ByteArray(32)
-        SecureRandom().nextBytes(randomBytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes)
     }
 }

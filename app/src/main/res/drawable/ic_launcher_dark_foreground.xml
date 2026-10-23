@@ -10,7 +10,7 @@
         android:fillColor="#1C1C1E"
         android:pathData="M0,39.5h108v68.5h-108z" />
 
-    <!-- Franja superior amarilla de notas -->
+    <!-- Franja superior amarilla de notas (#FDD62B) -->
     <path
         android:fillColor="#FDD62B"
         android:pathData="M0,0h108v39.5h-108z" />

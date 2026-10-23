@@ -30,7 +30,7 @@ class ToggleChecklistAction : ActionCallback {
                 noteDao = database.noteDao(),
                 folderDao = database.folderDao(),
                 signatureDao = database.signatureDao(),
-                firestoreManager = FirestoreManager(),
+                firestoreManager = FirestoreManager(context.applicationContext),
                 firebaseStorageManager = FirebaseStorageManager(),
                 context = context.applicationContext
             )

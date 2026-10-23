@@ -4,11 +4,79 @@ import com.example.data.local.entity.NoteEntity
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
 import com.example.util.NoteBlockSerializer
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldValue
 import java.util.UUID
 
 /**
  * Mappers de extensión para sincronización con Firebase Firestore.
  */
+
+fun NoteEntity.toFirestoreCreateMap(): Map<String, Any> {
+    val ensuredUuid = remoteUuid.ifBlank { UUID.randomUUID().toString() }
+    val map = mutableMapOf<String, Any?>(
+        "remoteUuid" to ensuredUuid,
+        "userId" to userId,
+        "title" to title.take(5000),
+        "content" to content.take(500000),
+        "noteType" to noteType.ifBlank { "TEXT" }.take(50),
+        "colorIndex" to colorIndex,
+        "paperStyle" to paperStyle.ifBlank { "BLANK" }.take(50),
+        "isPinned" to isPinned,
+        "isArchived" to isArchived,
+        "isTrashed" to isTrashed,
+        "isLocked" to isLocked,
+        "lockPin" to lockPin.take(128),
+        "tags" to tags.take(5000),
+        "folder" to folder.take(200),
+        "checklistData" to checklistData.take(200000),
+        "drawingData" to drawingData.take(500000),
+        "mathEvaluations" to mathEvaluations.take(100000),
+        "pdfPath" to pdfPath.take(2000),
+        "pdfAnnotationData" to pdfAnnotationData.take(500000),
+        "reminderTimestamp" to reminderTimestamp,
+        "isReminderDone" to isReminderDone,
+        "lastModifiedLocal" to lastModifiedLocal.coerceAtLeast(0L),
+        "remoteUrl" to remoteUrl.take(2000),
+        "remoteImageUrl" to remoteImageUrl.take(2000),
+        "attachmentsJson" to attachmentsJson.ifBlank { "[]" }.take(200000),
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+    @Suppress("UNCHECKED_CAST")
+    return map.filterValues { it != null } as Map<String, Any>
+}
+
+fun NoteEntity.toFirestoreUpdateMap(): Map<String, Any> {
+    val map = mutableMapOf<String, Any?>(
+        "title" to title.take(5000),
+        "content" to content.take(500000),
+        "noteType" to noteType.ifBlank { "TEXT" }.take(50),
+        "colorIndex" to colorIndex,
+        "paperStyle" to paperStyle.ifBlank { "BLANK" }.take(50),
+        "isPinned" to isPinned,
+        "isArchived" to isArchived,
+        "isTrashed" to isTrashed,
+        "isLocked" to isLocked,
+        "lockPin" to lockPin.take(128),
+        "tags" to tags.take(5000),
+        "folder" to folder.take(200),
+        "checklistData" to checklistData.take(200000),
+        "drawingData" to drawingData.take(500000),
+        "mathEvaluations" to mathEvaluations.take(100000),
+        "pdfPath" to pdfPath.take(2000),
+        "pdfAnnotationData" to pdfAnnotationData.take(500000),
+        "reminderTimestamp" to reminderTimestamp,
+        "isReminderDone" to isReminderDone,
+        "lastModifiedLocal" to lastModifiedLocal.coerceAtLeast(0L),
+        "remoteUrl" to remoteUrl.take(2000),
+        "remoteImageUrl" to remoteImageUrl.take(2000),
+        "attachmentsJson" to attachmentsJson.ifBlank { "[]" }.take(200000),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+    @Suppress("UNCHECKED_CAST")
+    return map.filterValues { it != null } as Map<String, Any>
+}
 
 fun NoteEntity.toFirestoreMap(): Map<String, Any?> {
     val blocks = NoteBlockSerializer.deserialize(content)
@@ -154,10 +222,17 @@ fun Map<String, Any?>.toNoteEntity(fallbackUserId: String = NoteEntity.LOCAL_ANO
     val pdfAnnotationData = this["pdfAnnotationData"] as? String ?: ""
     val reminderTimestamp = (this["reminderTimestamp"] as? Number)?.toLong()
     val isReminderDone = this["isReminderDone"] as? Boolean ?: false
-    val createdAt = (this["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
-    val updatedAt = (this["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
-    val lastModifiedLocal = (this["lastModifiedLocal"] as? Number)?.toLong() ?: updatedAt
-    val updatedAtServer = (this["updatedAtServer"] as? Number)?.toLong() ?: updatedAt
+
+    val createdAt = (this["createdAt"] as? Timestamp)?.toDate()?.time
+        ?: (this["createdAt"] as? Number)?.toLong()
+        ?: System.currentTimeMillis()
+    val serverUpdatedAt = (this["updatedAt"] as? Timestamp)?.toDate()?.time
+        ?: (this["updatedAtServer"] as? Number)?.toLong()
+        ?: (this["updatedAt"] as? Number)?.toLong()
+        ?: System.currentTimeMillis()
+    val lastModifiedLocal = (this["lastModifiedLocal"] as? Number)?.toLong() ?: serverUpdatedAt
+    val updatedAt = maxOf(lastModifiedLocal, serverUpdatedAt)
+
     val remoteUrl = this["remoteUrl"] as? String ?: ""
     val remoteImageUrl = this["remoteImageUrl"] as? String ?: ""
     val attachmentsJson = this["attachmentsJson"] as? String ?: "[]"
@@ -168,7 +243,7 @@ fun Map<String, Any?>.toNoteEntity(fallbackUserId: String = NoteEntity.LOCAL_ANO
         isSynced = true,
         pendingDelete = false,
         lastModifiedLocal = lastModifiedLocal,
-        updatedAtServer = updatedAtServer,
+        updatedAtServer = serverUpdatedAt,
         title = title,
         content = rawContent,
         noteType = noteType,
@@ -195,4 +270,3 @@ fun Map<String, Any?>.toNoteEntity(fallbackUserId: String = NoteEntity.LOCAL_ANO
         attachmentsJson = attachmentsJson
     )
 }
-

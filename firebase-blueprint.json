@@ -1,0 +1,157 @@
+{
+  "entities": {
+    "Note": {
+      "title": "Note",
+      "description": "A user-owned note synchronized across devices in real time. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "remoteUuid": {
+          "type": "string",
+          "description": "Unique identifier of the note matching the Firestore document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the note owner."
+        },
+        "title": {
+          "type": "string",
+          "description": "Note title."
+        },
+        "content": {
+          "type": "string",
+          "description": "Serialized content blocks of the note."
+        },
+        "noteType": {
+          "type": "string",
+          "description": "Type of note (TEXT, CHECKLIST, DRAWING, MATH)."
+        },
+        "colorIndex": {
+          "type": "integer",
+          "description": "Color palette index for the note card."
+        },
+        "paperStyle": {
+          "type": "string",
+          "description": "Paper background style (BLANK, RULED, GRID, DOTS)."
+        },
+        "isPinned": {
+          "type": "boolean",
+          "description": "Whether the note is pinned."
+        },
+        "isArchived": {
+          "type": "boolean",
+          "description": "Whether the note is archived."
+        },
+        "isTrashed": {
+          "type": "boolean",
+          "description": "Whether the note is in the trash."
+        },
+        "isLocked": {
+          "type": "boolean",
+          "description": "Whether the note is protected by lock/biometrics."
+        },
+        "lockPin": {
+          "type": "string",
+          "description": "Optional PIN for locked note."
+        },
+        "tags": {
+          "type": "string",
+          "description": "Comma-separated tags."
+        },
+        "folder": {
+          "type": "string",
+          "description": "Folder name."
+        },
+        "checklistData": {
+          "type": "string",
+          "description": "Serialized checklist items."
+        },
+        "drawingData": {
+          "type": "string",
+          "description": "Serialized drawing stroke data."
+        },
+        "mathEvaluations": {
+          "type": "string",
+          "description": "Serialized math evaluations."
+        },
+        "pdfPath": {
+          "type": "string",
+          "description": "Local PDF path metadata."
+        },
+        "pdfAnnotationData": {
+          "type": "string",
+          "description": "Serialized PDF annotations."
+        },
+        "reminderTimestamp": {
+          "type": "integer",
+          "description": "Optional epoch milliseconds for scheduled reminder."
+        },
+        "isReminderDone": {
+          "type": "boolean",
+          "description": "Whether the scheduled reminder has completed."
+        },
+        "lastModifiedLocal": {
+          "type": "integer",
+          "description": "Client-side epoch milliseconds of last local edit."
+        },
+        "remoteUrl": {
+          "type": "string",
+          "description": "Remote storage URL for attached PDF."
+        },
+        "remoteImageUrl": {
+          "type": "string",
+          "description": "Remote storage URL for attached main image."
+        },
+        "attachmentsJson": {
+          "type": "string",
+          "description": "Serialized JSON array of media attachment metadata."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "remoteUuid",
+        "userId",
+        "title",
+        "content",
+        "noteType",
+        "colorIndex",
+        "paperStyle",
+        "isPinned",
+        "isArchived",
+        "isTrashed",
+        "isLocked",
+        "lockPin",
+        "tags",
+        "folder",
+        "checklistData",
+        "drawingData",
+        "mathEvaluations",
+        "pdfPath",
+        "pdfAnnotationData",
+        "isReminderDone",
+        "lastModifiedLocal",
+        "remoteUrl",
+        "remoteImageUrl",
+        "attachmentsJson",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/notes/{noteId}": {
+      "schema": {
+        "$ref": "#/entities/Note"
+      },
+      "description": "User-isolated subcollection storing synchronized notes for each authenticated user."
+    }
+  }
+}

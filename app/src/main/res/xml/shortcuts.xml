@@ -9,7 +9,7 @@
         android:shortcutLongLabel="@string/shortcut_new_note_long">
         <intent
             android:action="com.example.ACTION_QUICK_NOTE"
-            android:targetPackage="com.example"
+            android:targetPackage="com.aistudio.NotasJS.kxmpzq"
             android:targetClass="com.example.MainActivity" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
@@ -22,7 +22,7 @@
         android:shortcutLongLabel="@string/shortcut_voice_note_long">
         <intent
             android:action="com.example.ACTION_QUICK_VOICE"
-            android:targetPackage="com.example"
+            android:targetPackage="com.aistudio.NotasJS.kxmpzq"
             android:targetClass="com.example.MainActivity" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
@@ -35,7 +35,7 @@
         android:shortcutLongLabel="@string/shortcut_scan_document_long">
         <intent
             android:action="com.example.ACTION_QUICK_SCAN"
-            android:targetPackage="com.example"
+            android:targetPackage="com.aistudio.NotasJS.kxmpzq"
             android:targetClass="com.example.MainActivity" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>

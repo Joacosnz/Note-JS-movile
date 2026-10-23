@@ -188,7 +188,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val _unlockedNoteIds = MutableStateFlow<Set<Long>>(emptySet())
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     private val _pendingUndoNote = MutableStateFlow<NoteEntity?>(null)
-    val firestoreManager = FirestoreManager()
+    val firestoreManager = FirestoreManager(application.applicationContext)
     val syncState: StateFlow<SyncState> = firestoreManager.syncState
     val authManager = AuthManager(application)
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUserFlow.stateIn(
@@ -242,10 +242,14 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     } catch (_: Exception) {
                         null
                     }
-                    val fallbackUid = driveAccount?.id?.takeIf { it.isNotBlank() }
-                        ?: driveAccount?.email?.takeIf { it.isNotBlank() }
-                    if (fallbackUid != null) {
-                        repository.startListeningToCloud(fallbackUid)
+                    val idToken = driveAccount?.idToken
+                    if (!idToken.isNullOrBlank()) {
+                        val fbUid = authManager.signInWithGoogleIdToken(idToken)
+                        if (!fbUid.isNullOrBlank()) {
+                            repository.startListeningToCloud(fbUid)
+                        } else {
+                            repository.stopListeningToCloud(resetToAnonymous = true)
+                        }
                     } else {
                         repository.stopListeningToCloud(resetToAnonymous = true)
                     }
@@ -1636,36 +1640,38 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resolveEffectiveCloudUserId(): String? {
-        val fbUid = currentUser.value?.uid ?: try {
-            FirebaseAuth.getInstance().currentUser?.uid
-        } catch (_: Exception) {
-            null
-        }
+        val fbUid = currentUser.value?.uid ?: authManager.currentUser?.uid
         if (!fbUid.isNullOrBlank()) return fbUid
-
-        val driveAccount = try {
-            GoogleDriveManager(getApplication()).getSignedInAccount()
-        } catch (_: Exception) {
-            null
-        }
-        return driveAccount?.id?.takeIf { it.isNotBlank() }
-            ?: driveAccount?.email?.takeIf { it.isNotBlank() }
+        return null
     }
 
     /**
-     * Fuerza el drenado inmediato de la cola de sincronización offline (notas con isSynced=false o pendingDelete=true).
+     * Fuerza el drenado inmediato de la cola de sincronización offline y la descarga de notas remotas desde Firestore.
      */
     fun syncPendingNotesNow() {
-        val uid = resolveEffectiveCloudUserId()
-        if (uid != null) {
-            viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var uid = resolveEffectiveCloudUserId()
+            if (uid == null) {
+                val driveAccount = try {
+                    GoogleDriveManager(getApplication()).getSignedInAccount()
+                } catch (_: Exception) {
+                    null
+                }
+                val idToken = driveAccount?.idToken
+                if (!idToken.isNullOrBlank()) {
+                    uid = authManager.signInWithGoogleIdToken(idToken)
+                }
+            }
+
+            if (uid != null) {
                 firestoreManager.setSyncState(SyncState.SYNCING)
-                repository.syncPendingNotesSuspending(uid)
+                repository.syncPendingNotesSuspending(uid, forcePushAll = true)
+                repository.startListeningToCloud(uid)
                 firestoreManager.setSyncState(SyncState.SYNCED)
                 _snackbarMessage.value = "Sincronización en la nube completada"
+            } else {
+                _snackbarMessage.value = "Inicia sesión con Google para sincronizar tus notas en la nube"
             }
-        } else {
-            _snackbarMessage.value = "Inicia sesión para sincronizar tus notas en la nube"
         }
     }
 
@@ -1674,7 +1680,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Sincroniza manualmente todas las notas y archivos PDF locales con Google Drive y Note JS Cloud.
+     * Sincroniza manualmente todas las notas y archivos PDF locales con Google Drive y Note JS Cloud (Firestore).
      */
     fun syncNotesAndPdfsToDrive(
         onAuthRequired: (Intent) -> Unit = {},
@@ -1704,6 +1710,15 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 percent = 0.05f
             )
 
+            var activeUid = effectiveUid
+            if (activeUid == null && account?.idToken != null) {
+                activeUid = authManager.signInWithGoogleIdToken(account.idToken!!)
+            }
+
+            if (activeUid != null) {
+                repository.syncPendingNotesSuspending(activeUid, forcePushAll = true)
+            }
+
             val notes = repository.getAllNotes()
             val pdfFiles = DriveSyncManager.getLocalPdfFiles(context)
 
@@ -1725,8 +1740,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     _driveSyncProgress.value = progress
                 }
 
-                if (result.success) {
-                    repository.syncPendingNotesSuspending(effectiveUid)
+                if (result.success && activeUid != null) {
+                    repository.syncPendingNotesSuspending(activeUid, forcePushAll = true)
                     firestoreManager.setSyncState(SyncState.SYNCED)
                     _lastDriveSyncTime.value = System.currentTimeMillis()
                 }
@@ -1735,7 +1750,6 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     onCompleted(result)
                 }
             } catch (e: Exception) {
-                // Fallback a Note JS Cloud Vault si se requiere consentimiento adicional o hay restricción de API
                 val fallbackResult = DriveSyncManager.syncNotesAndPdfs(
                     context = context,
                     driveService = null,
@@ -1744,8 +1758,8 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 ) { progress ->
                     _driveSyncProgress.value = progress
                 }
-                if (fallbackResult.success) {
-                    repository.syncPendingNotesSuspending(effectiveUid)
+                if (fallbackResult.success && activeUid != null) {
+                    repository.syncPendingNotesSuspending(activeUid, forcePushAll = true)
                     firestoreManager.setSyncState(SyncState.SYNCED)
                     _lastDriveSyncTime.value = System.currentTimeMillis()
                 }

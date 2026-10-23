@@ -37,6 +37,7 @@ import com.example.ui.screens.PdfLibraryScreen
 import com.example.ui.screens.PdfViewerScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
+import com.example.util.LauncherIconManager
 import com.example.util.ThemeMode
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
@@ -81,6 +82,26 @@ class MainActivity : FragmentActivity() {
                 }
             )
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        LauncherIconManager.syncLauncherIcon(this, newConfig = newConfig)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        LauncherIconManager.onMainActivityResumed(this, resources.configuration)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        LauncherIconManager.onMainActivityPausedOrStopped(this, resources.configuration)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        LauncherIconManager.onMainActivityPausedOrStopped(this, resources.configuration)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -218,6 +239,9 @@ fun NotesApp(
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
     val isSystemDark = isSystemInDarkTheme()
+    LaunchedEffect(isSystemDark) {
+        LauncherIconManager.syncLauncherIcon(context, isDarkOverride = isSystemDark)
+    }
     val isDarkTheme = when (uiState.themeMode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true

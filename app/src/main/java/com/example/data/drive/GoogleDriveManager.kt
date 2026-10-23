@@ -7,34 +7,33 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.Scope
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
-import java.util.Collections
 
 /**
- * Gestor responsable de administrar la autenticación y la conexión
- * con la API de Note JS Cloud utilizando el ámbito exclusivo de la app (appDataFolder).
+ * Gestor responsable de administrar la autenticación con Google y la conexión
+ * con Note JS Cloud.
  */
 class GoogleDriveManager(private val context: Context) {
 
     private val applicationContext: Context = context.applicationContext
 
     /**
-     * Devuelve las opciones de Google Sign-In configuradas con los scopes DRIVE_FILE, DRIVE_APPDATA y el ID Token para Firebase.
+     * Devuelve las opciones de Google Sign-In configuradas con el ID Token para Firebase Auth.
+     * No exige scopes restringidos de Drive en el inicio de sesión principal para evitar bloqueos OAuth.
      */
     fun getGoogleSignInOptions(): GoogleSignInOptions {
         val webClientId = try {
-            context.getString(R.string.default_web_client_id)
+            applicationContext.getString(R.string.default_web_client_id)
         } catch (_: Exception) {
             ""
         }
         val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
+            .requestProfile()
 
         if (webClientId.isNotBlank()) {
             try {
@@ -53,19 +52,11 @@ class GoogleDriveManager(private val context: Context) {
     }
 
     /**
-     * Verifica si existe una cuenta previamente autenticada con los permisos solicitados.
+     * Verifica si existe una cuenta previamente autenticada en el dispositivo.
      */
     fun getSignedInAccount(): GoogleSignInAccount? {
         return try {
-            val account = GoogleSignIn.getLastSignedInAccount(applicationContext)
-            if (account != null && (
-                    GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_FILE)) ||
-                    GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_APPDATA))
-                )) {
-                account
-            } else {
-                null
-            }
+            GoogleSignIn.getLastSignedInAccount(applicationContext)
         } catch (_: Exception) {
             null
         }
@@ -73,9 +64,6 @@ class GoogleDriveManager(private val context: Context) {
 
     /**
      * Construye y retorna la instancia del cliente Drive de Note JS configurado con las credenciales de la cuenta.
-     *
-     * @param account Cuenta de usuario obtenida tras la autenticación exitosa.
-     * @return Cliente [Drive] listo para realizar peticiones a la API REST.
      */
     fun getDriveService(account: GoogleSignInAccount): Drive {
         val accountObj = account.account ?: account.email?.let { Account(it, "com.google") }
