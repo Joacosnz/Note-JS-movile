@@ -308,35 +308,54 @@ class NoteRepository(
      * Sincroniza todas las operaciones pendientes en la cola offline (borrados diferidos y ediciones/creaciones).
      */
     fun syncPendingNotes(userId: String? = currentUserId) {
-        val targetUid = userId?.takeIf { it.isNotBlank() && it != NoteEntity.LOCAL_ANONYMOUS_USER_ID } ?: return
+        val targetUid = userId?.takeIf { it.isNotBlank() } ?: _activeUserId.value
         syncScope.launch {
-            try {
-                // 1. Drenar eliminaciones pendientes (pendingDelete = 1)
-                val pendingDeletes = noteDao.getPendingDeletes(targetUid)
-                for (noteToDelete in pendingDeletes) {
-                    if (noteToDelete.remoteUuid.isNotBlank()) {
-                        val deletedRemotely = firestoreManager.deleteNote(targetUid, noteToDelete.remoteUuid)
-                        if (deletedRemotely) {
-                            noteDao.deleteNoteById(noteToDelete.id)
-                        }
-                    } else {
-                        noteDao.deleteNoteById(noteToDelete.id)
-                    }
-                }
-
-                // 2. Drenar creaciones y ediciones pendientes (isSynced = 0, pendingDelete = 0)
-                val unsyncedNotes = noteDao.getUnsyncedUpserts(targetUid)
-                for (dirtyNote in unsyncedNotes) {
-                    pushSingleNoteInternal(targetUid, dirtyNote)
-                }
-            } catch (e: Exception) {
-                Log.e("NoteRepository", "Error drenando cola offline", e)
-            }
+            syncPendingNotesSuspending(targetUid)
         }
     }
 
+    suspend fun syncPendingNotesSuspending(userId: String? = currentUserId) {
+        val targetUid = userId?.takeIf { it.isNotBlank() } ?: _activeUserId.value
+        try {
+            if (targetUid != NoteEntity.LOCAL_ANONYMOUS_USER_ID) {
+                noteDao.claimAnonymousNotes(targetUid)
+            }
+
+            // 1. Drenar eliminaciones pendientes (pendingDelete = 1)
+            val pendingDeletes = noteDao.getPendingDeletes(targetUid)
+            for (noteToDelete in pendingDeletes) {
+                if (noteToDelete.remoteUuid.isNotBlank() && targetUid != NoteEntity.LOCAL_ANONYMOUS_USER_ID) {
+                    val deletedRemotely = firestoreManager.deleteNote(targetUid, noteToDelete.remoteUuid, context)
+                    if (deletedRemotely) {
+                        noteDao.deleteNoteById(noteToDelete.id)
+                    }
+                } else {
+                    noteDao.deleteNoteById(noteToDelete.id)
+                }
+            }
+
+            // 2. Drenar creaciones y ediciones pendientes (isSynced = 0, pendingDelete = 0)
+            val unsyncedNotes = noteDao.getUnsyncedUpserts(targetUid)
+            for (dirtyNote in unsyncedNotes) {
+                pushSingleNoteInternal(targetUid, dirtyNote)
+            }
+
+            noteDao.markAllNotesSyncedForUser(targetUid)
+        } catch (e: Exception) {
+            Log.e("NoteRepository", "Error drenando cola offline", e)
+        }
+    }
+
+    suspend fun markAllCurrentUserNotesSynced(userId: String? = currentUserId) {
+        val targetUid = userId?.takeIf { it.isNotBlank() } ?: _activeUserId.value
+        if (targetUid != NoteEntity.LOCAL_ANONYMOUS_USER_ID) {
+            noteDao.claimAnonymousNotes(targetUid)
+        }
+        noteDao.markAllNotesSyncedForUser(targetUid)
+    }
+
     private fun syncToCloud(note: NoteEntity) {
-        val userId = currentUserId ?: return
+        val userId = currentUserId ?: _activeUserId.value
         if (userId == NoteEntity.LOCAL_ANONYMOUS_USER_ID) return
 
         syncScope.launch {
@@ -345,16 +364,20 @@ class NoteRepository(
     }
 
     private suspend fun pushSingleNoteInternal(userId: String, note: NoteEntity) {
-        if (!note.isValidForSync()) return
+        if (!note.isValidForSync()) {
+            noteDao.markNoteSyncedById(note.id)
+            return
+        }
 
         if (!note.syncEnabled) {
-            if (note.remoteUuid.isNotEmpty()) {
+            if (note.remoteUuid.isNotEmpty() && userId != NoteEntity.LOCAL_ANONYMOUS_USER_ID) {
                 try {
-                    firestoreManager.deleteNote(userId, note.remoteUuid)
+                    firestoreManager.deleteNote(userId, note.remoteUuid, context)
                 } catch (e: Exception) {
                     Log.e("NoteRepository", "Error deleting disabled-sync note from firestore", e)
                 }
             }
+            noteDao.markNoteSyncedById(note.id)
             return
         }
 
@@ -534,6 +557,7 @@ class NoteRepository(
                     expectedLocalTimestamp = expectedLocalTimestamp,
                     serverTimestamp = serverTs
                 )
+                noteDao.markNoteSyncedById(updatedNote.id, serverTs)
             }
         } catch (e: Exception) {
             Log.e("NoteRepository", "Error in pushSingleNoteInternal", e)

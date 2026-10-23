@@ -82,9 +82,10 @@ fun DriveSyncDialog(
     val lastSyncTime by viewModel.lastDriveSyncTime.collectAsStateWithLifecycle()
     val notesUiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val driveManager = remember { GoogleDriveManager(context) }
-    val isAccountConnected = remember {
-        try {
+    val isAccountConnected = remember(currentUser) {
+        currentUser != null || try {
             driveManager.getSignedInAccount() != null
         } catch (_: Exception) {
             false

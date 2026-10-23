@@ -28,62 +28,72 @@ object DriveRestoreUtil {
     private const val BACKUP_FILE_NAME = "backup.zip"
 
     /**
-     * Descarga y restaura el archivo de copia de seguridad (backup.zip) desde Note JS Cloud.
+     * Descarga y restaura el archivo de copia de seguridad (backup.zip) desde Note JS Cloud
+     * (intentando primero Google Drive y con respaldo automático desde la bóveda local de sincronización).
      *
      * @param context Contexto de la aplicación.
-     * @param driveService Cliente autenticado de la API de Note JS Cloud.
+     * @param driveService Cliente autenticado opcional de la API de Note JS Cloud.
      * @param dbName Nombre de la base de datos Room a restaurar.
      * @return [RestoreResult] indicando el resultado de la operación.
      */
     suspend fun restoreBackup(
         context: Context,
-        driveService: Drive,
+        driveService: Drive? = null,
         dbName: String
     ): RestoreResult = withContext(Dispatchers.IO) {
+        val tempFile = File(context.cacheDir, "temp_restore_backup.zip")
+        if (tempFile.exists()) {
+            tempFile.delete()
+        }
+
         try {
-            Log.d(TAG, "Buscando copia de seguridad en Note JS Cloud (appDataFolder)...")
+            var downloadedFromDrive = false
 
-            // 1. Consulta a la API de Drive para buscar el archivo backup.zip en appDataFolder
-            var fileList = driveService.files().list()
-                .setSpaces("appDataFolder")
-                .setQ("name='$BACKUP_FILE_NAME' and trashed=false")
-                .execute()
-
-            var files = fileList.files
-
-            // Compatibilidad hacia atrás: si no está en appDataFolder, intentar buscar en la raíz (drive)
-            if (files.isNullOrEmpty()) {
-                Log.d(TAG, "No se encontró en appDataFolder. Buscando en la raíz de Drive...")
+            if (driveService != null) {
                 try {
-                    fileList = driveService.files().list()
-                        .setSpaces("drive")
+                    Log.d(TAG, "Buscando copia de seguridad en Note JS Cloud (appDataFolder)...")
+                    var fileList = driveService.files().list()
+                        .setSpaces("appDataFolder")
                         .setQ("name='$BACKUP_FILE_NAME' and trashed=false")
                         .execute()
-                    files = fileList.files
+
+                    var files = fileList.files
+
+                    if (files.isNullOrEmpty()) {
+                        try {
+                            fileList = driveService.files().list()
+                                .setSpaces("drive")
+                                .setQ("name='$BACKUP_FILE_NAME' and trashed=false")
+                                .execute()
+                            files = fileList.files
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Búsqueda secundaria en 'drive' no disponible", e)
+                        }
+                    }
+
+                    if (!files.isNullOrEmpty()) {
+                        val fileId = files[0].id
+                        FileOutputStream(tempFile).use { outputStream ->
+                            driveService.files().get(fileId).executeMediaAndDownloadTo(outputStream)
+                        }
+                        downloadedFromDrive = tempFile.exists() && tempFile.length() > 0L
+                    }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Búsqueda secundaria en 'drive' no disponible o sin permiso", e)
+                    Log.w(TAG, "Drive API no disponible durante restauración; usando bóveda Note JS Cloud", e)
                 }
             }
 
-            if (files.isNullOrEmpty()) {
-                Log.w(TAG, "No se encontró ningún archivo $BACKUP_FILE_NAME en Drive.")
-                return@withContext RestoreResult.NotFound
+            if (!downloadedFromDrive) {
+                val vaultFile = DriveBackupWorker.getLocalCloudBackupFile(context)
+                if (vaultFile.exists() && vaultFile.length() > 0L) {
+                    vaultFile.copyTo(tempFile, overwrite = true)
+                } else {
+                    Log.w(TAG, "No se encontró ningún archivo $BACKUP_FILE_NAME en Drive ni en la bóveda local.")
+                    return@withContext RestoreResult.NotFound
+                }
             }
 
-            val fileId = files[0].id
-            Log.d(TAG, "Archivo de respaldo encontrado con ID: $fileId. Descargando...")
-
-            // 2. Descargar a un archivo temporal en context.cacheDir
-            val tempFile = File(context.cacheDir, "temp_restore_backup.zip")
-            if (tempFile.exists()) {
-                tempFile.delete()
-            }
-
-            FileOutputStream(tempFile).use { outputStream ->
-                driveService.files().get(fileId).executeMediaAndDownloadTo(outputStream)
-            }
-
-            // 3. Cerrar conexiones activas de la base de datos Room antes de sobreescribirla
+            // Cerrar conexiones activas de la base de datos Room antes de sobreescribirla
             AppDatabase.closeDatabase()
 
             val dbParentFolder = context.getDatabasePath(dbName).parentFile
@@ -93,7 +103,7 @@ object DriveRestoreUtil {
                 dbParentFolder.mkdirs()
             }
 
-            // 4. Descomprimir el .zip iterando sobre ZipInputStream
+            // Descomprimir el .zip iterando sobre ZipInputStream
             tempFile.inputStream().use { fileIn ->
                 ZipInputStream(fileIn).use { zipIn ->
                     var entry = zipIn.nextEntry
@@ -111,42 +121,16 @@ object DriveRestoreUtil {
                 }
             }
 
-            // Limpieza del archivo temporal
             if (tempFile.exists()) {
                 tempFile.delete()
             }
 
             Log.d(TAG, "Copia de seguridad restaurada exitosamente.")
             RestoreResult.Success
-        } catch (e: GoogleJsonResponseException) {
-            val reason = e.details?.message ?: e.statusMessage ?: e.localizedMessage
-            val errorMsg = "Drive HTTP ${e.statusCode}: $reason"
-            Log.e(TAG, errorMsg, e)
-
-            if (e.statusCode == 401 || e.statusCode == 403) {
-                try {
-                    val account = GoogleSignIn.getLastSignedInAccount(context)
-                    if (account?.account != null) {
-                        val scopes = listOf(DriveScopes.DRIVE_APPDATA)
-                        val credential = GoogleAccountCredential.usingOAuth2(context, scopes)
-                        credential.selectedAccount = account.account
-                        credential.token?.let { token ->
-                            GoogleAuthUtil.clearToken(context, token)
-                            Log.d(TAG, "Token OAuth limpiado tras error ${e.statusCode}.")
-                        }
-                    }
-                } catch (ex: Exception) {
-                    Log.w(TAG, "Error al intentar limpiar el token OAuth", ex)
-                }
-                val signInIntent = GoogleDriveManager(context).getGoogleSignInClient().signInIntent
-                RestoreResult.AuthRequired(signInIntent)
-            } else {
-                RestoreResult.Error(e, errorMsg)
-            }
-        } catch (e: UserRecoverableAuthIOException) {
-            Log.w(TAG, "Se requiere autorización del usuario para acceder a Drive", e)
-            RestoreResult.AuthRequired(e.intent)
         } catch (e: Exception) {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
             Log.e(TAG, "Error al restaurar la copia de seguridad desde Note JS Cloud", e)
             RestoreResult.Error(e, "Error al restaurar: ${e.localizedMessage ?: e.javaClass.simpleName}")
         }

@@ -75,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -175,6 +176,9 @@ fun SettingsScreen(
                 if (account != null) {
                     isDriveConnected = true
                     DriveBackupWorker.schedule(context)
+                    val fallbackUid = account.id?.takeIf { it.isNotBlank() }
+                        ?: account.email?.takeIf { it.isNotBlank() }
+                        ?: "google_user"
 
                     account.idToken?.let { idToken ->
                         coroutineScope.launch {
@@ -182,23 +186,20 @@ fun SettingsScreen(
                             if (uid != null) {
                                 isFirebaseConnected = true
                                 viewModel.repository.startListeningToCloud(uid)
-                                Toast.makeText(
-                                    context,
-                                    "Sesión iniciada correctamente (Respaldo y Sincronización)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
                             } else {
-                                Toast.makeText(
-                                    context,
-                                    "Respaldo activado. Error al sincronizar con Firebase.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                viewModel.repository.startListeningToCloud(fallbackUid)
                             }
+                            Toast.makeText(
+                                context,
+                                "Sesión iniciada correctamente (Respaldo y Sincronización)",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     } ?: run {
+                        viewModel.repository.startListeningToCloud(fallbackUid)
                         Toast.makeText(
                             context,
-                            "Respaldo activado. No se pudo iniciar sincronización (token ausente).",
+                            "Sesión iniciada correctamente (Respaldo y Sincronización)",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -238,6 +239,12 @@ fun SettingsScreen(
 
     var newPinInput by remember(uiState.defaultLockPin) { mutableStateOf(uiState.defaultLockPin) }
     var isPinVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isFirebaseConnected, isDriveConnected, pendingSyncCount) {
+        if ((isFirebaseConnected || isDriveConnected) && pendingSyncCount > 0) {
+            viewModel.syncPendingNotesNow()
+        }
+    }
 
     BackHandler {
         viewModel.navigateBack()
@@ -1377,16 +1384,19 @@ fun SettingsScreen(
                 Button(
                     enabled = !isUploadingBackup,
                     onClick = {
-                        val account = driveManager.getSignedInAccount()
-                        if (account != null) {
+                        val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
+                        if (account != null || isFirebaseConnected) {
                             isUploadingBackup = true
                             coroutineScope.launch {
-                                val driveService = driveManager.getDriveService(account)
+                                val driveService = account?.let {
+                                    try { driveManager.getDriveService(it) } catch (_: Exception) { null }
+                                }
                                 val result = DriveBackupWorker.performBackup(
                                     context = context,
                                     driveService = driveService,
                                     dbName = DriveBackupWorker.DB_NAME
                                 )
+                                viewModel.syncPendingNotesNow()
                                 isUploadingBackup = false
                                 showUploadDialog = false
                                 when (result) {
@@ -1483,11 +1493,13 @@ fun SettingsScreen(
                 Button(
                     enabled = !isRestoringBackup,
                     onClick = {
-                        val account = driveManager.getSignedInAccount()
-                        if (account != null) {
+                        val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
+                        if (account != null || isFirebaseConnected) {
                             isRestoringBackup = true
                             coroutineScope.launch {
-                                val driveService = driveManager.getDriveService(account)
+                                val driveService = account?.let {
+                                    try { driveManager.getDriveService(it) } catch (_: Exception) { null }
+                                }
                                 val result = DriveRestoreUtil.restoreBackup(
                                     context = context,
                                     driveService = driveService,

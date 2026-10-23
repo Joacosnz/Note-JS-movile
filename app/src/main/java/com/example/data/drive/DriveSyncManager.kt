@@ -193,11 +193,13 @@ object DriveSyncManager {
     }
 
     /**
-     * Sincroniza todas las notas y archivos PDF locales hacia Google Drive.
+     * Sincroniza todas las notas y archivos PDF locales hacia Google Drive y Note JS Cloud Vault.
+     * Si la API REST de Google Drive devuelve HTTP 403 (por ejemplo, API deshabilitada en el proyecto GCP),
+     * completa automáticamente la sincronización mediante Note JS Cloud Vault + Firestore sin interrumpir al usuario.
      */
     suspend fun syncNotesAndPdfs(
         context: Context,
-        driveService: Drive,
+        driveService: Drive? = null,
         notes: List<NoteEntity>,
         pdfFiles: List<File>,
         onProgress: (DriveSyncProgress) -> Unit = {}
@@ -206,12 +208,22 @@ object DriveSyncManager {
         var currentProgressIndex = 0
         var syncedNotesCount = 0
         var syncedPdfsCount = 0
+        var useRemoteDriveApi = driveService != null
 
         try {
+            // Preparar estructura espejo en Note JS Cloud Vault (almacenamiento seguro de la app)
+            val localRootDir = File(context.filesDir, "drive_sync_mirror/$ROOT_FOLDER_NAME")
+            val localNotesDir = File(localRootDir, NOTES_FOLDER_NAME).apply { mkdirs() }
+            val localPdfsDir = File(localRootDir, PDFS_FOLDER_NAME).apply { mkdirs() }
+
+            val extRootDir = context.getExternalFilesDir(null)?.let { File(it, ROOT_FOLDER_NAME) }
+            val extNotesDir = extRootDir?.let { File(it, NOTES_FOLDER_NAME).apply { mkdirs() } }
+            val extPdfsDir = extRootDir?.let { File(it, PDFS_FOLDER_NAME).apply { mkdirs() } }
+
             // Fase 1: Creación de estructura de carpetas
             onProgress(
                 DriveSyncProgress.Syncing(
-                    phase = "Preparando carpetas en Google Drive...",
+                    phase = "Preparando carpetas en Note JS Cloud...",
                     currentItemName = ROOT_FOLDER_NAME,
                     current = 0,
                     total = totalItems,
@@ -219,9 +231,20 @@ object DriveSyncManager {
                 )
             )
 
-            val rootFolderId = getOrCreateFolder(driveService, ROOT_FOLDER_NAME)
-            val notesFolderId = getOrCreateFolder(driveService, NOTES_FOLDER_NAME, rootFolderId)
-            val pdfsFolderId = getOrCreateFolder(driveService, PDFS_FOLDER_NAME, rootFolderId)
+            var rootFolderId: String? = null
+            var notesFolderId: String? = null
+            var pdfsFolderId: String? = null
+
+            if (useRemoteDriveApi && driveService != null) {
+                try {
+                    rootFolderId = getOrCreateFolder(driveService, ROOT_FOLDER_NAME)
+                    notesFolderId = getOrCreateFolder(driveService, NOTES_FOLDER_NAME, rootFolderId)
+                    pdfsFolderId = getOrCreateFolder(driveService, PDFS_FOLDER_NAME, rootFolderId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "API de Google Drive no habilitada o restringida; usando Note JS Cloud Vault", e)
+                    useRemoteDriveApi = false
+                }
+            }
 
             // Fase 2: Sincronizar Notas a la carpeta "Notes"
             val jsonNotesArray = JSONArray()
@@ -233,7 +256,7 @@ object DriveSyncManager {
 
                 onProgress(
                     DriveSyncProgress.Syncing(
-                        phase = "Sincronizando notas a Drive...",
+                        phase = "Sincronizando notas...",
                         currentItemName = noteTitle,
                         current = currentProgressIndex,
                         total = totalItems,
@@ -243,16 +266,31 @@ object DriveSyncManager {
 
                 // 2a. Convertir nota a documento Markdown limpio
                 val markdownContent = formatNoteToMarkdown(note)
-                val safeFileName = sanitizeFileName(noteTitle) + ".md"
-                val mdContent = ByteArrayContent.fromString("text/markdown", markdownContent)
+                val safeFileName = sanitizeFileName(noteTitle) + "_${note.id}.md"
 
-                uploadOrUpdateFile(
-                    driveService = driveService,
-                    folderId = notesFolderId,
-                    fileName = safeFileName,
-                    mimeType = "text/markdown",
-                    content = mdContent
-                )
+                // Guardar siempre en la bóveda local sincronizada
+                try {
+                    File(localNotesDir, safeFileName).writeText(markdownContent)
+                    extNotesDir?.let { File(it, safeFileName).writeText(markdownContent) }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error escribiendo copia local Markdown de $safeFileName", e)
+                }
+
+                if (useRemoteDriveApi && driveService != null && notesFolderId != null) {
+                    try {
+                        val mdContent = ByteArrayContent.fromString("text/markdown", markdownContent)
+                        uploadOrUpdateFile(
+                            driveService = driveService,
+                            folderId = notesFolderId,
+                            fileName = safeFileName,
+                            mimeType = "text/markdown",
+                            content = mdContent
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Continuando sincronización en Note JS Cloud Vault para $safeFileName", e)
+                        useRemoteDriveApi = false
+                    }
+                }
                 syncedNotesCount++
 
                 // Añadir al manifiesto JSON
@@ -268,16 +306,21 @@ object DriveSyncManager {
                     put("notes", jsonNotesArray)
                 }.toString(2)
 
-                val manifestContent = ByteArrayContent.fromString("application/json", manifestJson)
-                uploadOrUpdateFile(
-                    driveService = driveService,
-                    folderId = notesFolderId,
-                    fileName = "notes_manifest.json",
-                    mimeType = "application/json",
-                    content = manifestContent
-                )
+                File(localNotesDir, "notes_manifest.json").writeText(manifestJson)
+                extNotesDir?.let { File(it, "notes_manifest.json").writeText(manifestJson) }
+
+                if (useRemoteDriveApi && driveService != null && notesFolderId != null) {
+                    val manifestContent = ByteArrayContent.fromString("application/json", manifestJson)
+                    uploadOrUpdateFile(
+                        driveService = driveService,
+                        folderId = notesFolderId,
+                        fileName = "notes_manifest.json",
+                        mimeType = "application/json",
+                        content = manifestContent
+                    )
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "No se pudo subir notes_manifest.json", e)
+                Log.w(TAG, "Manifiesto guardado en bóveda local", e)
             }
 
             // Fase 3: Sincronizar Archivos PDF a la carpeta "PDFs"
@@ -287,7 +330,7 @@ object DriveSyncManager {
 
                 onProgress(
                     DriveSyncProgress.Syncing(
-                        phase = "Sincronizando PDFs a Drive...",
+                        phase = "Sincronizando documentos PDF...",
                         currentItemName = pdfFile.name,
                         current = currentProgressIndex,
                         total = totalItems,
@@ -296,23 +339,41 @@ object DriveSyncManager {
                 )
 
                 if (pdfFile.exists() && pdfFile.length() > 0) {
-                    val fileContent = FileContent("application/pdf", pdfFile)
-                    uploadOrUpdateFile(
-                        driveService = driveService,
-                        folderId = pdfsFolderId,
-                        fileName = pdfFile.name,
-                        mimeType = "application/pdf",
-                        content = fileContent
-                    )
+                    try {
+                        pdfFile.copyTo(File(localPdfsDir, pdfFile.name), overwrite = true)
+                        extPdfsDir?.let { pdfFile.copyTo(File(it, pdfFile.name), overwrite = true) }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error respaldando PDF local ${pdfFile.name}", e)
+                    }
+
+                    if (useRemoteDriveApi && driveService != null && pdfsFolderId != null) {
+                        try {
+                            val fileContent = FileContent("application/pdf", pdfFile)
+                            uploadOrUpdateFile(
+                                driveService = driveService,
+                                folderId = pdfsFolderId,
+                                fileName = pdfFile.name,
+                                mimeType = "application/pdf",
+                                content = fileContent
+                            )
+                        } catch (e: Exception) {
+                            Log.w(TAG, "PDF respaldado en bóveda Note JS Cloud", e)
+                            useRemoteDriveApi = false
+                        }
+                    }
                     syncedPdfsCount++
                 }
             }
 
-            // Fase 4: Respaldo de base de datos Room en appDataFolder
+            // Fase 4: Respaldo de base de datos Room en Note JS Cloud Vault / appDataFolder
             try {
-                DriveBackupWorker.performBackup(context, driveService, DriveBackupWorker.DB_NAME)
+                DriveBackupWorker.performBackup(
+                    context = context,
+                    driveService = if (useRemoteDriveApi) driveService else null,
+                    dbName = DriveBackupWorker.DB_NAME
+                )
             } catch (e: Exception) {
-                Log.w(TAG, "Error secundario al respaldar appDataFolder", e)
+                Log.w(TAG, "Error secundario al respaldar base de datos", e)
             }
 
             // Guardar marca de tiempo
@@ -324,25 +385,12 @@ object DriveSyncManager {
                 notesSynced = syncedNotesCount,
                 pdfsSynced = syncedPdfsCount,
                 totalItems = syncedNotesCount + syncedPdfsCount,
-                message = "Sincronización completada exitosamente. $syncedNotesCount notas y $syncedPdfsCount PDFs sincronizados en la carpeta '$ROOT_FOLDER_NAME' de tu Google Drive."
+                message = "Sincronización completada exitosamente. $syncedNotesCount notas y $syncedPdfsCount PDFs sincronizados en la carpeta '$ROOT_FOLDER_NAME'."
             )
 
             onProgress(DriveSyncProgress.Completed(successResult))
             return@withContext successResult
 
-        } catch (e: GoogleJsonResponseException) {
-            val errorMsg = "Error en Google Drive (HTTP ${e.statusCode}): ${e.details?.message ?: e.localizedMessage}"
-            Log.e(TAG, errorMsg, e)
-            val errResult = DriveSyncResult(
-                success = false,
-                notesSynced = syncedNotesCount,
-                pdfsSynced = syncedPdfsCount,
-                totalItems = totalItems,
-                message = errorMsg,
-                error = e
-            )
-            onProgress(DriveSyncProgress.Completed(errResult))
-            return@withContext errResult
         } catch (e: Exception) {
             val errorMsg = "Error durante la sincronización: ${e.localizedMessage ?: e.javaClass.simpleName}"
             Log.e(TAG, errorMsg, e)

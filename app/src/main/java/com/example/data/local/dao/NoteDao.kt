@@ -199,6 +199,29 @@ interface NoteDao {
         serverTimestamp: Long
     )
 
+    @Query("""
+        UPDATE notes
+        SET isSynced = 1,
+            updatedAtServer = :serverTimestamp
+        WHERE id = :id
+    """)
+    suspend fun markNoteSyncedById(
+        id: Long,
+        serverTimestamp: Long = System.currentTimeMillis()
+    )
+
+    @Query("""
+        UPDATE notes
+        SET isSynced = 1,
+            updatedAtServer = :serverTimestamp
+        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS')
+          AND pendingDelete = 0
+    """)
+    suspend fun markAllNotesSyncedForUser(
+        userId: String,
+        serverTimestamp: Long = System.currentTimeMillis()
+    )
+
     /**
      * Flujo reactivo con la cantidad de operaciones pendientes de sincronizar para mostrar en la UI.
      */

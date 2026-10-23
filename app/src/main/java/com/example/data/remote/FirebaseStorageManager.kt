@@ -6,13 +6,18 @@ import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 class FirebaseStorageManager {
 
     private val storage: FirebaseStorage?
         get() = try {
-            FirebaseStorage.getInstance()
+            FirebaseStorage.getInstance().apply {
+                maxUploadRetryTimeMillis = 4500L
+                maxOperationRetryTimeMillis = 4500L
+                maxDownloadRetryTimeMillis = 4500L
+            }
         } catch (e: Exception) {
             null
         }
@@ -42,12 +47,14 @@ class FirebaseStorageManager {
                 .child(safeFileName)
 
             Log.d("StorageSync", "Subiendo archivo: $localUriString")
-            ref.putFile(uri).await()
-            val downloadUrl = ref.downloadUrl.await().toString()
-            Log.d("StorageSync", "Archivo subido con éxito: $downloadUrl")
-            downloadUrl
+            withTimeoutOrNull(5000L) {
+                ref.putFile(uri).await()
+                val downloadUrl = ref.downloadUrl.await().toString()
+                Log.d("StorageSync", "Archivo subido con éxito: $downloadUrl")
+                downloadUrl
+            }
         } catch (e: Exception) {
-            Log.e("StorageSync", "Error al subir el archivo $localUriString", e)
+            Log.w("StorageSync", "Omitiendo subida remota de adjunto ($localUriString): ${e.localizedMessage}")
             null
         }
     }
@@ -71,18 +78,19 @@ class FirebaseStorageManager {
         try {
             Log.d("StorageSync", "Descargando archivo desde: $remoteUrl a $destinationLocalPath")
             val ref = storageInstance.getReferenceFromUrl(remoteUrl)
-            ref.getFile(destFile).await()
+            withTimeoutOrNull(5000L) {
+                ref.getFile(destFile).await()
+            }
             val success = destFile.exists() && destFile.length() > 0
             if (success) {
                 Log.d("StorageSync", "Archivo descargado exitosamente en $destinationLocalPath")
-            } else {
-                Log.e("StorageSync", "Error: El archivo descargado no existe o está vacío en $destinationLocalPath")
             }
             success
         } catch (e: Exception) {
-            Log.e("StorageSync", "Error al descargar el archivo desde $remoteUrl", e)
+            Log.w("StorageSync", "No se pudo descargar adjunto remoto ($remoteUrl): ${e.localizedMessage}")
             false
         }
     }
 }
+
 
