@@ -67,10 +67,14 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * Inicia sesión con Google utilizando la API moderna Credential Manager
-     * ([GetSignInWithGoogleOption] con fallback a [GetGoogleIdOption]) vinculada a Firebase Auth.
+     * Intenta iniciar sesión automáticamente de forma silenciosa con cuentas previamente autorizadas.
      */
-    suspend fun signInWithCredentialManager(activity: Activity): AuthResult {
+    suspend fun attemptAutoSignIn(activity: Activity): AuthResult {
+        val existingUser = currentUser
+        if (existingUser != null) {
+            return AuthResult.Success(existingUser)
+        }
+
         val webClientId = try {
             appContext.getString(R.string.default_web_client_id)
         } catch (_: Exception) {
@@ -82,34 +86,20 @@ class AuthManager(private val context: Context) {
         }
 
         return try {
-            val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(webClientId)
+            val googleIdOption = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(true)
+                .setServerClientId(webClientId)
+                .setAutoSelectEnabled(true)
                 .build()
 
-            val primaryRequest = GetCredentialRequest.Builder()
-                .addCredentialOption(signInWithGoogleOption)
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(googleIdOption)
                 .build()
 
-            val result = try {
-                credentialManager.getCredential(
-                    request = primaryRequest,
-                    context = activity
-                )
-            } catch (e: GetCredentialCancellationException) {
-                throw e
-            } catch (_: GetCredentialException) {
-                val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(webClientId)
-                    .setAutoSelectEnabled(false)
-                    .build()
-                val fallbackRequest = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleIdOption)
-                    .build()
-                credentialManager.getCredential(
-                    request = fallbackRequest,
-                    context = activity
-                )
-            }
+            val result = credentialManager.getCredential(
+                request = request,
+                context = activity
+            )
 
             val credential = result.credential
             if (credential is CustomCredential &&
@@ -129,6 +119,60 @@ class AuthManager(private val context: Context) {
                 AuthResult.Error("Tipo de credencial no soportada: ${credential.type}")
             }
         } catch (e: GetCredentialCancellationException) {
+            Log.w("AuthManager", "Auto sign-in cancelled or dismissed: ${e.message}", e)
+            AuthResult.Cancelled
+        } catch (e: Exception) {
+            AuthResult.Error(e.localizedMessage ?: "No hay sesión silenciosa disponible", e)
+        }
+    }
+
+    /**
+     * Inicia sesión interactivamente con Google utilizando Credential Manager
+     * ([GetSignInWithGoogleOption]) vinculada a Firebase Auth.
+     */
+    suspend fun signInWithCredentialManager(activity: Activity): AuthResult {
+        val webClientId = try {
+            appContext.getString(R.string.default_web_client_id)
+        } catch (_: Exception) {
+            ""
+        }
+
+        if (webClientId.isBlank()) {
+            return AuthResult.Error("Falta configurar default_web_client_id en google-services.json")
+        }
+
+        return try {
+            val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(webClientId)
+                .build()
+
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(signInWithGoogleOption)
+                .build()
+
+            val result = credentialManager.getCredential(
+                request = request,
+                context = activity
+            )
+
+            val credential = result.credential
+            if (credential is CustomCredential &&
+                credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+            ) {
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                val auth = firebaseAuth ?: return AuthResult.Error("Firebase Auth no está inicializado")
+                val firebaseCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
+                val authResult = auth.signInWithCredential(firebaseCredential).await()
+                val user = authResult.user
+                if (user != null) {
+                    AuthResult.Success(user)
+                } else {
+                    AuthResult.Error("Firebase Auth no devolvió un usuario válido")
+                }
+            } else {
+                AuthResult.Error("Tipo de credencial no soportada: ${credential.type}")
+            }
+        } catch (e: GetCredentialCancellationException) {
+            Log.w("AuthManager", "Google Sign-In cancelled or dismissed: ${e.message}", e)
             AuthResult.Cancelled
         } catch (e: GoogleIdTokenParsingException) {
             Log.e("AuthManager", "Token de Google inválido", e)

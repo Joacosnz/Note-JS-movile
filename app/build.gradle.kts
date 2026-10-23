@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import groovy.json.JsonSlurper
 import java.time.Duration
 
 plugins {
@@ -14,13 +15,67 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.NotasJS.kxmpzq"
+    val appId = "com.aistudio.NotasJS.kxmpzq"
+    applicationId = appId
     minSdk = 24
     targetSdk = 36
     versionCode = 2
     versionName = "1.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // Ensure R.string.default_web_client_id is always defined at compile time even if
+    // google-services.json is missing or does not contain a type-3 OAuth client for this package.
+    val googleServicesFile = file("google-services.json")
+    var pluginGeneratesWebClientId = false
+    var fallbackWebClientId = ""
+    if (googleServicesFile.exists()) {
+      runCatching {
+        @Suppress("UNCHECKED_CAST")
+        val root = JsonSlurper().parse(googleServicesFile) as? Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
+        val clients = root?.get("client") as? List<Map<String, Any?>> ?: emptyList()
+        for (client in clients) {
+          @Suppress("UNCHECKED_CAST")
+          val clientInfo = client["client_info"] as? Map<String, Any?>
+          @Suppress("UNCHECKED_CAST")
+          val androidInfo = clientInfo?.get("android_client_info") as? Map<String, Any?>
+          val pkgName = androidInfo?.get("package_name") as? String
+          @Suppress("UNCHECKED_CAST")
+          val oauthClients = client["oauth_client"] as? List<Map<String, Any?>> ?: emptyList()
+          val type3ClientId = oauthClients.firstOrNull {
+            (it["client_type"] as? Number)?.toInt() == 3 &&
+              !(it["client_id"] as? String).isNullOrBlank()
+          }?.get("client_id") as? String
+
+          if (!type3ClientId.isNullOrBlank() && fallbackWebClientId.isBlank()) {
+            fallbackWebClientId = type3ClientId
+          }
+          if (pkgName == appId && !type3ClientId.isNullOrBlank()) {
+            pluginGeneratesWebClientId = true
+          }
+
+          if (fallbackWebClientId.isBlank()) {
+            @Suppress("UNCHECKED_CAST")
+            val services = client["services"] as? Map<String, Any?>
+            @Suppress("UNCHECKED_CAST")
+            val appInvite = services?.get("appinvite_service") as? Map<String, Any?>
+            @Suppress("UNCHECKED_CAST")
+            val otherClients = appInvite?.get("other_platform_oauth_client") as? List<Map<String, Any?>> ?: emptyList()
+            val otherType3 = otherClients.firstOrNull {
+              (it["client_type"] as? Number)?.toInt() == 3 &&
+                !(it["client_id"] as? String).isNullOrBlank()
+            }?.get("client_id") as? String
+            if (!otherType3.isNullOrBlank()) {
+              fallbackWebClientId = otherType3
+            }
+          }
+        }
+      }
+    }
+    if (!pluginGeneratesWebClientId) {
+      resValue("string", "default_web_client_id", fallbackWebClientId)
+    }
   }
 
   signingConfigs {
