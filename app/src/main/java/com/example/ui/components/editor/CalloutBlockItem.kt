@@ -59,6 +59,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.text.TextRange
+import com.example.ui.components.RichLinkPreviewList
+import com.example.ui.components.RichLinkQuickPreviewDialog
+import com.example.ui.components.onWebLinkClick
+
 @Composable
 fun CalloutBlockItem(
     block: NoteBlock.CalloutBox,
@@ -84,6 +90,8 @@ fun CalloutBlockItem(
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     var showCalloutMenu by remember { mutableStateOf(value = false) }
     var showCalloutColorPicker by remember { mutableStateOf(value = false) }
+    var previewingWebUrl by remember { mutableStateOf<String?>(null) }
+    var linkModeRefreshTrigger by remember { mutableIntStateOf(0) }
 
     val calloutBg = if (!block.backgroundColorHex.isNullOrBlank()) {
         runCatching { Color(android.graphics.Color.parseColor(block.backgroundColorHex)) }.getOrDefault(
@@ -93,101 +101,138 @@ fun CalloutBlockItem(
         if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
     }
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .testTag("block_callout_$index")
-            .combinedClickable(
-                onClick = { },
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    showCalloutMenu = true
-                }
-            ),
-        shape = RoundedCornerShape(12.dp),
-        color = calloutBg,
-        border = BorderStroke(1.dp, amber.copy(alpha = 0.3f))
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(36.dp)
-                    .background(amber, RoundedCornerShape(2.dp))
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            BasicTextField(
-                value = tfv,
-                onValueChange = { newValue ->
-                    val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
-                    val effective = solved ?: newValue
-                    val sanitized = sanitizeTextFieldValue(effective)
-                    evaluateNoteLinkTrigger(block.id, sanitized)
-                    onValueChange(sanitized)
-                    coroutineScope.launch {
-                        val layout = textLayoutResult
-                        val cursorOffset = sanitized.selection.max
-                        if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
-                            val cursorRect = layout.getCursorRect(cursorOffset)
-                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                            bringIntoViewRequester.bringIntoView(expandedRect)
-                        } else {
-                            bringIntoViewRequester.bringIntoView()
-                        }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .testTag("block_callout_$index")
+                .combinedClickable(
+                    onClick = { },
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showCalloutMenu = true
                     }
-                },
-                onTextLayout = { textLayoutResult = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onNoteLinkClick(textLayoutResult) { linkedId -> onNoteLinkClick(linkedId) }
-                    .onInlineMathClick(textLayoutResult) { code, start, end -> onInlineMathClick(code, start, end) }
-                    .bringIntoViewRequester(bringIntoViewRequester)
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { focusState ->
-                        onFocusChanged(focusState.isFocused)
-                        if (focusState.isFocused) {
-                            coroutineScope.launch {
-                                delay(100.milliseconds)
-                                val layout = textLayoutResult
-                                val cursorOffset = tfv.selection.max
-                                if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
-                                    val cursorRect = layout.getCursorRect(cursorOffset)
-                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                    bringIntoViewRequester.bringIntoView(expandedRect)
-                                } else {
-                                    bringIntoViewRequester.bringIntoView()
-                                }
+                ),
+            shape = RoundedCornerShape(12.dp),
+            color = calloutBg,
+            border = BorderStroke(1.dp, amber.copy(alpha = 0.3f))
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(4.dp)
+                        .height(36.dp)
+                        .background(amber, RoundedCornerShape(2.dp))
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                BasicTextField(
+                    value = tfv,
+                    onValueChange = { newValue ->
+                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
+                        val effective = solved ?: newValue
+                        val sanitized = sanitizeTextFieldValue(effective)
+                        evaluateNoteLinkTrigger(block.id, sanitized)
+                        onValueChange(sanitized)
+                        coroutineScope.launch {
+                            val layout = textLayoutResult
+                            val cursorOffset = sanitized.selection.max
+                            if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
+                                val cursorRect = layout.getCursorRect(cursorOffset)
+                                val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                bringIntoViewRequester.bringIntoView(expandedRect)
+                            } else {
+                                bringIntoViewRequester.bringIntoView()
                             }
                         }
                     },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 17.sp,
-                    color = paperTextColor,
-                    fontStyle = FontStyle.Italic
-                ),
-                cursorBrush = SolidColor(amber),
-                visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                decorationBox = { innerTextField ->
-                    if (block.content.isEmpty()) {
-                        Text(
-                            text = "Cuadro destacado / Nota importante...",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 17.sp,
-                                color = paperHintColor.copy(alpha = 0.5f),
-                                fontStyle = FontStyle.Italic
+                    onTextLayout = { textLayoutResult = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onNoteLinkClick(textLayoutResult) { linkedId -> onNoteLinkClick(linkedId) }
+                        .onWebLinkClick(textLayoutResult) { webUrl -> previewingWebUrl = webUrl }
+                        .onInlineMathClick(textLayoutResult) { code, start, end -> onInlineMathClick(code, start, end) }
+                        .bringIntoViewRequester(bringIntoViewRequester)
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { focusState ->
+                            onFocusChanged(focusState.isFocused)
+                            if (focusState.isFocused) {
+                                coroutineScope.launch {
+                                    delay(100.milliseconds)
+                                    val layout = textLayoutResult
+                                    val cursorOffset = tfv.selection.max
+                                    if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
+                                        val cursorRect = layout.getCursorRect(cursorOffset)
+                                        val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                        bringIntoViewRequester.bringIntoView(expandedRect)
+                                    } else {
+                                        bringIntoViewRequester.bringIntoView()
+                                    }
+                                }
+                            }
+                        },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 17.sp,
+                        color = paperTextColor,
+                        fontStyle = FontStyle.Italic
+                    ),
+                    cursorBrush = SolidColor(amber),
+                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
+                    decorationBox = { innerTextField ->
+                        if (block.content.isEmpty()) {
+                            Text(
+                                text = "Cuadro destacado / Nota importante...",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontSize = 17.sp,
+                                    color = paperHintColor.copy(alpha = 0.5f),
+                                    fontStyle = FontStyle.Italic
+                                )
                             )
-                        )
-                    }
-                    innerTextField()
-                },
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Default
+                        }
+                        innerTextField()
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Default
+                    )
                 )
+            }
+        }
+
+        RichLinkPreviewList(
+            text = tfv.text,
+            amber = amber,
+            isDark = isPaperDark,
+            externalRefreshTrigger = linkModeRefreshTrigger,
+            onConvertToInlineLink = { link, cleanTitle ->
+                val raw = tfv.text
+                val safeStart = link.startIndex.coerceIn(0, raw.length)
+                val safeEnd = link.endIndex.coerceIn(safeStart, raw.length)
+                val markdownLink = "[$cleanTitle](${link.url})"
+                val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
+                onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+            }
+        )
+
+        previewingWebUrl?.let { targetUrl ->
+            RichLinkQuickPreviewDialog(
+                url = targetUrl,
+                blockText = tfv.text,
+                amber = amber,
+                isDark = isPaperDark,
+                onDismiss = { previewingWebUrl = null },
+                onModeChanged = { linkModeRefreshTrigger++ },
+                onConvertRawUrlToInlineTitle = { link, cleanTitle ->
+                    val raw = tfv.text
+                    val safeStart = link.startIndex.coerceIn(0, raw.length)
+                    val safeEnd = link.endIndex.coerceIn(safeStart, raw.length)
+                    val markdownLink = "[$cleanTitle](${link.url})"
+                    val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
+                    onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+                }
             )
         }
     }

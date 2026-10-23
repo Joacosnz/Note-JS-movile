@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.TableChart
@@ -64,6 +65,7 @@ import com.example.ui.theme.NoteJsSeparatorDark
 import com.example.ui.theme.NoteJsSeparatorLight
 import com.example.ui.theme.isAppInDarkTheme
 import com.example.util.NoteBlockSerializer
+import com.example.util.WebLinkMetadataFetcher
 import com.example.util.cleanMarkdownSyntax
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -124,6 +126,20 @@ fun NoteCard(
 
     val hasDrawing = remember(blocks) { blocks.any { it is NoteBlock.Drawing } || note.drawingData.isNotBlank() }
     val hasCallout = remember(blocks) { blocks.any { it is NoteBlock.CalloutBox } }
+    val firstWebLink = remember(blocks) {
+        blocks.firstNotNullOfOrNull { block ->
+            val rawText = when (block) {
+                is NoteBlock.Text -> block.content
+                is NoteBlock.Checklist -> block.content
+                is NoteBlock.SimpleList -> block.content
+                is NoteBlock.CalloutBox -> block.content
+                else -> ""
+            }
+            if (rawText.isNotBlank()) {
+                WebLinkMetadataFetcher.extractWebLinks(rawText).firstOrNull()
+            } else null
+        }
+    }
 
     val dateFormatted = remember(note.updatedAt) {
         val now = System.currentTimeMillis()
@@ -248,6 +264,16 @@ fun NoteCard(
                                     .padding(end = 4.dp)
                             )
                         }
+                        if (firstWebLink != null && !isLockedNote) {
+                            Icon(
+                                imageVector = Icons.Rounded.Link,
+                                contentDescription = "Contiene enlace web",
+                                tint = amber,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(end = 4.dp)
+                            )
+                        }
                         if (note.isLocked) {
                             Icon(
                                 imageVector = Icons.Default.Lock,
@@ -318,6 +344,14 @@ fun NoteCard(
                                 block = block,
                                 amber = amber,
                                 contentColor = contentTextColor
+                            )
+                        }
+                        if (firstWebLink != null) {
+                            CompactRichLinkNoteCardPreview(
+                                url = firstWebLink.url,
+                                isDark = isDark,
+                                amber = amber,
+                                modifier = Modifier.padding(top = 4.dp)
                             )
                         }
                     }
@@ -391,6 +425,10 @@ private fun CompactNoteBlockItem(
         }
 
         is NoteBlock.Checklist -> {
+            val isDark = isAppInDarkTheme()
+            val annotated = remember(block.content, isDark, amber) {
+                buildNoteRichAnnotatedString(block.content, isDark, amber)
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -402,24 +440,40 @@ private fun CompactNoteBlockItem(
                     tint = if (block.isChecked) amber else contentColor.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
                 )
-                Text(
-                    text = cleanMarkdownSyntax(block.content).ifBlank { "Tarea sin texto" },
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 14.sp,
-                        textDecoration = if (block.isChecked) TextDecoration.LineThrough else TextDecoration.None
-                    ),
-                    color = if (block.isChecked) contentColor.copy(alpha = 0.6f) else contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (annotated.text.isNotBlank()) {
+                    Text(
+                        text = annotated,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            textDecoration = if (block.isChecked) TextDecoration.LineThrough else TextDecoration.None
+                        ),
+                        color = if (block.isChecked) contentColor.copy(alpha = 0.6f) else contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    Text(
+                        text = "Tarea sin texto",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            textDecoration = if (block.isChecked) TextDecoration.LineThrough else TextDecoration.None
+                        ),
+                        color = if (block.isChecked) contentColor.copy(alpha = 0.6f) else contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 
         is NoteBlock.Text -> {
-            val cleaned = cleanMarkdownSyntax(block.content)
-            if (cleaned.isNotBlank()) {
+            val isDark = isAppInDarkTheme()
+            val annotated = remember(block.content, isDark, amber) {
+                buildNoteRichAnnotatedString(block.content, isDark, amber)
+            }
+            if (annotated.text.isNotBlank()) {
                 Text(
-                    text = cleaned,
+                    text = annotated,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
                     color = contentColor,
                     maxLines = 3,
@@ -430,10 +484,13 @@ private fun CompactNoteBlockItem(
         }
 
         is NoteBlock.CalloutBox -> {
-            val cleaned = cleanMarkdownSyntax(block.content)
-            if (cleaned.isNotBlank()) {
+            val isDark = isAppInDarkTheme()
+            val annotated = remember(block.content, isDark, amber) {
+                buildNoteRichAnnotatedString(block.content, isDark, amber)
+            }
+            if (annotated.text.isNotBlank()) {
                 Text(
-                    text = cleaned,
+                    text = annotated,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
                     color = contentColor,
                     maxLines = 3,
@@ -444,11 +501,14 @@ private fun CompactNoteBlockItem(
         }
 
         is NoteBlock.SimpleList -> {
-            val cleaned = cleanMarkdownSyntax(block.content)
-            if (cleaned.isNotBlank()) {
-                val prefix = if (block.isNumbered) "${block.number}. " else "• "
+            val isDark = isAppInDarkTheme()
+            val prefix = if (block.isNumbered) "${block.number}. " else "• "
+            val annotated = remember(block.content, prefix, isDark, amber) {
+                buildNoteRichAnnotatedString("$prefix${block.content}", isDark, amber)
+            }
+            if (block.content.isNotBlank()) {
                 Text(
-                    text = "$prefix$cleaned",
+                    text = annotated,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 19.sp),
                     color = contentColor,
                     maxLines = 3,

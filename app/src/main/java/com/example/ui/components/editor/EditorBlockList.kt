@@ -79,10 +79,14 @@ import com.example.ui.components.AudioBlockItem
 import com.example.ui.components.ImageBlockItem
 import com.example.ui.components.InlineMathBlockItem
 import com.example.ui.components.PdfBlockItem
+import com.example.ui.components.RichLinkPreviewList
+import com.example.ui.components.RichLinkQuickPreviewDialog
 import com.example.ui.components.TableBlockItem
 import com.example.ui.components.markdownVisualTransformation
 import com.example.ui.components.onInlineMathClick
 import com.example.ui.components.onNoteLinkClick
+import com.example.ui.components.onWebLinkClick
+import androidx.compose.runtime.mutableIntStateOf
 import com.example.ui.screens.Stroke
 import com.example.ui.screens.deserializeStrokesFromJson
 import com.example.util.FileManager
@@ -219,6 +223,8 @@ fun EditorBlockList(
             // Title input
             val titleBringIntoViewRequester = remember { BringIntoViewRequester() }
             var titleTextLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+            var titlePreviewingWebUrl by remember { mutableStateOf<String?>(null) }
+            var titleLinkModeRefreshTrigger by remember { mutableIntStateOf(0) }
             BasicTextField(
                 value = titleTextFieldValue,
                 onValueChange = { newValue ->
@@ -264,6 +270,9 @@ fun EditorBlockList(
                     .onNoteLinkClick(titleTextLayoutResult) { linkedId ->
                         onNoteLinkClick(linkedId)
                     }
+                    .onWebLinkClick(titleTextLayoutResult) { webUrl ->
+                        titlePreviewingWebUrl = webUrl
+                    }
                     .onInlineMathClick(titleTextLayoutResult) { code, start, end ->
                         onInlineMathClick("TITLE", code, true, TextRange(start, end))
                     }
@@ -288,6 +297,40 @@ fun EditorBlockList(
                     innerTextField()
                 }
             )
+
+            RichLinkPreviewList(
+                text = titleTextFieldValue.text,
+                amber = amber,
+                isDark = isPaperDark,
+                externalRefreshTrigger = titleLinkModeRefreshTrigger,
+                onConvertToInlineLink = { link, cleanTitle ->
+                    val raw = titleTextFieldValue.text
+                    val safeStart = link.startIndex.coerceIn(0, raw.length)
+                    val safeEnd = link.endIndex.coerceIn(safeStart, raw.length)
+                    val markdownLink = "[$cleanTitle](${link.url})"
+                    val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
+                    onTitleValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+                }
+            )
+
+            titlePreviewingWebUrl?.let { targetUrl ->
+                RichLinkQuickPreviewDialog(
+                    url = targetUrl,
+                    blockText = titleTextFieldValue.text,
+                    amber = amber,
+                    isDark = isPaperDark,
+                    onDismiss = { titlePreviewingWebUrl = null },
+                    onModeChanged = { titleLinkModeRefreshTrigger++ },
+                    onConvertRawUrlToInlineTitle = { link, cleanTitle ->
+                        val raw = titleTextFieldValue.text
+                        val safeStart = link.startIndex.coerceIn(0, raw.length)
+                        val safeEnd = link.endIndex.coerceIn(safeStart, raw.length)
+                        val markdownLink = "[$cleanTitle](${link.url})"
+                        val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
+                        onTitleValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
         }

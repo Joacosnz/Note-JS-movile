@@ -10,6 +10,7 @@ fun cleanMarkdownSyntax(text: String): String {
         .replace(Regex("""\[math:(.+?)\]""")) { it.groupValues[1].trim() }
         .replace(Regex("""==([^=\n]+)==""")) { it.groupValues[1] }
         .replace(Regex("""\[([^\]]+)\]\(notejs://note/[^\)]+\)""")) { it.groupValues[1] }
+        .replace(Regex("""\[([^\]]+)\]\((?:https?://|www\.)[^\s\)]+\)""", RegexOption.IGNORE_CASE)) { it.groupValues[1] }
 }
 
 /**

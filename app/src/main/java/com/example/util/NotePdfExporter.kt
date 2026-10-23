@@ -14,6 +14,9 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDFont
 import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
+import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionURI
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDBorderStyleDictionary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -312,6 +315,86 @@ object NotePdfExporter {
             }
         }
 
+        // Función auxiliar para dibujar tarjetas de enlaces enriquecidos y adjuntar hipervínculos interactivos al PDF
+        fun drawRichLinksForBlockContent(rawContent: String) {
+            val links = WebLinkMetadataFetcher.extractWebLinks(rawContent)
+            if (links.isEmpty()) return
+
+            for (link in links) {
+                val cached = WebLinkMetadataFetcher.getCachedMetadata(context, link.url)
+                val domain = cached?.siteName?.ifBlank { cached.domain } ?: WebLinkMetadataFetcher.extractDomain(link.url)
+                val linkTitle = link.inlineTitle?.takeIf { it.isNotBlank() }
+                    ?: cached?.title?.takeIf { it.isNotBlank() }
+                    ?: domain
+                val cardHeight = 40f
+
+                checkPageBreak(cardHeight + 8f)
+
+                val cardBottomY = currentY - cardHeight
+                // Fondo de la tarjeta Rich Link
+                contentStream.setNonStrokingColor(242, 246, 252)
+                contentStream.addRect(MARGIN, cardBottomY, USABLE_WIDTH, cardHeight)
+                contentStream.fill()
+
+                // Barra lateral azul/ámbar de enlace
+                contentStream.setNonStrokingColor(37, 99, 235)
+                contentStream.addRect(MARGIN, cardBottomY, 4f, cardHeight)
+                contentStream.fill()
+
+                // Borde sutil de la tarjeta
+                contentStream.setStrokingColor(205, 218, 240)
+                contentStream.setLineWidth(0.7f)
+                contentStream.addRect(MARGIN, cardBottomY, USABLE_WIDTH, cardHeight)
+                contentStream.stroke()
+
+                // Dominio / Sitio web
+                val safeDomain = sanitizeForPdfBox("ENLACE WEB  •  ${domain.uppercase(Locale.getDefault())}", fontHeader)
+                contentStream.beginText()
+                contentStream.setFont(fontHeader, 7.5f)
+                contentStream.setNonStrokingColor(37, 99, 235)
+                contentStream.newLineAtOffset(MARGIN + 12f, currentY - 11f)
+                contentStream.showText(safeDomain.take(80))
+                contentStream.endText()
+
+                // Título del enlace enriquecido
+                val safeLinkTitle = sanitizeForPdfBox(linkTitle, fontHeader)
+                contentStream.beginText()
+                contentStream.setFont(fontHeader, 10f)
+                contentStream.setNonStrokingColor(20, 28, 45)
+                contentStream.newLineAtOffset(MARGIN + 12f, currentY - 23f)
+                contentStream.showText(safeLinkTitle.take(82))
+                contentStream.endText()
+
+                // URL clicable visible
+                val safeUrl = sanitizeForPdfBox(link.url, fontRegular)
+                contentStream.beginText()
+                contentStream.setFont(fontRegular, 8f)
+                contentStream.setNonStrokingColor(90, 105, 130)
+                contentStream.newLineAtOffset(MARGIN + 12f, currentY - 34f)
+                contentStream.showText(safeUrl.take(95))
+                contentStream.endText()
+
+                // Anotación interactiva PDF (hipervínculo clicable real al exportar)
+                try {
+                    val linkAnnotation = PDAnnotationLink()
+                    val borderStyle = PDBorderStyleDictionary().apply {
+                        width = 0f
+                    }
+                    linkAnnotation.borderStyle = borderStyle
+                    linkAnnotation.rectangle = PDRectangle(MARGIN, cardBottomY, USABLE_WIDTH, cardHeight)
+                    val actionUri = PDActionURI().apply {
+                        uri = link.url
+                    }
+                    linkAnnotation.action = actionUri
+                    currentPage.annotations.add(linkAnnotation)
+                } catch (e: Exception) {
+                    Log.w("NotePdfExporter", "No se pudo adjuntar anotación de enlace en PDF: ${e.message}")
+                }
+
+                currentY -= (cardHeight + 6f)
+            }
+        }
+
         // --- PROCESAMIENTO DE BLOQUES ---
         for (block in blocks) {
             when (block) {
@@ -322,6 +405,7 @@ object NotePdfExporter {
                         TextStyleType.BODY -> Tuple6(fontRegular, 11f, 40, 40, 40, 6f)
                     }
                     drawWrappedText(block.content, font, size, r, g, b)
+                    drawRichLinksForBlockContent(block.content)
                     currentY -= extra
                 }
 
@@ -352,6 +436,7 @@ object NotePdfExporter {
                         indentX = 24f,
                         lineSpacing = 3f
                     )
+                    drawRichLinksForBlockContent(block.content)
                     currentY -= 4f
                 }
 
@@ -375,6 +460,7 @@ object NotePdfExporter {
                         indentX = 20f,
                         lineSpacing = 3f
                     )
+                    drawRichLinksForBlockContent(block.content)
                     currentY -= 4f
                 }
 
@@ -403,7 +489,9 @@ object NotePdfExporter {
                     contentStream.showText(sanitized.take(80))
                     contentStream.endText()
 
-                    currentY -= (boxHeight + 10f)
+                    currentY -= (boxHeight + 6f)
+                    drawRichLinksForBlockContent(block.content)
+                    currentY -= 4f
                 }
 
                 is NoteBlock.Math -> {

@@ -38,6 +38,8 @@ import com.example.ui.components.EditorScannedPdfNameDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.example.ui.components.EditorStatsBottomSheet
 import com.example.ui.components.InsertInlineMathDialog
+import com.example.ui.components.InsertWebLinkDialog
+import com.example.util.CardDisplayMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,6 +83,10 @@ fun EditorDialogs(
     onDismissInlineMath: () -> Unit,
     onConfirmInlineMath: (String) -> Unit,
     onDeleteInlineMath: (() -> Unit)?,
+    showWebLinkDialog: Boolean = false,
+    webLinkInitialText: String = "",
+    onDismissWebLink: () -> Unit = {},
+    onConfirmWebLink: (url: String, customTitle: String?, cardMode: CardDisplayMode) -> Unit = { _, _, _ -> },
     showExportPdfChoiceDialog: Boolean,
     onDismissExportPdfChoice: () -> Unit,
     onExportCompletePdf: () -> Unit,
@@ -162,6 +168,16 @@ fun EditorDialogs(
             onDismiss = onDismissInlineMath,
             onConfirm = onConfirmInlineMath,
             onDelete = onDeleteInlineMath
+        )
+    }
+
+    if (showWebLinkDialog) {
+        InsertWebLinkDialog(
+            initialSelectedText = webLinkInitialText,
+            isDark = isPaperDark,
+            amber = amber,
+            onDismiss = onDismissWebLink,
+            onConfirm = onConfirmWebLink
         )
     }
 

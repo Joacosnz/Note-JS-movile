@@ -60,6 +60,7 @@ import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.rounded.AddLink
 import androidx.compose.material.icons.rounded.Brush
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.Draw
@@ -185,6 +186,7 @@ internal fun EditorAccessoryBar(
     onFormatScanner: () -> Unit,
     onFormatMath: () -> Unit = {},
     onFormatInlineMath: () -> Unit = {},
+    onFormatWebLink: () -> Unit = {},
     onAddImage: () -> Unit,
     onStartAudioDictation: () -> Unit,
     onToggleBold: () -> Unit,
@@ -336,6 +338,16 @@ internal fun EditorAccessoryBar(
                             }
 
                             FormatSectionTitle("Elementos Avanzados", isPaperDark = isPaperDark)
+                            FormatOptionItem(
+                                icon = Icons.Rounded.AddLink,
+                                text = "Enlace web enriquecido (Rich Link)",
+                                isPaperDark = isPaperDark,
+                                amberColor = amber
+                            ) {
+                                onFormatWebLink()
+                                isInsertMenuExpanded = false
+                            }
+
                             FormatOptionItem(
                                 icon = Icons.Rounded.Info,
                                 text = "Cuadro destacado",

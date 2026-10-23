@@ -3,6 +3,7 @@
 package com.example.ui.components.editor
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,8 +29,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -39,16 +42,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.NoteBlock
+import com.example.ui.components.RichLinkPreviewList
+import com.example.ui.components.RichLinkQuickPreviewDialog
 import com.example.ui.components.markdownVisualTransformation
 import com.example.ui.components.onInlineMathClick
 import com.example.ui.components.onNoteLinkClick
+import com.example.ui.components.onWebLinkClick
 import com.example.ui.components.sanitizeTextFieldValue
 import com.example.util.MathEvaluator
+import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
-
-import androidx.compose.ui.text.TextRange
 
 @Composable
 fun SimpleListBlockItem(
@@ -76,74 +81,53 @@ fun SimpleListBlockItem(
     val coroutineScope = rememberCoroutineScope()
     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var previewingWebUrl by remember { mutableStateOf<String?>(null) }
+    var linkModeRefreshTrigger by remember { mutableIntStateOf(0) }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .testTag("block_simple_list_$index"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = if (block.isNumbered) "${block.number}." else "•",
-            style = MaterialTheme.typography.bodyLarge.copy(
-                fontWeight = FontWeight.Bold,
-                color = amber,
-                fontSize = 17.sp
-            ),
-            modifier = Modifier.width(24.dp),
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        BasicTextField(
-            value = tfv,
-            onValueChange = { newValue ->
-                val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
-                val effective = solved ?: newValue
-                val sanitized = sanitizeTextFieldValue(effective)
-                evaluateNoteLinkTrigger(block.id, sanitized)
-                if (sanitized.text.contains('\n')) {
-                    val newlineIndex = sanitized.text.indexOf('\n')
-                    val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
-                    val firstPart = sanitized.text.substring(0, safeNL)
-                    val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
-
-                    if (block.content.isEmpty() && firstPart.isEmpty() && remainingText.isEmpty()) {
-                        onNext()
-                    } else {
-                        onValueChange(TextFieldValue(firstPart, TextRange(firstPart.length)))
-                        onNextWithText(remainingText)
-                    }
-                } else {
-                    onValueChange(sanitized)
-                    coroutineScope.launch {
-                        val layout = textLayoutResult
-                        val cursorOffset = sanitized.selection.max
-                        if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
-                            val cursorRect = layout.getCursorRect(cursorOffset)
-                            val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                            bringIntoViewRequester.bringIntoView(expandedRect)
-                        } else {
-                            bringIntoViewRequester.bringIntoView()
-                        }
-                    }
-                }
-            },
-            onTextLayout = { textLayoutResult = it },
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .onNoteLinkClick(textLayoutResult) { linkedId -> onNoteLinkClick(linkedId) }
-                .onInlineMathClick(textLayoutResult) { code, start, end -> onInlineMathClick(code, start, end) }
-                .bringIntoViewRequester(bringIntoViewRequester)
-                .focusRequester(focusRequester)
-                .onFocusChanged { focusState ->
-                    onFocusChanged(focusState.isFocused)
-                    if (focusState.isFocused) {
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .testTag("block_simple_list_$index"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (block.isNumbered) "${block.number}." else "•",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = amber,
+                    fontSize = 17.sp
+                ),
+                modifier = Modifier.width(24.dp),
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            BasicTextField(
+                value = tfv,
+                onValueChange = { newValue ->
+                    val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, tfv)
+                    val effective = solved ?: newValue
+                    val sanitized = sanitizeTextFieldValue(effective)
+                    evaluateNoteLinkTrigger(block.id, sanitized)
+                    if (sanitized.text.contains('\n')) {
+                        val newlineIndex = sanitized.text.indexOf('\n')
+                        val safeNL = newlineIndex.coerceIn(0, sanitized.text.length)
+                        val firstPart = sanitized.text.substring(0, safeNL)
+                        val remainingText = sanitized.text.substring((safeNL + 1).coerceIn(0, sanitized.text.length))
+
+                        if (block.content.isEmpty() && firstPart.isEmpty() && remainingText.isEmpty()) {
+                            onNext()
+                        } else {
+                            onValueChange(TextFieldValue(firstPart, TextRange(firstPart.length)))
+                            onNextWithText(remainingText)
+                        }
+                    } else {
+                        onValueChange(sanitized)
                         coroutineScope.launch {
-                            delay(100.milliseconds)
                             val layout = textLayoutResult
-                            val cursorOffset = tfv.selection.max
-                            if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
+                            val cursorOffset = sanitized.selection.max
+                            if (layout != null && (cursorOffset in 0..layout.layoutInput.text.length)) {
                                 val cursorRect = layout.getCursorRect(cursorOffset)
                                 val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
                                 bringIntoViewRequester.bringIntoView(expandedRect)
@@ -153,31 +137,93 @@ fun SimpleListBlockItem(
                         }
                     }
                 },
-            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = customFontSizeSp.sp,
-                fontWeight = if (isBoldActive) FontWeight.Bold else FontWeight.Normal,
-                fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
-                background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
-                color = paperTextColor
-            ),
-            cursorBrush = SolidColor(amber),
-            visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-            decorationBox = { innerTextField ->
-                if (block.content.isEmpty()) {
-                    Text(
-                        text = "Elemento de lista...",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = paperHintColor.copy(alpha = 0.5f))
-                    )
-                }
-                innerTextField()
-            },
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Sentences,
-                imeAction = ImeAction.Next
-            ),
-            keyboardActions = KeyboardActions(
-                onNext = { onNext() }
+                onTextLayout = { textLayoutResult = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .onNoteLinkClick(textLayoutResult) { linkedId -> onNoteLinkClick(linkedId) }
+                    .onWebLinkClick(textLayoutResult) { webUrl -> previewingWebUrl = webUrl }
+                    .onInlineMathClick(textLayoutResult) { code, start, end -> onInlineMathClick(code, start, end) }
+                    .bringIntoViewRequester(bringIntoViewRequester)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { focusState ->
+                        onFocusChanged(focusState.isFocused)
+                        if (focusState.isFocused) {
+                            coroutineScope.launch {
+                                delay(100.milliseconds)
+                                val layout = textLayoutResult
+                                val cursorOffset = tfv.selection.max
+                                if ((layout != null) && (cursorOffset in 0..layout.layoutInput.text.length)) {
+                                    val cursorRect = layout.getCursorRect(cursorOffset)
+                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                    bringIntoViewRequester.bringIntoView(expandedRect)
+                                } else {
+                                    bringIntoViewRequester.bringIntoView()
+                                }
+                            }
+                        }
+                    },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = customFontSizeSp.sp,
+                    fontWeight = if (isBoldActive) FontWeight.Bold else FontWeight.Normal,
+                    fontStyle = if (isItalicActive) FontStyle.Italic else FontStyle.Normal,
+                    background = if (isHighlightActive) amber.copy(alpha = 0.35f) else Color.Transparent,
+                    color = paperTextColor
+                ),
+                cursorBrush = SolidColor(amber),
+                visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
+                decorationBox = { innerTextField ->
+                    if (block.content.isEmpty()) {
+                        Text(
+                            text = "Elemento de lista...",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, color = paperHintColor.copy(alpha = 0.5f))
+                        )
+                    }
+                    innerTextField()
+                },
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Next
+                ),
+                keyboardActions = KeyboardActions(
+                    onNext = { onNext() }
+                )
             )
+        }
+
+        RichLinkPreviewList(
+            text = tfv.text,
+            amber = amber,
+            isDark = isPaperDark,
+            externalRefreshTrigger = linkModeRefreshTrigger,
+            modifier = Modifier.padding(start = 32.dp),
+            onConvertToInlineLink = { link, cleanTitle ->
+                val raw = tfv.text
+                val safeStart = link.startIndex.coerceIn(0, raw.length)
+                val safeEnd = link.endIndex.coerceIn(safeStart, raw.length)
+                val markdownLink = "[$cleanTitle](${link.url})"
+                val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
+                onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+            }
         )
+
+        previewingWebUrl?.let { targetUrl ->
+            RichLinkQuickPreviewDialog(
+                url = targetUrl,
+                blockText = tfv.text,
+                amber = amber,
+                isDark = isPaperDark,
+                onDismiss = { previewingWebUrl = null },
+                onModeChanged = { linkModeRefreshTrigger++ },
+                onConvertRawUrlToInlineTitle = { link, cleanTitle ->
+                    val raw = tfv.text
+                    val safeStart = link.startIndex.coerceIn(0, raw.length)
+                    val safeEnd = link.endIndex.coerceIn(safeStart, raw.length)
+                    val markdownLink = "[$cleanTitle](${link.url})"
+                    val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
+                    onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+                }
+            )
+        }
     }
 }
+

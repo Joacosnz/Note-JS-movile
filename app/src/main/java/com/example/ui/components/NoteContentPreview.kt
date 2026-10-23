@@ -34,9 +34,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
+import com.example.ui.theme.isAppInDarkTheme
 import com.example.util.NoteBlockSerializer
+import com.example.util.WebLinkMetadataFetcher
 import com.example.util.cleanMarkdownSyntax
 import java.util.Locale
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextLayoutResult
 
 @Composable
 fun NoteContentPreview(
@@ -45,7 +54,10 @@ fun NoteContentPreview(
     textColor: Color = MaterialTheme.colorScheme.onSurface,
     maxBlocks: Int = 3
 ) {
+    val isDark = isAppInDarkTheme()
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val blocks = remember(content) { NoteBlockSerializer.deserialize(content) }
+    var previewingWebUrl by remember { mutableStateOf<String?>(null) }
 
     if (blocks.isEmpty()) {
         Text(
@@ -102,46 +114,101 @@ fun NoteContentPreview(
                 }
 
                 is NoteBlock.Text -> {
-                    val cleaned = cleanMarkdownSyntax(block.content)
-                    if (cleaned.isNotBlank()) {
+                    if (block.content.isNotBlank()) {
+                        val annotated = remember(block.content, isDark, amber) {
+                            buildNoteRichAnnotatedString(block.content, isDark, amber)
+                        }
+                        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                         Text(
-                            text = cleaned,
+                            text = annotated,
                             style = MaterialTheme.typography.bodyMedium,
                             color = textColor,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { layoutResult = it },
+                            modifier = Modifier.onWebLinkClick(layoutResult) { webUrl ->
+                                previewingWebUrl = webUrl
+                            }
+                        )
+                    }
+                    val firstLink = remember(block.content) { WebLinkMetadataFetcher.extractWebLinks(block.content).firstOrNull() }
+                    if (firstLink != null) {
+                        CompactRichLinkNoteCardPreview(
+                            url = firstLink.url,
+                            inlineTitle = firstLink.inlineTitle,
+                            isDark = isDark,
+                            amber = amber,
+                            modifier = Modifier
+                                .padding(top = 4.dp)
                         )
                     }
                 }
 
                 is NoteBlock.CalloutBox -> {
-                    val cleaned = cleanMarkdownSyntax(block.content)
-                    if (cleaned.isNotBlank()) {
+                    if (block.content.isNotBlank()) {
+                        val annotated = remember(block.content, isDark, amber) {
+                            buildNoteRichAnnotatedString(block.content, isDark, amber)
+                        }
+                        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                         Text(
-                            text = cleaned,
+                            text = annotated,
                             style = MaterialTheme.typography.bodyMedium,
                             color = textColor,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { layoutResult = it },
+                            modifier = Modifier.onWebLinkClick(layoutResult) { webUrl ->
+                                previewingWebUrl = webUrl
+                            }
+                        )
+                    }
+                    val firstLink = remember(block.content) { WebLinkMetadataFetcher.extractWebLinks(block.content).firstOrNull() }
+                    if (firstLink != null) {
+                        CompactRichLinkNoteCardPreview(
+                            url = firstLink.url,
+                            inlineTitle = firstLink.inlineTitle,
+                            isDark = isDark,
+                            amber = amber,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }
 
                 is NoteBlock.SimpleList -> {
-                    val cleaned = cleanMarkdownSyntax(block.content)
-                    if (cleaned.isNotBlank()) {
+                    if (block.content.isNotBlank()) {
+                        val annotated = remember(block.content, isDark, amber) {
+                            buildNoteRichAnnotatedString(block.content, isDark, amber)
+                        }
+                        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                         Text(
-                            text = cleaned,
+                            text = annotated,
                             style = MaterialTheme.typography.bodyMedium,
                             color = textColor,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { layoutResult = it },
+                            modifier = Modifier.onWebLinkClick(layoutResult) { webUrl ->
+                                previewingWebUrl = webUrl
+                            }
+                        )
+                    }
+                    val firstLink = remember(block.content) { WebLinkMetadataFetcher.extractWebLinks(block.content).firstOrNull() }
+                    if (firstLink != null) {
+                        CompactRichLinkNoteCardPreview(
+                            url = firstLink.url,
+                            inlineTitle = firstLink.inlineTitle,
+                            isDark = isDark,
+                            amber = amber,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }
 
                 is NoteBlock.Checklist -> {
-                    val cleaned = cleanMarkdownSyntax(block.content)
+                    val annotated = remember(block.content, isDark, amber) {
+                        buildNoteRichAnnotatedString(block.content, isDark, amber)
+                    }
+                    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -152,14 +219,40 @@ fun NoteContentPreview(
                             fontWeight = FontWeight.Bold,
                             color = if (block.isChecked) MaterialTheme.colorScheme.primary else textColor.copy(alpha = 0.6f)
                         )
-                        Text(
-                            text = cleaned.ifBlank { "Tarea sin texto" },
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                textDecoration = if (block.isChecked) TextDecoration.LineThrough else null
-                            ),
-                            color = if (block.isChecked) textColor.copy(alpha = 0.6f) else textColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                        if (annotated.text.isNotBlank()) {
+                            Text(
+                                text = annotated,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    textDecoration = if (block.isChecked) TextDecoration.LineThrough else null
+                                ),
+                                color = if (block.isChecked) textColor.copy(alpha = 0.6f) else textColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                onTextLayout = { layoutResult = it },
+                                modifier = Modifier.onWebLinkClick(layoutResult) { webUrl ->
+                                    previewingWebUrl = webUrl
+                                }
+                            )
+                        } else {
+                            Text(
+                                text = "Tarea sin texto",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    textDecoration = if (block.isChecked) TextDecoration.LineThrough else null
+                                ),
+                                color = if (block.isChecked) textColor.copy(alpha = 0.6f) else textColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    val firstLink = remember(block.content) { WebLinkMetadataFetcher.extractWebLinks(block.content).firstOrNull() }
+                    if (firstLink != null) {
+                        CompactRichLinkNoteCardPreview(
+                            url = firstLink.url,
+                            inlineTitle = firstLink.inlineTitle,
+                            isDark = isDark,
+                            amber = amber,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }

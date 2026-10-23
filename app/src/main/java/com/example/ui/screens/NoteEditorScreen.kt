@@ -249,6 +249,7 @@ import com.example.util.GeminiAudioTranscriber
 import com.example.util.ImageHelper
 import com.example.util.NoteBlockSerializer
 import com.example.util.NotePdfExporter
+import com.example.util.WebLinkMetadataFetcher
 import com.example.util.isValidNoteForSync
 import com.example.viewmodel.NotesViewModel
 import com.example.viewmodel.Screen
@@ -333,6 +334,12 @@ fun NoteEditorScreen(
     var inlineMathDialogTargetBlockId by remember { mutableStateOf<String?>(null) }
     var inlineMathDialogIsEditing by remember { mutableStateOf(false) }
     var inlineMathDialogRange by remember { mutableStateOf<TextRange?>(null) }
+
+    var showWebLinkDialog by remember { mutableStateOf(false) }
+    var webLinkInitialText by remember { mutableStateOf("") }
+    var webLinkTargetBlockId by remember { mutableStateOf<String?>(null) }
+    var webLinkSelectionRange by remember { mutableStateOf<TextRange?>(null) }
+
     var showExportPdfChoiceDialog by remember { mutableStateOf(false) }
 
     fun evaluateNoteLinkTrigger(blockId: String, tfv: TextFieldValue) {
@@ -1611,6 +1618,25 @@ fun NoteEditorScreen(
                                 showInlineMathDialog = true
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             },
+                            onFormatWebLink = {
+                                ensureTextNoteExists()
+                                val targetId = focusedBlockId ?: blocks.firstOrNull {
+                                    it is NoteBlock.Text || it is NoteBlock.Checklist || it is NoteBlock.SimpleList || it is NoteBlock.CalloutBox
+                                }?.id
+                                webLinkTargetBlockId = targetId
+                                val currentTfv = if (targetId == "TITLE") titleTextFieldValue else (targetId?.let { blockTextFieldValues[it] })
+                                val sel = currentTfv?.selection
+                                webLinkSelectionRange = sel
+                                webLinkInitialText = if (currentTfv != null && sel != null && !sel.collapsed) {
+                                    val start = sel.min.coerceIn(0, currentTfv.text.length)
+                                    val end = sel.max.coerceIn(start, currentTfv.text.length)
+                                    currentTfv.text.substring(start, end)
+                                } else {
+                                    ""
+                                }
+                                showWebLinkDialog = true
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
                             onAddImage = {
                                 photoPickerLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -1845,6 +1871,64 @@ fun NoteEditorScreen(
                 showInlineMathDialog = false
             }
         } else null,
+        showWebLinkDialog = showWebLinkDialog,
+        webLinkInitialText = webLinkInitialText,
+        onDismissWebLink = { showWebLinkDialog = false },
+        onConfirmWebLink = { url, customTitle, cardMode ->
+            saveSnapshot()
+            WebLinkMetadataFetcher.setDisplayMode(context, url, cardMode)
+            val linkMarkdown = if (!customTitle.isNullOrBlank()) {
+                val safeTitle = customTitle.trim().replace("[", "(").replace("]", ")")
+                "[$safeTitle]($url)"
+            } else {
+                url
+            }
+
+            val targetId = webLinkTargetBlockId ?: focusedBlockId ?: blocks.firstOrNull {
+                it is NoteBlock.Text || it is NoteBlock.Checklist || it is NoteBlock.SimpleList || it is NoteBlock.CalloutBox
+            }?.id
+
+            if (targetId != null && targetId != "TITLE") {
+                val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                val text = currentTfv.text
+                val range = webLinkSelectionRange ?: currentTfv.selection
+                val newText: String
+                val newSelection: TextRange
+                if (range.min != range.max) {
+                    val start = range.min.coerceIn(0, text.length)
+                    val end = range.max.coerceIn(start, text.length)
+                    newText = text.substring(0, start) + linkMarkdown + text.substring(end)
+                    newSelection = TextRange(start + linkMarkdown.length)
+                } else {
+                    val cursor = range.min.coerceIn(0, text.length)
+                    val prefix = if (cursor > 0 && !text[cursor - 1].isWhitespace()) " " else ""
+                    val suffix = if (cursor < text.length && !text[cursor].isWhitespace()) " " else ""
+                    val insertStr = "$prefix$linkMarkdown$suffix"
+                    newText = text.substring(0, cursor) + insertStr + text.substring(cursor)
+                    newSelection = TextRange(cursor + insertStr.length)
+                }
+                blockTextFieldValues[targetId] = TextFieldValue(newText, newSelection)
+                val realIdx = blocks.indexOfFirst { it.id == targetId }
+                if (realIdx != -1) {
+                    when (val block = blocks[realIdx]) {
+                        is NoteBlock.Text -> blocks[realIdx] = block.copy(content = newText)
+                        is NoteBlock.Checklist -> blocks[realIdx] = block.copy(content = newText)
+                        is NoteBlock.SimpleList -> blocks[realIdx] = block.copy(content = newText)
+                        is NoteBlock.CalloutBox -> blocks[realIdx] = block.copy(content = newText)
+                        else -> {}
+                    }
+                }
+                targetFocusBlockId = targetId
+                focusedBlockId = targetId
+            } else {
+                val newBlockId = UUID.randomUUID().toString()
+                blocks.add(NoteBlock.Text(id = newBlockId, content = linkMarkdown))
+                blockTextFieldValues[newBlockId] = TextFieldValue(linkMarkdown, TextRange(linkMarkdown.length))
+                targetFocusBlockId = newBlockId
+                focusedBlockId = newBlockId
+            }
+            showWebLinkDialog = false
+        },
         showExportPdfChoiceDialog = showExportPdfChoiceDialog,
         onDismissExportPdfChoice = { showExportPdfChoiceDialog = false },
         onExportCompletePdf = {
