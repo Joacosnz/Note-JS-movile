@@ -138,6 +138,9 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsStateWithLifecycle()
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val context = LocalContext.current
@@ -178,9 +181,7 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = previewNote == null) {
-        if (uiState.isSelectionMode) {
-            viewModel.exitSelectionMode()
-        } else {
+        if (!viewModel.navigateBack()) {
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastBackPressTime < 2000L) {
                 (context as? Activity)?.finish()
@@ -203,18 +204,6 @@ fun HomeScreen(
                 viewModel.undoLastAction()
             }
             viewModel.clearSnackbar()
-        }
-    }
-
-    LaunchedEffect(uiState.activeTab, uiState.selectedFolder, uiState.selectedTag) {
-        if (uiState.activeTab != NavTab.NOTES ||
-            uiState.selectedFolder != null ||
-            (uiState.selectedTag != null &&
-                !uiState.selectedTag.equals("🔒 Privado", ignoreCase = true) &&
-                !uiState.selectedTag.equals("🔒 Privadas", ignoreCase = true) &&
-                !uiState.selectedTag.equals("Bloqueadas", ignoreCase = true))
-        ) {
-            viewModel.closePrivateFolder()
         }
     }
 
@@ -269,7 +258,17 @@ fun HomeScreen(
                         availableFolders = uiState.availableFolders,
                         selectedFolder = uiState.selectedFolder,
                         onSelectFolder = { viewModel.selectFolder(it) },
-                        onOpenFolderSheet = { showFolderSheet = true }
+                        onOpenFolderSheet = { showFolderSheet = true },
+                        isSignedIn = currentUser != null,
+                        syncState = syncState,
+                        pendingSyncCount = pendingSyncCount,
+                        onSyncStatusClick = {
+                            if (currentUser != null) {
+                                viewModel.syncPendingNotesNow()
+                            } else {
+                                viewModel.navigateTo(Screen.Settings)
+                            }
+                        }
                     )
 
                     if (!uiState.isSelectionMode) {
@@ -325,7 +324,6 @@ fun HomeScreen(
                                 },
                                 onClearFilters = {
                                     viewModel.selectFolder(null)
-                                    viewModel.selectTag(null)
                                 },
                                 onSortClick = { showSortSheet = true },
                                 modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
@@ -651,7 +649,6 @@ fun HomeScreen(
                         isFoldersActive = false,
                         onHomeClick = {
                             viewModel.selectFolder(null)
-                            viewModel.setActiveTab(NavTab.NOTES)
                         },
                         onFoldersClick = { viewModel.navigateTo(Screen.Folders) },
                         onNewNote = {

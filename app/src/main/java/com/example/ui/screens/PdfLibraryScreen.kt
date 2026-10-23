@@ -184,7 +184,7 @@ fun PdfLibraryScreen(
     }
 
     BackHandler {
-        viewModel.navigateTo(Screen.Home)
+        viewModel.navigateBack()
     }
 
     Scaffold(
@@ -200,7 +200,7 @@ fun PdfLibraryScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.navigateTo(Screen.Home) }) {
+                    IconButton(onClick = { viewModel.navigateBack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver"

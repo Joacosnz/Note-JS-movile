@@ -17,7 +17,7 @@ import com.example.data.local.entity.SignatureEntity
 
 @Database(
     entities = [NoteEntity::class, NoteFtsEntity::class, FolderEntity::class, SignatureEntity::class],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 @TypeConverters(UriConverters::class)
@@ -83,6 +83,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notes ADD COLUMN userId TEXT NOT NULL DEFAULT 'LOCAL_ANONYMOUS'")
+                db.execSQL("ALTER TABLE notes ADD COLUMN pendingDelete INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE notes ADD COLUMN lastModifiedLocal INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE notes ADD COLUMN remoteImageUrl TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE notes ADD COLUMN attachmentsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("UPDATE notes SET lastModifiedLocal = updatedAt WHERE lastModifiedLocal = 0")
+                db.execSQL("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -90,7 +102,16 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "auranotes_v3.db"
                 )
-                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                        MIGRATION_8_9,
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14
+                    )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                 INSTANCE = instance

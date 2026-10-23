@@ -1,7 +1,10 @@
 package com.example
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
@@ -20,8 +23,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.screens.DrawingScreen
@@ -146,14 +151,37 @@ fun NotesApp(
     onNoteOpened: () -> Unit = {},
     viewModel: NotesViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val canNavigateBack by viewModel.canNavigateBack.collectAsStateWithLifecycle()
+    val isNavigatingBack by viewModel.isNavigatingBack.collectAsStateWithLifecycle()
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
     val isSystemDark = isSystemInDarkTheme()
     val isDarkTheme = when (uiState.themeMode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
         ThemeMode.SYSTEM -> isSystemDark
+    }
+
+    // Root BackHandler manages system back press across all screens and tabs,
+    // popping the navigation history step-by-step until reaching the root Home screen.
+    // Child BackHandlers (e.g., Editor auto-save, Drawing save, or modal sheets)
+    // registered deeper in the composition hierarchy automatically take priority when enabled.
+    BackHandler(enabled = true) {
+        if (canNavigateBack && viewModel.navigateBack()) {
+            return@BackHandler
+        }
+        if (!viewModel.navigateBack()) {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastBackPressTime < 2000L) {
+                (context as? Activity)?.finish()
+            } else {
+                lastBackPressTime = currentTime
+                Toast.makeText(context, "Presione de nuevo para salir", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     MyApplicationTheme(darkTheme = isDarkTheme) {
@@ -183,9 +211,15 @@ fun NotesApp(
             AnimatedContent(
                 targetState = currentScreen,
                 transitionSpec = {
-                    (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
-                        slideOutHorizontally { width -> -width } + fadeOut()
-                    )
+                    if (isNavigatingBack) {
+                        (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
+                            slideOutHorizontally { width -> width } + fadeOut()
+                        )
+                    } else {
+                        (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                            slideOutHorizontally { width -> -width } + fadeOut()
+                        )
+                    }
                 },
                 label = "screen_transition"
             ) { screen ->
@@ -231,3 +265,4 @@ fun NotesApp(
         }
     }
 }
+

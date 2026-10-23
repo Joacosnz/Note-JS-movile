@@ -16,6 +16,7 @@ fun NoteEntity.toFirestoreMap(): Map<String, Any?> {
 
     return mapOf(
         "remoteUuid" to remoteUuid,
+        "userId" to userId,
         "title" to title,
         "content" to content,
         "blocks" to blocksList,
@@ -38,8 +39,11 @@ fun NoteEntity.toFirestoreMap(): Map<String, Any?> {
         "isReminderDone" to isReminderDone,
         "createdAt" to createdAt,
         "updatedAt" to updatedAt,
+        "lastModifiedLocal" to lastModifiedLocal,
         "updatedAtServer" to System.currentTimeMillis(),
-        "remoteUrl" to remoteUrl
+        "remoteUrl" to remoteUrl,
+        "remoteImageUrl" to remoteImageUrl,
+        "attachmentsJson" to attachmentsJson
     )
 }
 
@@ -128,8 +132,9 @@ fun NoteBlock.toFirestoreBlockMap(): Map<String, Any?> {
 }
 
 @Suppress("UNCHECKED_CAST")
-fun Map<String, Any?>.toNoteEntity(): NoteEntity {
+fun Map<String, Any?>.toNoteEntity(fallbackUserId: String = NoteEntity.LOCAL_ANONYMOUS_USER_ID): NoteEntity {
     val remoteUuid = this["remoteUuid"] as? String ?: UUID.randomUUID().toString()
+    val userId = (this["userId"] as? String)?.takeIf { it.isNotBlank() } ?: fallbackUserId
     val title = this["title"] as? String ?: ""
     val rawContent = this["content"] as? String ?: ""
     val colorIndex = (this["colorIndex"] as? Number)?.toInt() ?: 0
@@ -151,12 +156,18 @@ fun Map<String, Any?>.toNoteEntity(): NoteEntity {
     val isReminderDone = this["isReminderDone"] as? Boolean ?: false
     val createdAt = (this["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
     val updatedAt = (this["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
-    val updatedAtServer = (this["updatedAtServer"] as? Number)?.toLong() ?: 0L
+    val lastModifiedLocal = (this["lastModifiedLocal"] as? Number)?.toLong() ?: updatedAt
+    val updatedAtServer = (this["updatedAtServer"] as? Number)?.toLong() ?: updatedAt
     val remoteUrl = this["remoteUrl"] as? String ?: ""
+    val remoteImageUrl = this["remoteImageUrl"] as? String ?: ""
+    val attachmentsJson = this["attachmentsJson"] as? String ?: "[]"
 
     return NoteEntity(
         remoteUuid = remoteUuid,
+        userId = userId,
         isSynced = true,
+        pendingDelete = false,
+        lastModifiedLocal = lastModifiedLocal,
         updatedAtServer = updatedAtServer,
         title = title,
         content = rawContent,
@@ -179,6 +190,9 @@ fun Map<String, Any?>.toNoteEntity(): NoteEntity {
         isReminderDone = isReminderDone,
         createdAt = createdAt,
         updatedAt = updatedAt,
-        remoteUrl = remoteUrl
+        remoteUrl = remoteUrl,
+        remoteImageUrl = remoteImageUrl,
+        attachmentsJson = attachmentsJson
     )
 }
+

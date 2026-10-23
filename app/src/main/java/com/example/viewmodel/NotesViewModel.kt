@@ -1,5 +1,6 @@
 package com.example.viewmodel
 
+import android.app.Activity
 import android.app.Application
 import android.content.ContentValues
 import android.content.Context
@@ -11,6 +12,8 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.auth.AuthManager
+import com.example.auth.AuthResult
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.NoteEntity
@@ -44,10 +47,12 @@ import com.example.util.SettingsManager
 import com.example.util.ThemeMode
 import com.example.util.PaperThemeMode
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
@@ -183,6 +188,16 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val _pendingUndoNote = MutableStateFlow<NoteEntity?>(null)
     val firestoreManager = FirestoreManager()
     val syncState: StateFlow<SyncState> = firestoreManager.syncState
+    val authManager = AuthManager(application)
+    val currentUser: StateFlow<FirebaseUser?> = authManager.currentUserFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = authManager.currentUser
+    )
+    private val _isSigningIn = MutableStateFlow(false)
+    val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
+
+    val pendingSyncCount: StateFlow<Int>
 
     private val _isSelectionMode = MutableStateFlow(false)
     private val _selectedNoteIds = MutableStateFlow<Set<Long>>(emptySet())
@@ -209,9 +224,20 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
             context = application.applicationContext
         )
 
-        val currentUser = try { FirebaseAuth.getInstance().currentUser } catch (_: Exception) { null }
-        if (currentUser != null) {
-            repository.startListeningToCloud(currentUser.uid)
+        pendingSyncCount = repository.pendingSyncCount.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0
+        )
+
+        viewModelScope.launch {
+            authManager.currentUserFlow.collectLatest { user ->
+                if (user != null) {
+                    repository.startListeningToCloud(user.uid)
+                } else {
+                    repository.stopListeningToCloud(resetToAnonymous = true)
+                }
+            }
         }
         _isGridView.value = settingsManager.isGridViewDefault()
         _sortOption.value = settingsManager.getDefaultSortOption()
@@ -437,22 +463,156 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         initialValue = NotesUiState()
     )
 
-    fun navigateTo(screen: Screen) {
-        currentScreen.value = screen
+    private data class NavigationSnapshot(
+        val screen: Screen = Screen.Home,
+        val activeTab: NavTab = NavTab.NOTES,
+        val selectedFolder: String? = null,
+        val selectedTag: String? = null,
+        val isViewingPrivateFolder: Boolean = false
+    ) {
+        fun isRootHome(): Boolean {
+            return screen == Screen.Home &&
+                activeTab == NavTab.NOTES &&
+                selectedFolder == null &&
+                selectedTag == null &&
+                !isViewingPrivateFolder
+        }
     }
 
-    fun navigateBack() {
-        currentScreen.value = Screen.Home
+    private val navigationHistory = ArrayDeque<NavigationSnapshot>()
+    private val _canNavigateBack = MutableStateFlow(false)
+    val canNavigateBack = _canNavigateBack.asStateFlow()
+    private val _isNavigatingBack = MutableStateFlow(false)
+    val isNavigatingBack = _isNavigatingBack.asStateFlow()
+
+    private fun updateCanNavigateBack() {
+        val snapshot = currentNavigationSnapshot()
+        _canNavigateBack.value = navigationHistory.isNotEmpty() ||
+            !snapshot.isRootHome() ||
+            _isSelectionMode.value ||
+            _searchQuery.value.isNotBlank()
+    }
+
+    private fun currentNavigationSnapshot(): NavigationSnapshot {
+        val normFolder = _selectedFolder.value?.takeIf {
+            it.isNotBlank() &&
+                !it.equals("Todas", ignoreCase = true) &&
+                !it.equals("Todas las notas", ignoreCase = true) &&
+                !it.equals("Notas", ignoreCase = true)
+        }
+        val normTag = _selectedTag.value?.takeIf {
+            it.isNotBlank() && !it.equals("Todas", ignoreCase = true)
+        }
+        return NavigationSnapshot(
+            screen = currentScreen.value,
+            activeTab = _activeTab.value,
+            selectedFolder = normFolder,
+            selectedTag = normTag,
+            isViewingPrivateFolder = _isViewingPrivateFolder.value
+        )
+    }
+
+    private fun transitionToSnapshot(target: NavigationSnapshot, recordHistory: Boolean = true) {
+        val normalizedTarget = target.copy(
+            selectedFolder = target.selectedFolder?.takeIf {
+                it.isNotBlank() &&
+                    !it.equals("Todas", ignoreCase = true) &&
+                    !it.equals("Todas las notas", ignoreCase = true) &&
+                    !it.equals("Notas", ignoreCase = true)
+            },
+            selectedTag = target.selectedTag?.takeIf {
+                it.isNotBlank() && !it.equals("Todas", ignoreCase = true)
+            }
+        )
+        val current = currentNavigationSnapshot()
+        if (current == normalizedTarget) {
+            updateCanNavigateBack()
+            return
+        }
+
+        _isNavigatingBack.value = !recordHistory
+
+        if (recordHistory) {
+            if (navigationHistory.lastOrNull() != current) {
+                navigationHistory.addLast(current)
+                while (navigationHistory.size > 50) {
+                    navigationHistory.removeFirst()
+                }
+            }
+        }
+
+        _selectedFolder.value = normalizedTarget.selectedFolder
+        _selectedTag.value = normalizedTarget.selectedTag
+        _isViewingPrivateFolder.value = normalizedTarget.isViewingPrivateFolder
+        if (normalizedTarget.isViewingPrivateFolder) {
+            val privateIds = uiState.value.allActiveNotes.filter { it.isLocked }.map { it.id }.toSet()
+            _unlockedNoteIds.value = _unlockedNoteIds.value + privateIds
+        } else {
+            _unlockedNoteIds.value = emptySet()
+        }
+        _activeTab.value = normalizedTarget.activeTab
+        exitSelectionMode()
+        currentScreen.value = normalizedTarget.screen
+        updateCanNavigateBack()
+    }
+
+    fun navigateTo(screen: Screen) {
+        val current = currentNavigationSnapshot()
+        transitionToSnapshot(current.copy(screen = screen))
+    }
+
+    fun navigateBack(): Boolean {
+        if (currentScreen.value == Screen.Home) {
+            if (_isSelectionMode.value) {
+                exitSelectionMode()
+                return true
+            }
+            if (_searchQuery.value.isNotBlank()) {
+                _searchQuery.value = ""
+                updateCanNavigateBack()
+                return true
+            }
+            if (currentNavigationSnapshot().isRootHome()) {
+                navigationHistory.clear()
+                updateCanNavigateBack()
+                return false
+            }
+        }
+
+        val current = currentNavigationSnapshot()
+        while (navigationHistory.isNotEmpty()) {
+            val previous = navigationHistory.removeLast()
+            if (previous != current) {
+                transitionToSnapshot(previous, recordHistory = false)
+                if (previous.isRootHome()) {
+                    navigationHistory.clear()
+                    updateCanNavigateBack()
+                }
+                return true
+            }
+        }
+
+        if (!current.isRootHome()) {
+            transitionToSnapshot(NavigationSnapshot(), recordHistory = false)
+            navigationHistory.clear()
+            updateCanNavigateBack()
+            return true
+        }
+
+        updateCanNavigateBack()
+        return false
     }
 
     fun openPrivateFolder() {
-        _selectedFolder.value = null
-        _selectedTag.value = "🔒 Privado"
-        _activeTab.value = NavTab.NOTES
-        _isViewingPrivateFolder.value = true
-        val privateIds = uiState.value.allActiveNotes.filter { it.isLocked }.map { it.id }.toSet()
-        _unlockedNoteIds.value = _unlockedNoteIds.value + privateIds
-        currentScreen.value = Screen.Home
+        transitionToSnapshot(
+            NavigationSnapshot(
+                screen = Screen.Home,
+                activeTab = NavTab.NOTES,
+                selectedFolder = null,
+                selectedTag = "🔒 Privado",
+                isViewingPrivateFolder = true
+            )
+        )
     }
 
     fun closePrivateFolder() {
@@ -489,12 +649,15 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectFolder(folder: String?) {
-        _selectedFolder.value = folder
-        _selectedTag.value = null
-        _isViewingPrivateFolder.value = false
-        _unlockedNoteIds.value = emptySet()
-        _activeTab.value = NavTab.NOTES
-        currentScreen.value = Screen.Home
+        transitionToSnapshot(
+            NavigationSnapshot(
+                screen = Screen.Home,
+                activeTab = NavTab.NOTES,
+                selectedFolder = folder,
+                selectedTag = null,
+                isViewingPrivateFolder = false
+            )
+        )
     }
 
     fun setFolderFilter(folder: String?) {
@@ -502,26 +665,35 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectTagAndNavigate(tag: String) {
-        _selectedFolder.value = null
-        _selectedTag.value = tag
         if (tag.equals("🔒 Privado", ignoreCase = true) || tag.equals("🔒 Privadas", ignoreCase = true) || tag.equals("Bloqueadas", ignoreCase = true)) {
             openPrivateFolder()
         } else {
-            _isViewingPrivateFolder.value = false
-            _unlockedNoteIds.value = emptySet()
+            transitionToSnapshot(
+                NavigationSnapshot(
+                    screen = Screen.Home,
+                    activeTab = NavTab.NOTES,
+                    selectedFolder = null,
+                    selectedTag = tag,
+                    isViewingPrivateFolder = false
+                )
+            )
         }
-        _activeTab.value = NavTab.NOTES
-        currentScreen.value = Screen.Home
     }
 
     fun selectTab(tab: NavTab) {
-        _selectedFolder.value = null
-        _selectedTag.value = null
-        _isViewingPrivateFolder.value = false
-        _unlockedNoteIds.value = emptySet()
-        _activeTab.value = tab
-        exitSelectionMode()
-        currentScreen.value = Screen.Home
+        if (tab == NavTab.PDF_LIBRARY) {
+            navigateTo(Screen.PdfLibrary)
+            return
+        }
+        transitionToSnapshot(
+            NavigationSnapshot(
+                screen = Screen.Home,
+                activeTab = tab,
+                selectedFolder = null,
+                selectedTag = null,
+                isViewingPrivateFolder = false
+            )
+        )
     }
 
     fun createFolder(name: String) {
@@ -595,21 +767,32 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
+        updateCanNavigateBack()
     }
 
     fun selectTag(tag: String?) {
         if (tag == "Todas" || tag == null) {
-            _selectedTag.value = null
-            _selectedFolder.value = null
-            _isViewingPrivateFolder.value = false
-            _unlockedNoteIds.value = emptySet()
+            transitionToSnapshot(
+                NavigationSnapshot(
+                    screen = Screen.Home,
+                    activeTab = NavTab.NOTES,
+                    selectedFolder = null,
+                    selectedTag = null,
+                    isViewingPrivateFolder = false
+                )
+            )
         } else if (tag.equals("🔒 Privado", ignoreCase = true) || tag.equals("🔒 Privadas", ignoreCase = true) || tag.equals("Bloqueadas", ignoreCase = true)) {
             openPrivateFolder()
         } else {
-            _selectedFolder.value = null
-            _selectedTag.value = tag
-            _isViewingPrivateFolder.value = false
-            _unlockedNoteIds.value = emptySet()
+            transitionToSnapshot(
+                NavigationSnapshot(
+                    screen = Screen.Home,
+                    activeTab = NavTab.NOTES,
+                    selectedFolder = null,
+                    selectedTag = tag,
+                    isViewingPrivateFolder = false
+                )
+            )
         }
     }
 
@@ -657,9 +840,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setActiveTab(tab: NavTab) {
-        _selectedFolder.value = null
-        _activeTab.value = tab
-        exitSelectionMode()
+        selectTab(tab)
     }
 
     fun enterSelectionMode(initialNoteId: Long? = null) {
@@ -667,11 +848,13 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         if (initialNoteId != null) {
             _selectedNoteIds.value = setOf(initialNoteId)
         }
+        updateCanNavigateBack()
     }
 
     fun exitSelectionMode() {
         _isSelectionMode.value = false
         _selectedNoteIds.value = emptySet()
+        updateCanNavigateBack()
     }
 
     fun toggleNoteSelection(noteId: Long) {
@@ -1392,7 +1575,64 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopListeningToCloud() {
-        repository.stopListeningToCloud()
+        repository.stopListeningToCloud(resetToAnonymous = true)
+    }
+
+    /**
+     * Inicia sesión con Google mediante la API moderna Credential Manager vinculada a Firebase Auth,
+     * reclamando las notas anónimas ('LOCAL_ANONYMOUS') y drenando la cola de sincronización offline.
+     */
+    fun signInWithCredentialManager(
+        activity: Activity,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        if (_isSigningIn.value) return
+        viewModelScope.launch {
+            _isSigningIn.value = true
+            when (val result = authManager.signInWithCredentialManager(activity)) {
+                is AuthResult.Success -> {
+                    repository.startListeningToCloud(result.user.uid)
+                    val msg = "Sesión iniciada como ${result.user.displayName ?: result.user.email ?: "Usuario"}"
+                    _snackbarMessage.value = msg
+                    _isSigningIn.value = false
+                    onComplete(true, msg)
+                }
+                is AuthResult.Cancelled -> {
+                    _isSigningIn.value = false
+                    onComplete(false, "Inicio de sesión cancelado")
+                }
+                is AuthResult.Error -> {
+                    _snackbarMessage.value = result.message
+                    _isSigningIn.value = false
+                    onComplete(false, result.message)
+                }
+            }
+        }
+    }
+
+    /**
+     * Cierra la sesión en Firebase Auth y Credential Manager, aislando las notas de la cuenta anterior.
+     */
+    fun signOutAccount(onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.stopListeningToCloud(resetToAnonymous = true)
+            authManager.signOutAsync()
+            _snackbarMessage.value = "Sesión cerrada"
+            onComplete()
+        }
+    }
+
+    /**
+     * Fuerza el drenado inmediato de la cola de sincronización offline (notas con isSynced=false o pendingDelete=true).
+     */
+    fun syncPendingNotesNow() {
+        val uid = currentUser.value?.uid ?: try { FirebaseAuth.getInstance().currentUser?.uid } catch (_: Exception) { null }
+        if (uid != null) {
+            repository.syncPendingNotes(uid)
+            _snackbarMessage.value = "Sincronizando cambios pendientes con la nube..."
+        } else {
+            _snackbarMessage.value = "Inicia sesión para sincronizar tus notas en la nube"
+        }
     }
 
     fun resetDriveSyncProgress() {

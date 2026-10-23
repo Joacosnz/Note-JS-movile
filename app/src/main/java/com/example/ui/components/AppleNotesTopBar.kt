@@ -1,6 +1,9 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,7 +11,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewAgenda
@@ -21,10 +28,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.SyncState
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
 import com.example.ui.theme.isAppInDarkTheme
@@ -47,7 +57,11 @@ fun NoteJsTopBar(
     availableFolders: List<String> = emptyList(),
     selectedFolder: String? = null,
     onSelectFolder: ((String?) -> Unit)? = null,
-    onOpenFolderSheet: (() -> Unit)? = null
+    onOpenFolderSheet: (() -> Unit)? = null,
+    isSignedIn: Boolean = false,
+    syncState: SyncState = SyncState.SYNCED,
+    pendingSyncCount: Int = 0,
+    onSyncStatusClick: (() -> Unit)? = null
 ) {
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
@@ -133,6 +147,58 @@ fun NoteJsTopBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    if (onSyncStatusClick != null) {
+                        val badgeColor = when {
+                            !isSignedIn -> MaterialTheme.colorScheme.onSurfaceVariant
+                            syncState == SyncState.SYNCING -> Color(0xFF4285F4)
+                            pendingSyncCount > 0 || syncState == SyncState.OFFLINE -> Color(0xFFFF9500)
+                            else -> Color(0xFF34A853)
+                        }
+                        val badgeIcon = when {
+                            !isSignedIn -> Icons.Default.CloudOff
+                            syncState == SyncState.SYNCING || pendingSyncCount > 0 -> Icons.Default.CloudSync
+                            syncState == SyncState.OFFLINE -> Icons.Default.CloudOff
+                            else -> Icons.Default.CloudDone
+                        }
+                        val badgeLabel = when {
+                            !isSignedIn -> "Local"
+                            syncState == SyncState.SYNCING -> "Sync..."
+                            pendingSyncCount > 0 -> "$pendingSyncCount pend."
+                            syncState == SyncState.OFFLINE -> "Offline"
+                            else -> "Al día"
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(badgeColor.copy(alpha = 0.14f))
+                                .clickable { onSyncStatusClick() }
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
+                                .testTag("sync_status_badge"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = badgeIcon,
+                                    contentDescription = "Estado de sincronización",
+                                    tint = badgeColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = badgeLabel,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    color = badgeColor
+                                )
+                            }
+                        }
+                    }
+
                     if (onOpenFolderSheet != null || onSelectFolder != null) {
                         IconButton(
                             onClick = { onOpenFolderSheet?.invoke() ?: onSelectFolder?.invoke(null) },
@@ -187,3 +253,4 @@ fun NoteJsTopBar(
         }
     }
 }
+

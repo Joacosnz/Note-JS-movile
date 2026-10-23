@@ -5,12 +5,33 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.util.UUID
 
+enum class MediaType {
+    IMAGE,
+    PDF,
+    AUDIO
+}
+
+data class NoteMediaAttachment(
+    val id: String = UUID.randomUUID().toString(),
+    val type: MediaType = MediaType.IMAGE,
+    val displayName: String = "",
+    val mimeType: String = "application/octet-stream",
+    val localUri: String? = null,
+    val remoteUrl: String? = null,
+    val storagePath: String? = null,
+    val sizeBytes: Long = 0L,
+    val pageCount: Int = 0
+)
+
 @Entity(tableName = "notes")
 data class NoteEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val remoteUuid: String = UUID.randomUUID().toString(),
+    val userId: String = LOCAL_ANONYMOUS_USER_ID, // Aislamiento multi-cuenta por UID de Firebase Auth
     val isSynced: Boolean = false,
+    val pendingDelete: Boolean = false, // Soft-delete offline para sincronizar borrados con Firestore
+    val lastModifiedLocal: Long = System.currentTimeMillis(),
     val updatedAtServer: Long = 0L,
     val title: String = "",
     val content: String = "",
@@ -33,9 +54,16 @@ data class NoteEntity(
     val isReminderDone: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val imageUri: Uri? = null, // <- Añadido para guardar el URI de Photo Picker
-    val pdfExtractedText: String? = null, // <- Para Búsqueda Profunda (Deep Search) en PDFs
-    val remoteUrl: String = "", // <- URL remota del archivo adjunto en Firebase Cloud Storage
-    val searchableText: String = "", // <- Texto aplanado centralizado para FTS4
+    val imageUri: Uri? = null, // URI local de imagen adjunta (Photo Picker)
+    val remoteImageUrl: String = "", // URL remota de la imagen principal en Firebase Storage
+    val pdfExtractedText: String? = null, // Para Búsqueda Profunda (Deep Search) en PDFs
+    val remoteUrl: String = "", // URL remota del archivo PDF principal en Firebase Cloud Storage
+    val attachmentsJson: String = "[]", // Lista serializada de NoteMediaAttachment (URI local + URL remota)
+    val searchableText: String = "", // Texto aplanado centralizado para FTS4
     val syncEnabled: Boolean = true
-)
+) {
+    companion object {
+        const val LOCAL_ANONYMOUS_USER_ID = "LOCAL_ANONYMOUS"
+    }
+}
+

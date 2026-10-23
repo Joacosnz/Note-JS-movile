@@ -105,7 +105,7 @@ fun FoldersScreen(
 
     BackHandler {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        viewModel.navigateTo(Screen.Home)
+        viewModel.navigateBack()
     }
 
     Box(
@@ -460,7 +460,7 @@ fun FoldersScreen(
             isFoldersActive = true,
             onHomeClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                viewModel.navigateTo(Screen.Home)
+                viewModel.selectFolder(null)
             },
             onFoldersClick = {},
             onVoiceNote = {
@@ -529,6 +529,18 @@ fun FoldersScreen(
             title = { Text("Carpeta: $folderName") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            showFolderOptionsDialog = false
+                            viewModel.selectFolder(folderName)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ver notas de la carpeta", modifier = Modifier.weight(1f))
+                    }
+
                     TextButton(
                         onClick = {
                             showFolderOptionsDialog = false
@@ -639,6 +651,18 @@ fun FoldersScreen(
             title = { Text("Etiqueta: #$tagName") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            showTagOptionsDialog = false
+                            viewModel.selectTagAndNavigate(tagName)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Tag, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ver notas con #$tagName", modifier = Modifier.weight(1f))
+                    }
+
                     TextButton(
                         onClick = {
                             showTagOptionsDialog = false

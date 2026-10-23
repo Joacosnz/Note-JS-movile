@@ -243,7 +243,7 @@ fun PdfViewerScreen(
     fun saveAndExit() {
         val serializedJson = serializeAnnotations(pageStrokesMap, pageSignaturesMap)
         viewModel.savePdfAnnotationData(noteId, serializedJson) {
-            viewModel.navigateTo(Screen.Editor(noteId = noteId))
+            viewModel.navigateBack()
         }
     }
 

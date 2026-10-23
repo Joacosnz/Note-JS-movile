@@ -124,6 +124,10 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val isSigningIn by viewModel.isSigningIn.collectAsStateWithLifecycle()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsStateWithLifecycle()
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
@@ -141,9 +145,9 @@ fun SettingsScreen(
 
     val coroutineScope = rememberCoroutineScope()
     val authManager = remember { AuthManager(context) }
-    var isFirebaseConnected by remember {
+    var isFirebaseConnected by remember(currentUser) {
         mutableStateOf(
-            try {
+            currentUser != null || try {
                 FirebaseAuth.getInstance().currentUser != null
             } catch (_: Exception) {
                 false
@@ -292,7 +296,7 @@ fun SettingsScreen(
             item {
                 SettingsSectionHeader("CUENTA DE NOTE JS")
                 SettingsGroupCard {
-                    if (!isDriveConnected || !isFirebaseConnected) {
+                    if (!isFirebaseConnected && !isDriveConnected) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -305,7 +309,7 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Respaldo y Sincronización",
+                                        text = "Sincronización Offline-First y Respaldo",
                                         style = MaterialTheme.typography.bodyLarge.copy(
                                             fontWeight = FontWeight.SemiBold,
                                             fontSize = 16.sp
@@ -315,7 +319,10 @@ fun SettingsScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = "Guarda tus notas en la nube",
+                                        text = if (pendingSyncCount > 0)
+                                            "$pendingSyncCount notas locales listas para vincular a tu cuenta"
+                                        else
+                                            "Modo local activo • Tus notas están seguras en Room",
                                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -327,7 +334,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Text(
-                                text = "Inicia sesión con Note JS para sincronizar tus notas en tiempo real y respaldarlas automáticamente en Note JS Cloud.",
+                                text = "Inicia sesión con Google para activar la sincronización en tiempo real con Firebase Firestore y Cloud Storage, aislando tus notas por cuenta.",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp
@@ -339,11 +346,25 @@ fun SettingsScreen(
 
                             Button(
                                 onClick = {
-                                    googleDriveLauncher.launch(driveManager.getGoogleSignInClient().signInIntent)
+                                    val activity = context as? Activity
+                                    if (activity != null) {
+                                        viewModel.signInWithCredentialManager(activity) { success, message ->
+                                            if (success) {
+                                                isFirebaseConnected = true
+                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                // Fallback al cliente unificado de Google Sign-In si Credential Manager no tiene cuenta configurada
+                                                googleDriveLauncher.launch(driveManager.getGoogleSignInClient().signInIntent)
+                                            }
+                                        }
+                                    } else {
+                                        googleDriveLauncher.launch(driveManager.getGoogleSignInClient().signInIntent)
+                                    }
                                 },
+                                enabled = !isSigningIn,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 44.dp)
+                                    .heightIn(min = 48.dp)
                                     .testTag("btn_sign_in_google_unified"),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(
@@ -351,14 +372,22 @@ fun SettingsScreen(
                                     contentColor = Color.White
                                 )
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudUpload,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                if (isSigningIn) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudUpload,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Iniciar sesión con Note JS",
+                                    text = if (isSigningIn) "Conectando con Google..." else "Continuar con Google",
                                     style = MaterialTheme.typography.bodyMedium.copy(
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 15.sp
@@ -369,19 +398,31 @@ fun SettingsScreen(
                             }
                         }
                     } else {
-                        val currentUser = try {
+                        val fbUser = currentUser ?: try {
                             FirebaseAuth.getInstance().currentUser
                         } catch (_: Exception) {
                             null
                         }
                         val googleAccount = driveManager.getSignedInAccount()
-                        val displayName = currentUser?.displayName?.ifBlank { null }
+                        val displayName = fbUser?.displayName?.ifBlank { null }
                             ?: googleAccount?.displayName?.ifBlank { null }
                             ?: "Usuario"
-                        val email = currentUser?.email?.ifBlank { null }
+                        val email = fbUser?.email?.ifBlank { null }
                             ?: googleAccount?.email?.ifBlank { null }
                             ?: "Sin correo electrónico"
-                        val photoUrl = currentUser?.photoUrl ?: googleAccount?.photoUrl
+                        val photoUrl = fbUser?.photoUrl ?: googleAccount?.photoUrl
+
+                        val statusBadgeText = when {
+                            syncState == com.example.model.SyncState.SYNCING -> "Sincronizando"
+                            pendingSyncCount > 0 -> "Pendientes: $pendingSyncCount"
+                            syncState == com.example.model.SyncState.OFFLINE -> "Offline"
+                            else -> "Sincronizado"
+                        }
+                        val statusBadgeColor = when {
+                            syncState == com.example.model.SyncState.SYNCING -> Color(0xFF4285F4)
+                            pendingSyncCount > 0 || syncState == com.example.model.SyncState.OFFLINE -> Color(0xFFFF9500)
+                            else -> Color(0xFF34A853)
+                        }
 
                         Column {
                             // Fila de estado de la cuenta / Perfil
@@ -435,16 +476,16 @@ fun SettingsScreen(
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(4.dp))
-                                                    .background(Color(0xFF34A853).copy(alpha = 0.15f))
+                                                    .background(statusBadgeColor.copy(alpha = 0.15f))
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             ) {
                                                 Text(
-                                                    text = "Activo",
+                                                    text = statusBadgeText,
                                                     style = MaterialTheme.typography.labelSmall.copy(
                                                         fontSize = 10.sp,
                                                         fontWeight = FontWeight.Bold
                                                     ),
-                                                    color = Color(0xFF34A853),
+                                                    color = statusBadgeColor,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
@@ -463,19 +504,18 @@ fun SettingsScreen(
 
                                 IconButton(
                                     onClick = {
-                                        viewModel.stopListeningToCloud()
-                                        try {
-                                            driveManager.getGoogleSignInClient().signOut().addOnCompleteListener {
-                                                authManager.signOut()
+                                        viewModel.signOutAccount {
+                                            try {
+                                                driveManager.getGoogleSignInClient().signOut().addOnCompleteListener {
+                                                    isDriveConnected = false
+                                                    isFirebaseConnected = false
+                                                    Toast.makeText(context, "Cuenta de Note JS desvinculada", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } catch (_: Exception) {
                                                 isDriveConnected = false
                                                 isFirebaseConnected = false
                                                 Toast.makeText(context, "Cuenta de Note JS desvinculada", Toast.LENGTH_SHORT).show()
                                             }
-                                        } catch (_: Exception) {
-                                            authManager.signOut()
-                                            isDriveConnected = false
-                                            isFirebaseConnected = false
-                                            Toast.makeText(context, "Cuenta de Note JS desvinculada", Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     modifier = Modifier
@@ -490,6 +530,27 @@ fun SettingsScreen(
                                     )
                                 }
                             }
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 60.dp),
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+
+                            // Fila de cola Offline-First (Room <-> Firestore + Cloud Storage)
+                            SettingsRow(
+                                icon = Icons.Default.CloudSync,
+                                badgeColor = statusBadgeColor,
+                                title = "Sincronización Cloud (Firestore)",
+                                subtitle = if (pendingSyncCount > 0)
+                                    "$pendingSyncCount cambios locales pendientes • Toca para sincronizar ahora"
+                                else
+                                    "Base de datos local Room sincronizada en tiempo real",
+                                onClick = {
+                                    viewModel.syncPendingNotesNow()
+                                },
+                                testTag = "btn_sync_firestore_now"
+                            )
 
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 60.dp),
