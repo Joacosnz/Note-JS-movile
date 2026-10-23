@@ -1,6 +1,7 @@
 package com.example.util
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.util.Log
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
@@ -14,6 +15,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDFont
 import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
+import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionURI
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDBorderStyleDictionary
@@ -263,7 +265,7 @@ object NotePdfExporter {
         contentStream.stroke()
         currentY -= 18f
 
-        // Función auxiliar para texto multilínea
+        // Función auxiliar para texto multilínea (con preservación de hipervínculos en línea clicables en PDF)
         fun drawWrappedText(
             text: String,
             font: PDFont,
@@ -277,6 +279,7 @@ object NotePdfExporter {
             val safeText = sanitizeForPdfBox(cleanMarkdownSyntax(text), font)
             if (safeText.isBlank()) return
 
+            val inlineLinks = WebLinkMetadataFetcher.extractWebLinks(text)
             val maxLineWidth = USABLE_WIDTH - indentX
             val words = safeText.split(" ")
             val lines = mutableListOf<String>()
@@ -304,6 +307,7 @@ object NotePdfExporter {
             val totalHeight = lines.size * (fontSize + lineSpacing)
             checkPageBreak(totalHeight)
 
+            val blockTopY = currentY
             for (l in lines) {
                 contentStream.beginText()
                 contentStream.setFont(font, fontSize)
@@ -313,20 +317,87 @@ object NotePdfExporter {
                 contentStream.endText()
                 currentY -= (fontSize + lineSpacing)
             }
+            val blockBottomY = currentY
+
+            // Si el párrafo contiene enlaces web, adjuntamos anotación de hipervínculo clicable sobre el texto
+            if (inlineLinks.isNotEmpty() && blockTopY > blockBottomY) {
+                val primaryLink = inlineLinks.first()
+                try {
+                    val textLinkAnnotation = PDAnnotationLink().apply {
+                        borderStyle = PDBorderStyleDictionary().apply { width = 0f }
+                        rectangle = PDRectangle(
+                            MARGIN + indentX,
+                            blockBottomY,
+                            USABLE_WIDTH - indentX,
+                            (blockTopY - blockBottomY).coerceAtLeast(fontSize)
+                        )
+                        action = PDActionURI().apply { uri = primaryLink.url }
+                    }
+                    currentPage.annotations.add(textLinkAnnotation)
+                } catch (e: Exception) {
+                    Log.w("NotePdfExporter", "Error adjuntando enlace en línea al PDF: ${e.message}")
+                }
+            }
         }
 
-        // Función auxiliar para dibujar tarjetas de enlaces enriquecidos y adjuntar hipervínculos interactivos al PDF
+        // Función auxiliar para dibujar tarjetas de enlaces enriquecidos (con miniaturas cacheadas offline e hipervínculos vivos)
         fun drawRichLinksForBlockContent(rawContent: String) {
             val links = WebLinkMetadataFetcher.extractWebLinks(rawContent)
             if (links.isEmpty()) return
 
             for (link in links) {
+                val mode = WebLinkMetadataFetcher.getDisplayMode(context, link.url)
+                if (mode == CardDisplayMode.HIDDEN) {
+                    // Cuando está en modo "Solo texto", el hipervínculo en línea ya es clicable en el párrafo
+                    continue
+                }
+
                 val cached = WebLinkMetadataFetcher.getCachedMetadata(context, link.url)
                 val domain = cached?.siteName?.ifBlank { cached.domain } ?: WebLinkMetadataFetcher.extractDomain(link.url)
                 val linkTitle = link.inlineTitle?.takeIf { it.isNotBlank() }
                     ?: cached?.title?.takeIf { it.isNotBlank() }
                     ?: domain
-                val cardHeight = 40f
+                val descriptionSnippet = cached?.description?.takeIf { it.isNotBlank() && it != link.url }
+                    ?: cached?.articleExcerpt?.takeIf { it.isNotBlank() }
+                    ?: ""
+
+                if (mode == CardDisplayMode.MINIMAL) {
+                    val pillHeight = 24f
+                    checkPageBreak(pillHeight + 6f)
+                    val pillBottomY = currentY - pillHeight
+
+                    contentStream.setNonStrokingColor(242, 246, 252)
+                    contentStream.addRect(MARGIN, pillBottomY, USABLE_WIDTH, pillHeight)
+                    contentStream.fill()
+
+                    contentStream.setNonStrokingColor(245, 158, 11)
+                    contentStream.addRect(MARGIN, pillBottomY, 3.5f, pillHeight)
+                    contentStream.fill()
+
+                    val pillLabel = sanitizeForPdfBox("$linkTitle  —  ${link.url}", fontRegular)
+                    contentStream.beginText()
+                    contentStream.setFont(fontRegular, 8.5f)
+                    contentStream.setNonStrokingColor(30, 58, 138)
+                    contentStream.newLineAtOffset(MARGIN + 10f, currentY - 15f)
+                    contentStream.showText(pillLabel.take(98))
+                    contentStream.endText()
+
+                    try {
+                        val linkAnnotation = PDAnnotationLink().apply {
+                            borderStyle = PDBorderStyleDictionary().apply { width = 0f }
+                            rectangle = PDRectangle(MARGIN, pillBottomY, USABLE_WIDTH, pillHeight)
+                            action = PDActionURI().apply { uri = link.url }
+                        }
+                        currentPage.annotations.add(linkAnnotation)
+                    } catch (_: Exception) {
+                    }
+
+                    currentY -= (pillHeight + 5f)
+                    continue
+                }
+
+                val hasDescription = mode == CardDisplayMode.LARGE && descriptionSnippet.isNotBlank()
+                val cardHeight = if (hasDescription) 54f else 42f
 
                 checkPageBreak(cardHeight + 8f)
 
@@ -347,13 +418,38 @@ object NotePdfExporter {
                 contentStream.addRect(MARGIN, cardBottomY, USABLE_WIDTH, cardHeight)
                 contentStream.stroke()
 
+                // Intentar incrustar la miniatura local en caché (og:image o favicon)
+                var textOffsetX = MARGIN + 12f
+                val localThumbPath = cached?.localImagePath?.takeIf { File(it).exists() }
+                    ?: cached?.localFaviconPath?.takeIf { File(it).exists() }
+                if (localThumbPath != null) {
+                    try {
+                        val bitmap = BitmapFactory.decodeFile(localThumbPath)
+                        if (bitmap != null) {
+                            val pdImage = LosslessFactory.createFromImage(document, bitmap)
+                            val thumbSize = (cardHeight - 10f).coerceAtLeast(24f)
+                            contentStream.drawImage(
+                                pdImage,
+                                MARGIN + 10f,
+                                cardBottomY + 5f,
+                                thumbSize,
+                                thumbSize
+                            )
+                            textOffsetX = MARGIN + 16f + thumbSize
+                            bitmap.recycle()
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+
                 // Dominio / Sitio web
-                val safeDomain = sanitizeForPdfBox("ENLACE WEB  •  ${domain.uppercase(Locale.getDefault())}", fontHeader)
+                val offlineTag = if (cached?.isOfflineReady == true) "  •  CACHÉ OFFLINE" else ""
+                val safeDomain = sanitizeForPdfBox("ENLACE WEB  •  ${domain.uppercase(Locale.getDefault())}$offlineTag", fontHeader)
                 contentStream.beginText()
                 contentStream.setFont(fontHeader, 7.5f)
                 contentStream.setNonStrokingColor(37, 99, 235)
-                contentStream.newLineAtOffset(MARGIN + 12f, currentY - 11f)
-                contentStream.showText(safeDomain.take(80))
+                contentStream.newLineAtOffset(textOffsetX, currentY - 11f)
+                contentStream.showText(safeDomain.take(75))
                 contentStream.endText()
 
                 // Título del enlace enriquecido
@@ -361,18 +457,36 @@ object NotePdfExporter {
                 contentStream.beginText()
                 contentStream.setFont(fontHeader, 10f)
                 contentStream.setNonStrokingColor(20, 28, 45)
-                contentStream.newLineAtOffset(MARGIN + 12f, currentY - 23f)
-                contentStream.showText(safeLinkTitle.take(82))
+                contentStream.newLineAtOffset(textOffsetX, currentY - 23f)
+                contentStream.showText(safeLinkTitle.take(76))
                 contentStream.endText()
 
-                // URL clicable visible
-                val safeUrl = sanitizeForPdfBox(link.url, fontRegular)
-                contentStream.beginText()
-                contentStream.setFont(fontRegular, 8f)
-                contentStream.setNonStrokingColor(90, 105, 130)
-                contentStream.newLineAtOffset(MARGIN + 12f, currentY - 34f)
-                contentStream.showText(safeUrl.take(95))
-                contentStream.endText()
+                if (hasDescription) {
+                    val safeDesc = sanitizeForPdfBox(descriptionSnippet.replace('\n', ' '), fontRegular)
+                    contentStream.beginText()
+                    contentStream.setFont(fontRegular, 8f)
+                    contentStream.setNonStrokingColor(71, 85, 105)
+                    contentStream.newLineAtOffset(textOffsetX, currentY - 34f)
+                    contentStream.showText(safeDesc.take(88))
+                    contentStream.endText()
+
+                    val safeUrl = sanitizeForPdfBox(link.url, fontRegular)
+                    contentStream.beginText()
+                    contentStream.setFont(fontRegular, 7.5f)
+                    contentStream.setNonStrokingColor(37, 99, 235)
+                    contentStream.newLineAtOffset(textOffsetX, currentY - 46f)
+                    contentStream.showText(safeUrl.take(90))
+                    contentStream.endText()
+                } else {
+                    // URL clicable visible
+                    val safeUrl = sanitizeForPdfBox(link.url, fontRegular)
+                    contentStream.beginText()
+                    contentStream.setFont(fontRegular, 8f)
+                    contentStream.setNonStrokingColor(90, 105, 130)
+                    contentStream.newLineAtOffset(textOffsetX, currentY - 34f)
+                    contentStream.showText(safeUrl.take(88))
+                    contentStream.endText()
+                }
 
                 // Anotación interactiva PDF (hipervínculo clicable real al exportar)
                 try {

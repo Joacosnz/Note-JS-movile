@@ -246,6 +246,12 @@ fun ChecklistBlockItem(
                 val markdownLink = "[$cleanTitle](${link.url})"
                 val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
                 onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+            },
+            onInsertWebClip = { clipText ->
+                val singleLineClip = clipText.replace('\n', ' ')
+                val current = tfv.text.trimEnd()
+                val updated = if (current.isEmpty()) singleLineClip else "$current — $singleLineClip"
+                onValueChange(TextFieldValue(updated, TextRange(updated.length)))
             }
         )
 
@@ -264,6 +270,12 @@ fun ChecklistBlockItem(
                     val markdownLink = "[$cleanTitle](${link.url})"
                     val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
                     onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+                },
+                onInsertWebClip = { clipText ->
+                    val singleLineClip = clipText.replace('\n', ' ')
+                    val current = tfv.text.trimEnd()
+                    val updated = if (current.isEmpty()) singleLineClip else "$current — $singleLineClip"
+                    onValueChange(TextFieldValue(updated, TextRange(updated.length)))
                 }
             )
         }

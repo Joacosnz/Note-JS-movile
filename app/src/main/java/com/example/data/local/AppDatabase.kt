@@ -10,14 +10,22 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.local.dao.FolderDao
 import com.example.data.local.dao.NoteDao
 import com.example.data.local.dao.SignatureDao
+import com.example.data.local.dao.WebLinkCacheDao
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.NoteEntity
 import com.example.data.local.entity.NoteFtsEntity
 import com.example.data.local.entity.SignatureEntity
+import com.example.data.local.entity.WebLinkCacheEntity
 
 @Database(
-    entities = [NoteEntity::class, NoteFtsEntity::class, FolderEntity::class, SignatureEntity::class],
-    version = 14,
+    entities = [
+        NoteEntity::class,
+        NoteFtsEntity::class,
+        FolderEntity::class,
+        SignatureEntity::class,
+        WebLinkCacheEntity::class
+    ],
+    version = 15,
     exportSchema = false,
 )
 @TypeConverters(UriConverters::class)
@@ -26,6 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun folderDao(): FolderDao
     abstract fun signatureDao(): SignatureDao
+    abstract fun webLinkCacheDao(): WebLinkCacheDao
 
     companion object {
         @Volatile
@@ -95,6 +104,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `web_link_cache` (
+                        `url` TEXT NOT NULL,
+                        `domain` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `imageUrl` TEXT,
+                        `localImagePath` TEXT,
+                        `siteName` TEXT NOT NULL,
+                        `faviconUrl` TEXT NOT NULL,
+                        `localFaviconPath` TEXT,
+                        `articleExcerpt` TEXT NOT NULL,
+                        `displayMode` TEXT NOT NULL,
+                        `fetchedAt` INTEGER NOT NULL,
+                        `isLoadedFromRemote` INTEGER NOT NULL,
+                        PRIMARY KEY(`url`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -110,7 +144,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12,
                         MIGRATION_12_13,
-                        MIGRATION_13_14
+                        MIGRATION_13_14,
+                        MIGRATION_14_15
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

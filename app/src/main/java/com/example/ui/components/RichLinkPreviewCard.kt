@@ -21,6 +21,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,18 +33,25 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShortText
 import androidx.compose.material.icons.filled.ViewCompact
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -79,6 +87,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,6 +106,7 @@ fun RichLinkPreviewList(
     amber: Color,
     isDark: Boolean,
     onConvertToInlineLink: ((ExtractedWebLink, String) -> Unit)? = null,
+    onInsertWebClip: ((String) -> Unit)? = null,
     externalRefreshTrigger: Int = 0,
     modifier: Modifier = Modifier
 ) {
@@ -125,7 +135,8 @@ fun RichLinkPreviewList(
                 amber = amber,
                 isDark = isDark,
                 onModeChanged = { modeRefreshTrigger++ },
-                onConvertToInlineLink = onConvertToInlineLink
+                onConvertToInlineLink = onConvertToInlineLink,
+                onInsertWebClip = onInsertWebClip
             )
         }
 
@@ -133,7 +144,10 @@ fun RichLinkPreviewList(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 2.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 2.dp)
             ) {
                 hiddenLinks.forEach { hidden ->
                     val domain = remember(hidden.url) { WebLinkMetadataFetcher.extractDomain(hidden.url) }
@@ -180,6 +194,7 @@ fun RichLinkPreviewCard(
     isDark: Boolean,
     onModeChanged: () -> Unit = {},
     onConvertToInlineLink: ((ExtractedWebLink, String) -> Unit)? = null,
+    onInsertWebClip: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -197,16 +212,20 @@ fun RichLinkPreviewCard(
         )
     }
     var isLoading by remember(url) {
-        mutableStateOf(WebLinkMetadataFetcher.getCachedMetadata(context, url) == null)
+        mutableStateOf(WebLinkMetadataFetcher.getCachedMetadata(context, url)?.isLoadedFromRemote != true)
     }
     var showMenu by remember { mutableStateOf(false) }
+    var showExcerptExpanded by remember(url) { mutableStateOf(false) }
 
     LaunchedEffect(url) {
         val cached = WebLinkMetadataFetcher.getCachedMetadata(context, url)
-        if (cached != null) {
+        if (cached != null && cached.isLoadedFromRemote && cached.hasOfflineImage) {
             metadata = cached
             isLoading = false
         } else {
+            if (cached != null) {
+                metadata = cached
+            }
             isLoading = true
             val fetched = WebLinkMetadataFetcher.fetchMetadata(context, url, forceRefresh = false)
             metadata = fetched
@@ -215,6 +234,11 @@ fun RichLinkPreviewCard(
     }
 
     val effectiveTitle = extractedLink.inlineTitle?.takeIf { it.isNotBlank() } ?: metadata.title
+    val imageModel = metadata.effectiveImageModel
+    val faviconModel = metadata.effectiveFaviconModel
+    val clipTextCandidate = metadata.articleExcerpt.ifBlank { metadata.description }
+        .takeIf { it.isNotBlank() && it != metadata.url }
+
     val cardBg = if (isDark) Color(0xFF1E222B) else Color(0xFFF8FAFC)
     val cardBorder = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFCBD5E1)
     val titleColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)
@@ -229,7 +253,7 @@ fun RichLinkPreviewCard(
                     stiffness = Spring.StiffnessMediumLow
                 )
             )
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(if (displayMode == CardDisplayMode.MINIMAL) 12.dp else 16.dp))
             .combinedClickable(
                 onClick = {
                     openUrlInBrowser(context, url)
@@ -240,286 +264,586 @@ fun RichLinkPreviewCard(
                 }
             )
             .testTag("rich_link_card_${metadata.domain}"),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(if (displayMode == CardDisplayMode.MINIMAL) 12.dp else 16.dp),
         color = cardBg,
         border = BorderStroke(1.dp, cardBorder),
         tonalElevation = 2.dp,
-        shadowElevation = 2.dp
+        shadowElevation = if (displayMode == CardDisplayMode.MINIMAL) 1.dp else 2.dp
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            if (displayMode == CardDisplayMode.COMPACT) {
-                // VISTA COMPACTA (Miniatura lateral estilo Apple Notes pequeño)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Miniatura lateral o insignia del sitio
-                    Box(
+            when (displayMode) {
+                CardDisplayMode.MINIMAL -> {
+                    // FICHA MÍNIMA (Estilo Google Keep Footer limpio)
+                    Row(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        amber.copy(alpha = 0.25f),
-                                        amber.copy(alpha = 0.08f)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        if (!metadata.imageUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = metadata.imageUrl,
-                                contentDescription = effectiveTitle,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else if (metadata.faviconUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = metadata.faviconUrl,
-                                contentDescription = metadata.domain,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Language,
-                                contentDescription = null,
-                                tint = amber,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        Surface(
+                            shape = RoundedCornerShape(7.dp),
+                            color = amber.copy(alpha = 0.15f),
+                            modifier = Modifier.size(28.dp)
                         ) {
-                            if (metadata.faviconUrl.isNotBlank()) {
-                                AsyncImage(
-                                    model = metadata.faviconUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(13.dp)
-                                        .clip(CircleShape)
-                                )
+                            Box(contentAlignment = Alignment.Center) {
+                                if (faviconModel != null) {
+                                    AsyncImage(
+                                        model = faviconModel,
+                                        contentDescription = metadata.domain,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Language,
+                                        contentDescription = null,
+                                        tint = amber,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = metadata.siteName.ifBlank { metadata.domain }.uppercase(),
-                                style = MaterialTheme.typography.labelSmall.copy(
+                                text = effectiveTitle,
+                                style = MaterialTheme.typography.bodySmall.copy(
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp,
-                                    letterSpacing = 0.6.sp
+                                    fontSize = 13.sp
                                 ),
-                                color = amber,
+                                color = titleColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(10.dp),
-                                    strokeWidth = 1.5.dp,
-                                    color = amber
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = metadata.domain,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                                    color = amber,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
+                                if (metadata.isOfflineReady) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudDone,
+                                        contentDescription = "Caché Offline",
+                                        tint = amber.copy(alpha = 0.75f),
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                }
                             }
                         }
 
-                        Text(
-                            text = effectiveTitle,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            ),
-                            color = titleColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Text(
-                            text = metadata.description.ifBlank { metadata.domain },
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = subtitleColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = {
-                                val nextMode = CardDisplayMode.LARGE
+                                val nextMode = CardDisplayMode.COMPACT
                                 displayMode = nextMode
                                 WebLinkMetadataFetcher.setDisplayMode(context, url, nextMode)
                                 onModeChanged()
                             },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.PhotoSizeSelectLarge,
-                                contentDescription = "Cambiar a vista grande",
+                                imageVector = Icons.Default.ViewCompact,
+                                contentDescription = "Cambiar a vista compacta",
                                 tint = subtitleColor,
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
+
                         IconButton(
                             onClick = { showMenu = true },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "Opciones de enlace",
                                 tint = subtitleColor,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
-            } else {
-                // VISTA GRANDE (Tarjeta Enriquecida con imagen Open Graph destacada)
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    if (!metadata.imageUrl.isNullOrBlank()) {
-                        Box(
+
+                CardDisplayMode.COMPACT -> {
+                    // VISTA COMPACTA (Miniatura lateral estilo Apple Notes pequeño)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(148.dp)
-                                .background(
-                                    if (isDark) Color(0xFF14171F) else Color(0xFFE2E8F0)
-                                )
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            AsyncImage(
-                                model = metadata.imageUrl,
-                                contentDescription = effectiveTitle,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-
-                            // Gradiente sutil en la base e insignia de dominio flotante
+                            // Miniatura lateral o insignia del sitio
                             Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
+                                    .size(58.dp)
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(
-                                        Brush.verticalGradient(
+                                        Brush.linearGradient(
                                             colors = listOf(
-                                                Color.Black.copy(alpha = 0.35f),
-                                                Color.Transparent,
-                                                Color.Black.copy(alpha = 0.55f)
+                                                amber.copy(alpha = 0.25f),
+                                                amber.copy(alpha = 0.08f)
                                             )
                                         )
-                                    )
-                            )
-
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = Color.Black.copy(alpha = 0.65f),
-                                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f)),
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(10.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    if (metadata.faviconUrl.isNotBlank()) {
-                                        AsyncImage(
-                                            model = metadata.faviconUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(14.dp)
-                                                .clip(CircleShape)
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Language,
-                                            contentDescription = null,
-                                            tint = amber,
-                                            modifier = Modifier.size(13.dp)
-                                        )
-                                    }
-                                    Text(
-                                        text = metadata.domain,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 11.sp
-                                        ),
-                                        color = Color.White,
-                                        maxLines = 1
+                                if (imageModel != null) {
+                                    AsyncImage(
+                                        model = imageModel,
+                                        contentDescription = effectiveTitle,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else if (faviconModel != null) {
+                                    AsyncImage(
+                                        model = faviconModel,
+                                        contentDescription = metadata.domain,
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Language,
+                                        contentDescription = null,
+                                        tint = amber,
+                                        modifier = Modifier.size(26.dp)
                                     )
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color.Black.copy(alpha = 0.6f),
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clickable {
-                                            val nextMode = CardDisplayMode.COMPACT
-                                            displayMode = nextMode
-                                            WebLinkMetadataFetcher.setDisplayMode(context, url, nextMode)
-                                            onModeChanged()
-                                        }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
+                                    if (faviconModel != null) {
+                                        AsyncImage(
+                                            model = faviconModel,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(13.dp)
+                                                .clip(CircleShape)
+                                        )
+                                    }
+                                    Text(
+                                        text = metadata.siteName.ifBlank { metadata.domain }.uppercase(),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp,
+                                            letterSpacing = 0.6.sp
+                                        ),
+                                        color = amber,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (metadata.isOfflineReady) {
                                         Icon(
-                                            imageVector = Icons.Default.ViewCompact,
-                                            contentDescription = "Cambiar a vista compacta",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(16.dp)
+                                            imageVector = Icons.Default.CloudDone,
+                                            contentDescription = "Guardado en caché offline",
+                                            tint = amber.copy(alpha = 0.8f),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                    if (isLoading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(10.dp),
+                                            strokeWidth = 1.5.dp,
+                                            color = amber
                                         )
                                     }
                                 }
 
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color.Black.copy(alpha = 0.6f),
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clickable { showMenu = true }
+                                Text(
+                                    text = effectiveTitle,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    ),
+                                    color = titleColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+
+                                Text(
+                                    text = metadata.description.ifBlank { metadata.domain },
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                    color = subtitleColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = {
+                                        val nextMode = CardDisplayMode.LARGE
+                                        displayMode = nextMode
+                                        WebLinkMetadataFetcher.setDisplayMode(context, url, nextMode)
+                                        onModeChanged()
+                                    },
+                                    modifier = Modifier.size(32.dp)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = "Opciones de enlace",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(16.dp)
+                                    Icon(
+                                        imageVector = Icons.Default.PhotoSizeSelectLarge,
+                                        contentDescription = "Cambiar a vista grande",
+                                        tint = subtitleColor,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { showMenu = true },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Opciones de enlace",
+                                        tint = subtitleColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Expandable Web Clip excerpt for Compact card if toggled
+                        AnimatedVisibility(visible = showExcerptExpanded && clipTextCandidate != null) {
+                            WebClipExcerptPanel(
+                                excerptText = clipTextCandidate ?: "",
+                                amber = amber,
+                                isDark = isDark,
+                                subtitleColor = subtitleColor,
+                                onInsertWebClip = onInsertWebClip?.let { callback ->
+                                    {
+                                        val formattedClip = "📌 ${effectiveTitle} (${metadata.domain}):\n\"${clipTextCandidate.orEmpty()}\""
+                                        callback(formattedClip)
+                                        Toast.makeText(context, "Extracto web insertado en la nota", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    // VISTA GRANDE (Tarjeta Enriquecida con imagen Open Graph destacada + caché local)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        if (imageModel != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(152.dp)
+                                    .background(
+                                        if (isDark) Color(0xFF14171F) else Color(0xFFE2E8F0)
+                                    )
+                            ) {
+                                AsyncImage(
+                                    model = imageModel,
+                                    contentDescription = effectiveTitle,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+
+                                // Gradiente sutil en la base e insignia de dominio flotante
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Black.copy(alpha = 0.35f),
+                                                    Color.Transparent,
+                                                    Color.Black.copy(alpha = 0.58f)
+                                                )
+                                            )
                                         )
+                                )
+
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = Color.Black.copy(alpha = 0.65f),
+                                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            if (faviconModel != null) {
+                                                AsyncImage(
+                                                    model = faviconModel,
+                                                    contentDescription = null,
+                                                    modifier = Modifier
+                                                        .size(14.dp)
+                                                        .clip(CircleShape)
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Language,
+                                                    contentDescription = null,
+                                                    tint = amber,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = metadata.domain,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 11.sp
+                                                ),
+                                                color = Color.White,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+
+                                    if (metadata.isOfflineReady) {
+                                        Surface(
+                                            shape = RoundedCornerShape(20.dp),
+                                            color = Color.Black.copy(alpha = 0.65f),
+                                            border = BorderStroke(0.5.dp, amber.copy(alpha = 0.45f))
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CloudDone,
+                                                    contentDescription = "Caché Offline",
+                                                    tint = amber,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "Offline",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = FontWeight.Medium,
+                                                        fontSize = 10.sp
+                                                    ),
+                                                    color = amber
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .size(30.dp)
+                                            .clickable {
+                                                val nextMode = CardDisplayMode.COMPACT
+                                                displayMode = nextMode
+                                                WebLinkMetadataFetcher.setDisplayMode(context, url, nextMode)
+                                                onModeChanged()
+                                            }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.ViewCompact,
+                                                contentDescription = "Cambiar a vista compacta",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .size(30.dp)
+                                            .clickable { showMenu = true }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = "Opciones de enlace",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Encabezado atmosférico cuando la página no define og:image
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                amber.copy(alpha = if (isDark) 0.22f else 0.16f),
+                                                amber.copy(alpha = 0.04f)
+                                            )
+                                        )
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isDark) Color(0xFF2C3240) else Color.White,
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                if (faviconModel != null) {
+                                                    AsyncImage(
+                                                        model = faviconModel,
+                                                        contentDescription = null,
+                                                        modifier = Modifier
+                                                            .size(18.dp)
+                                                            .clip(RoundedCornerShape(4.dp))
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Language,
+                                                        contentDescription = null,
+                                                        tint = amber,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Column {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                            ) {
+                                                Text(
+                                                    text = metadata.siteName.ifBlank { metadata.domain }.uppercase(),
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 10.sp,
+                                                        letterSpacing = 0.7.sp
+                                                    ),
+                                                    color = amber
+                                                )
+                                                if (metadata.isOfflineReady) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CloudDone,
+                                                        contentDescription = "Caché Offline",
+                                                        tint = amber.copy(alpha = 0.8f),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = metadata.domain,
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                                color = subtitleColor
+                                            )
+                                        }
+                                        if (isLoading) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(12.dp),
+                                                strokeWidth = 1.5.dp,
+                                                color = amber
+                                            )
+                                        }
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = {
+                                                val nextMode = CardDisplayMode.COMPACT
+                                                displayMode = nextMode
+                                                WebLinkMetadataFetcher.setDisplayMode(context, url, nextMode)
+                                                onModeChanged()
+                                            },
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ViewCompact,
+                                                contentDescription = "Vista compacta",
+                                                tint = subtitleColor,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { showMenu = true },
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = "Opciones de enlace",
+                                                tint = subtitleColor,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                    } else {
-                        // Encabezado atmosférico cuando la página no define og:image
-                        Box(
+
+                        // Cuerpo de texto de la tarjeta grande
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(
-                                            amber.copy(alpha = if (isDark) 0.22f else 0.16f),
-                                            amber.copy(alpha = 0.04f)
-                                        )
-                                    )
-                                )
-                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            Text(
+                                text = effectiveTitle,
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    lineHeight = 20.sp
+                                ),
+                                color = titleColor,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            if (metadata.description.isNotBlank() && metadata.description != metadata.url) {
+                                Text(
+                                    text = metadata.description,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 12.5.sp,
+                                        lineHeight = 17.sp
+                                    ),
+                                    color = subtitleColor,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -527,161 +851,89 @@ fun RichLinkPreviewCard(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Link,
+                                        contentDescription = null,
+                                        tint = amber,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = url,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                        color = subtitleColor.copy(alpha = 0.8f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                if (clipTextCandidate != null) {
                                     Surface(
+                                        onClick = { showExcerptExpanded = !showExcerptExpanded },
                                         shape = RoundedCornerShape(8.dp),
-                                        color = if (isDark) Color(0xFF2C3240) else Color.White,
-                                        modifier = Modifier.size(28.dp)
+                                        color = amber.copy(alpha = 0.14f),
+                                        modifier = Modifier.padding(horizontal = 6.dp)
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            if (metadata.faviconUrl.isNotBlank()) {
-                                                AsyncImage(
-                                                    model = metadata.faviconUrl,
-                                                    contentDescription = null,
-                                                    modifier = Modifier
-                                                        .size(18.dp)
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                )
-                                            } else {
-                                                Icon(
-                                                    imageVector = Icons.Default.Language,
-                                                    contentDescription = null,
-                                                    tint = amber,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Article,
+                                                contentDescription = null,
+                                                tint = amber,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text(
+                                                text = if (showExcerptExpanded) "Ocultar extracto" else "Extracto web",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                ),
+                                                color = amber
+                                            )
+                                            Icon(
+                                                imageVector = if (showExcerptExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                                contentDescription = null,
+                                                tint = amber,
+                                                modifier = Modifier.size(13.dp)
+                                            )
                                         }
                                     }
-                                    Column {
-                                        Text(
-                                            text = metadata.siteName.ifBlank { metadata.domain }.uppercase(),
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 10.sp,
-                                                letterSpacing = 0.7.sp
-                                            ),
-                                            color = amber
-                                        )
-                                        Text(
-                                            text = metadata.domain,
-                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                            color = subtitleColor
-                                        )
-                                    }
-                                    if (isLoading) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(12.dp),
-                                            strokeWidth = 1.5.dp,
-                                            color = amber
-                                        )
-                                    }
                                 }
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = {
-                                            val nextMode = CardDisplayMode.COMPACT
-                                            displayMode = nextMode
-                                            WebLinkMetadataFetcher.setDisplayMode(context, url, nextMode)
-                                            onModeChanged()
-                                        },
-                                        modifier = Modifier.size(30.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ViewCompact,
-                                            contentDescription = "Vista compacta",
-                                            tint = subtitleColor,
-                                            modifier = Modifier.size(17.dp)
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { showMenu = true },
-                                        modifier = Modifier.size(30.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = "Opciones de enlace",
-                                            tint = subtitleColor,
-                                            modifier = Modifier.size(17.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Cuerpo de texto de la tarjeta grande
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = effectiveTitle,
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp
-                            ),
-                            color = titleColor,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        if (metadata.description.isNotBlank() && metadata.description != metadata.url) {
-                            Text(
-                                text = metadata.description,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 12.5.sp,
-                                    lineHeight = 17.sp
-                                ),
-                                color = subtitleColor,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Link,
-                                    contentDescription = null,
+                                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                    contentDescription = "Abrir enlace",
                                     tint = amber,
                                     modifier = Modifier.size(14.dp)
                                 )
-                                Text(
-                                    text = url,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                    color = subtitleColor.copy(alpha = 0.8f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = "Abrir enlace",
-                                tint = amber,
-                                modifier = Modifier.size(14.dp)
+                        }
+
+                        AnimatedVisibility(visible = showExcerptExpanded && clipTextCandidate != null) {
+                            WebClipExcerptPanel(
+                                excerptText = clipTextCandidate ?: "",
+                                amber = amber,
+                                isDark = isDark,
+                                subtitleColor = subtitleColor,
+                                onInsertWebClip = onInsertWebClip?.let { callback ->
+                                    {
+                                        val formattedClip = "📌 ${effectiveTitle} (${metadata.domain}):\n\"${clipTextCandidate.orEmpty()}\""
+                                        callback(formattedClip)
+                                        Toast.makeText(context, "Extracto web insertado en la nota", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             )
                         }
                     }
                 }
             }
 
-            // Menú contextual de la tarjeta (Apple Notes / Keep Hybrid)
+            // Menú contextual de la tarjeta (Apple Notes / Keep / Samsung Notes Hybrid)
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
@@ -697,25 +949,55 @@ fun RichLinkPreviewCard(
                     }
                 )
 
+                HorizontalDivider()
+
                 DropdownMenuItem(
-                    text = {
-                        Text(
-                            if (displayMode == CardDisplayMode.COMPACT) "Ver tarjeta grande (Rich Link)"
-                            else "Ver tarjeta compacta (Miniatura)"
-                        )
-                    },
+                    text = { Text("Vista Grande (Rich Link OpenGraph)") },
                     leadingIcon = {
                         Icon(
-                            imageVector = if (displayMode == CardDisplayMode.COMPACT) Icons.Default.PhotoSizeSelectLarge else Icons.Default.ViewCompact,
+                            imageVector = Icons.Default.PhotoSizeSelectLarge,
                             contentDescription = null,
-                            tint = amber
+                            tint = if (displayMode == CardDisplayMode.LARGE) amber else subtitleColor
                         )
                     },
                     onClick = {
                         showMenu = false
-                        val nextMode = if (displayMode == CardDisplayMode.COMPACT) CardDisplayMode.LARGE else CardDisplayMode.COMPACT
-                        displayMode = nextMode
-                        WebLinkMetadataFetcher.setDisplayMode(context, url, nextMode)
+                        displayMode = CardDisplayMode.LARGE
+                        WebLinkMetadataFetcher.setDisplayMode(context, url, CardDisplayMode.LARGE)
+                        onModeChanged()
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = { Text("Vista Compacta (Miniatura lateral)") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ViewCompact,
+                            contentDescription = null,
+                            tint = if (displayMode == CardDisplayMode.COMPACT) amber else subtitleColor
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        displayMode = CardDisplayMode.COMPACT
+                        WebLinkMetadataFetcher.setDisplayMode(context, url, CardDisplayMode.COMPACT)
+                        onModeChanged()
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = { Text("Ficha Mínima (Estilo Google Keep)") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ShortText,
+                            contentDescription = null,
+                            tint = if (displayMode == CardDisplayMode.MINIMAL) amber else subtitleColor
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        displayMode = CardDisplayMode.MINIMAL
+                        WebLinkMetadataFetcher.setDisplayMode(context, url, CardDisplayMode.MINIMAL)
                         onModeChanged()
                     }
                 )
@@ -730,6 +1012,21 @@ fun RichLinkPreviewCard(
                             showMenu = false
                             val cleanTitle = effectiveTitle.replace("[", "(").replace("]", ")")
                             onConvertToInlineLink(extractedLink, cleanTitle)
+                        }
+                    )
+                }
+
+                if (onInsertWebClip != null && clipTextCandidate != null) {
+                    DropdownMenuItem(
+                        text = { Text("Recortar extracto web a la nota (Web Clip)") },
+                        leadingIcon = {
+                            Icon(Icons.Default.ContentPaste, contentDescription = null, tint = amber)
+                        },
+                        onClick = {
+                            showMenu = false
+                            val formattedClip = "📌 ${effectiveTitle} (${metadata.domain}):\n\"$clipTextCandidate\""
+                            onInsertWebClip(formattedClip)
+                            Toast.makeText(context, "Extracto web insertado en la nota", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -766,7 +1063,7 @@ fun RichLinkPreviewCard(
                 )
 
                 DropdownMenuItem(
-                    text = { Text("Actualizar vista previa") },
+                    text = { Text("Actualizar caché y vista previa") },
                     leadingIcon = {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                     },
@@ -781,7 +1078,7 @@ fun RichLinkPreviewCard(
                 )
 
                 DropdownMenuItem(
-                    text = { Text("Ocultar tarjeta de vista previa") },
+                    text = { Text("Ocultar tarjeta (dejar solo enlace)") },
                     leadingIcon = {
                         Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                     },
@@ -794,6 +1091,92 @@ fun RichLinkPreviewCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun WebClipExcerptPanel(
+    excerptText: String,
+    amber: Color,
+    isDark: Boolean,
+    subtitleColor: Color,
+    onInsertWebClip: (() -> Unit)?
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (isDark) Color(0xFF151821) else Color(0xFFF1F5F9))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Article,
+                    contentDescription = null,
+                    tint = amber,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "EXTRACTO GUARDADO OFFLINE",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                        letterSpacing = 0.6.sp
+                    ),
+                    color = amber
+                )
+            }
+
+            if (onInsertWebClip != null) {
+                Surface(
+                    onClick = onInsertWebClip,
+                    shape = RoundedCornerShape(8.dp),
+                    color = amber.copy(alpha = 0.18f),
+                    border = BorderStroke(0.8.dp, amber.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentPaste,
+                            contentDescription = null,
+                            tint = amber,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "Insertar en nota",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.5.sp
+                            ),
+                            color = amber
+                        )
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "\"$excerptText\"",
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                fontStyle = FontStyle.Italic
+            ),
+            color = subtitleColor,
+            maxLines = 5,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -815,7 +1198,7 @@ fun CompactRichLinkNoteCardPreview(
 
     LaunchedEffect(url) {
         val cached = WebLinkMetadataFetcher.getCachedMetadata(context, url)
-        if (cached != null) {
+        if (cached != null && cached.isLoadedFromRemote) {
             metadata = cached
         } else {
             metadata = WebLinkMetadataFetcher.fetchMetadata(context, url, forceRefresh = false)
@@ -823,6 +1206,8 @@ fun CompactRichLinkNoteCardPreview(
     }
 
     val effectiveTitle = inlineTitle?.takeIf { it.isNotBlank() } ?: metadata.title
+    val imageModel = metadata.effectiveImageModel
+    val faviconModel = metadata.effectiveFaviconModel
 
     Surface(
         shape = RoundedCornerShape(10.dp),
@@ -837,18 +1222,18 @@ fun CompactRichLinkNoteCardPreview(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (!metadata.imageUrl.isNullOrBlank()) {
+            if (imageModel != null) {
                 AsyncImage(
-                    model = metadata.imageUrl,
+                    model = imageModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(34.dp)
                         .clip(RoundedCornerShape(7.dp))
                 )
-            } else if (metadata.faviconUrl.isNotBlank()) {
+            } else if (faviconModel != null) {
                 AsyncImage(
-                    model = metadata.faviconUrl,
+                    model = faviconModel,
                     contentDescription = null,
                     modifier = Modifier
                         .size(20.dp)
@@ -874,13 +1259,26 @@ fun CompactRichLinkNoteCardPreview(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = metadata.domain,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                    color = amber,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = metadata.domain,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                        color = amber,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (metadata.isOfflineReady) {
+                        Icon(
+                            imageVector = Icons.Default.CloudDone,
+                            contentDescription = "Offline",
+                            tint = amber.copy(alpha = 0.75f),
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                }
             }
 
             Icon(
@@ -992,8 +1390,10 @@ fun InsertWebLinkDialog(
                 )
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FilterChip(
                         selected = selectedMode == CardDisplayMode.LARGE,
@@ -1020,6 +1420,24 @@ fun InsertWebLinkDialog(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.ViewCompact,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = amber.copy(alpha = 0.2f),
+                            selectedLabelColor = amber,
+                            selectedLeadingIconColor = amber
+                        )
+                    )
+
+                    FilterChip(
+                        selected = selectedMode == CardDisplayMode.MINIMAL,
+                        onClick = { selectedMode = CardDisplayMode.MINIMAL },
+                        label = { Text("Ficha Keep") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.ShortText,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -1073,15 +1491,16 @@ fun InsertWebLinkDialog(
                                     color = amber
                                 )
                                 Text(
-                                    text = "Extrayendo metadatos Open Graph...",
+                                    text = "Extrayendo metadatos y guardando en caché offline...",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             } else {
                                 val meta = previewMetadata
                                 if (meta != null) {
-                                    if (!meta.imageUrl.isNullOrBlank()) {
+                                    val imgModel = meta.effectiveImageModel
+                                    if (imgModel != null) {
                                         AsyncImage(
-                                            model = meta.imageUrl,
+                                            model = imgModel,
                                             contentDescription = null,
                                             contentScale = ContentScale.Crop,
                                             modifier = Modifier
@@ -1103,12 +1522,25 @@ fun InsertWebLinkDialog(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        Text(
-                                            text = meta.domain,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = amber,
-                                            maxLines = 1
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = meta.domain,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = amber,
+                                                maxLines = 1
+                                            )
+                                            if (meta.isOfflineReady) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CloudDone,
+                                                    contentDescription = "Caché Offline",
+                                                    tint = amber,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1160,7 +1592,8 @@ fun RichLinkQuickPreviewDialog(
     isDark: Boolean,
     onDismiss: () -> Unit,
     onModeChanged: () -> Unit = {},
-    onConvertRawUrlToInlineTitle: ((ExtractedWebLink, String) -> Unit)? = null
+    onConvertRawUrlToInlineTitle: ((ExtractedWebLink, String) -> Unit)? = null,
+    onInsertWebClip: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -1185,7 +1618,7 @@ fun RichLinkQuickPreviewDialog(
         )
     }
     var isLoading by remember(normalizedUrl) {
-        mutableStateOf(WebLinkMetadataFetcher.getCachedMetadata(context, normalizedUrl) == null)
+        mutableStateOf(WebLinkMetadataFetcher.getCachedMetadata(context, normalizedUrl)?.isLoadedFromRemote != true)
     }
     var currentMode by remember(normalizedUrl) {
         mutableStateOf(WebLinkMetadataFetcher.getDisplayMode(context, normalizedUrl))
@@ -1193,10 +1626,13 @@ fun RichLinkQuickPreviewDialog(
 
     LaunchedEffect(normalizedUrl) {
         val cached = WebLinkMetadataFetcher.getCachedMetadata(context, normalizedUrl)
-        if (cached != null) {
+        if (cached != null && cached.isLoadedFromRemote && cached.hasOfflineImage) {
             metadata = cached
             isLoading = false
         } else {
+            if (cached != null) {
+                metadata = cached
+            }
             isLoading = true
             metadata = WebLinkMetadataFetcher.fetchMetadata(context, normalizedUrl, forceRefresh = false)
             isLoading = false
@@ -1204,6 +1640,11 @@ fun RichLinkQuickPreviewDialog(
     }
 
     val effectiveTitle = matchingExtractedLink.inlineTitle?.takeIf { it.isNotBlank() } ?: metadata.title
+    val imageModel = metadata.effectiveImageModel
+    val faviconModel = metadata.effectiveFaviconModel
+    val clipTextCandidate = metadata.articleExcerpt.ifBlank { metadata.description }
+        .takeIf { it.isNotBlank() && it != metadata.url }
+
     val cardBg = if (isDark) Color(0xFF1E222B) else Color(0xFFF8FAFC)
     val titleColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)
     val subtitleColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
@@ -1244,7 +1685,7 @@ fun RichLinkQuickPreviewDialog(
                         .testTag("quick_preview_rich_link_card")
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        if (!metadata.imageUrl.isNullOrBlank()) {
+                        if (imageModel != null) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1252,7 +1693,7 @@ fun RichLinkQuickPreviewDialog(
                                     .background(if (isDark) Color(0xFF14171F) else Color(0xFFE2E8F0))
                             ) {
                                 AsyncImage(
-                                    model = metadata.imageUrl,
+                                    model = imageModel,
                                     contentDescription = effectiveTitle,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
@@ -1270,36 +1711,69 @@ fun RichLinkQuickPreviewDialog(
                                             )
                                         )
                                 )
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = Color.Black.copy(alpha = 0.65f),
+                                Row(
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
-                                        .padding(10.dp)
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = Color.Black.copy(alpha = 0.65f)
                                     ) {
-                                        if (metadata.faviconUrl.isNotBlank()) {
-                                            AsyncImage(
-                                                model = metadata.faviconUrl,
-                                                contentDescription = null,
-                                                modifier = Modifier
-                                                    .size(14.dp)
-                                                    .clip(CircleShape)
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            if (faviconModel != null) {
+                                                AsyncImage(
+                                                    model = faviconModel,
+                                                    contentDescription = null,
+                                                    modifier = Modifier
+                                                        .size(14.dp)
+                                                        .clip(CircleShape)
+                                                )
+                                            }
+                                            Text(
+                                                text = metadata.domain,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 11.sp
+                                                ),
+                                                color = Color.White,
+                                                maxLines = 1
                                             )
                                         }
-                                        Text(
-                                            text = metadata.domain,
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 11.sp
-                                            ),
-                                            color = Color.White,
-                                            maxLines = 1
-                                        )
+                                    }
+
+                                    if (metadata.isOfflineReady) {
+                                        Surface(
+                                            shape = RoundedCornerShape(20.dp),
+                                            color = Color.Black.copy(alpha = 0.65f)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CloudDone,
+                                                    contentDescription = "Caché Offline",
+                                                    tint = amber,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "Caché Offline",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = FontWeight.Medium,
+                                                        fontSize = 10.sp
+                                                    ),
+                                                    color = amber
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1312,9 +1786,9 @@ fun RichLinkQuickPreviewDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                if (metadata.faviconUrl.isNotBlank()) {
+                                if (faviconModel != null) {
                                     AsyncImage(
-                                        model = metadata.faviconUrl,
+                                        model = faviconModel,
                                         contentDescription = null,
                                         modifier = Modifier
                                             .size(20.dp)
@@ -1337,6 +1811,14 @@ fun RichLinkQuickPreviewDialog(
                                     color = amber,
                                     modifier = Modifier.weight(1f)
                                 )
+                                if (metadata.isOfflineReady) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudDone,
+                                        contentDescription = "Caché Offline",
+                                        tint = amber,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                                 if (isLoading) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(14.dp),
@@ -1404,7 +1886,9 @@ fun RichLinkQuickPreviewDialog(
                 )
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FilterChip(
@@ -1442,6 +1926,23 @@ fun RichLinkQuickPreviewDialog(
                         )
                     )
                     FilterChip(
+                        selected = currentMode == CardDisplayMode.MINIMAL,
+                        onClick = {
+                            currentMode = CardDisplayMode.MINIMAL
+                            WebLinkMetadataFetcher.setDisplayMode(context, normalizedUrl, CardDisplayMode.MINIMAL)
+                            onModeChanged()
+                        },
+                        label = { Text("Ficha Keep", fontSize = 11.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Default.ShortText, contentDescription = null, modifier = Modifier.size(14.dp))
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = amber.copy(alpha = 0.2f),
+                            selectedLabelColor = amber,
+                            selectedLeadingIconColor = amber
+                        )
+                    )
+                    FilterChip(
                         selected = currentMode == CardDisplayMode.HIDDEN,
                         onClick = {
                             currentMode = CardDisplayMode.HIDDEN
@@ -1460,7 +1961,7 @@ fun RichLinkQuickPreviewDialog(
                     )
                 }
 
-                // Acciones rápidas (Convertir en título limpio, copiar, compartir, recargar)
+                // Acciones rápidas (Convertir en título limpio, insertar extracto Web Clip, copiar, compartir, recargar)
                 if (onConvertRawUrlToInlineTitle != null && matchingExtractedLink.inlineTitle == null && matchingExtractedLink.endIndex > matchingExtractedLink.startIndex) {
                     Surface(
                         onClick = {
@@ -1483,6 +1984,36 @@ fun RichLinkQuickPreviewDialog(
                                 text = "Convertir URL en título limpio: \"$effectiveTitle\"",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = amber,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                if (onInsertWebClip != null && clipTextCandidate != null) {
+                    Surface(
+                        onClick = {
+                            val formattedClip = "📌 ${effectiveTitle} (${metadata.domain}):\n\"$clipTextCandidate\""
+                            onInsertWebClip(formattedClip)
+                            Toast.makeText(context, "Extracto web insertado en la nota", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isDark) Color(0xFF252934) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, amber.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = null, tint = amber, modifier = Modifier.size(16.dp))
+                            Text(
+                                text = "Insertar extracto web en la nota (Web Clip)",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = titleColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )

@@ -214,6 +214,11 @@ fun CalloutBlockItem(
                 val markdownLink = "[$cleanTitle](${link.url})"
                 val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
                 onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+            },
+            onInsertWebClip = { clipText ->
+                val current = tfv.text.trimEnd()
+                val updated = if (current.isEmpty()) clipText else "$current\n$clipText"
+                onValueChange(TextFieldValue(updated, TextRange(updated.length)))
             }
         )
 
@@ -232,6 +237,11 @@ fun CalloutBlockItem(
                     val markdownLink = "[$cleanTitle](${link.url})"
                     val updated = raw.substring(0, safeStart) + markdownLink + raw.substring(safeEnd)
                     onValueChange(TextFieldValue(updated, TextRange(safeStart + markdownLink.length)))
+                },
+                onInsertWebClip = { clipText ->
+                    val current = tfv.text.trimEnd()
+                    val updated = if (current.isEmpty()) clipText else "$current\n$clipText"
+                    onValueChange(TextFieldValue(updated, TextRange(updated.length)))
                 }
             )
         }
