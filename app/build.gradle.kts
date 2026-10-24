@@ -28,7 +28,7 @@ android {
     // google-services.json is missing or does not contain a type-3 OAuth client for this package.
     val googleServicesFile = file("google-services.json")
     var pluginGeneratesWebClientId = false
-    var fallbackWebClientId = ""
+    var fallbackWebClientId = "318447528237-ktfp85ramrfbq9fldrk5hbmhca2e9j4b.apps.googleusercontent.com"
     if (googleServicesFile.exists()) {
       runCatching {
         @Suppress("UNCHECKED_CAST")
