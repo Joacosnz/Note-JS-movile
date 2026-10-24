@@ -8,6 +8,7 @@ plugins {
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -138,6 +139,9 @@ android {
       )
     }
   }
+    kotlinOptions {
+        jvmTarget = "11"
+    }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -179,7 +183,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
-  implementation(libs.firebase.ai)
+    implementation(libs.firebase.ai)
   // Uncomment to use Firestore:
   implementation(libs.firebase.firestore)
   implementation(libs.firebase.storage)
