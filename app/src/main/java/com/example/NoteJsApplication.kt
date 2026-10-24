@@ -1,69 +1,38 @@
 package com.example
 
 import android.app.Application
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.content.res.Configuration
-import android.os.Build
+import android.util.Log
+import com.example.data.local.AppDatabase
 import com.example.util.FirebaseInitializer
-import com.example.util.LauncherIconManager
-<<<<<<< Updated upstream
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
-=======
->>>>>>> Stashed changes
 
 class NoteJsApplication : Application() {
 
-    private val configChangeReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_CONFIGURATION_CHANGED) {
-                LauncherIconManager.syncLauncherIcon(
-                    context = context,
-                    newConfig = resources.configuration
-                )
-            }
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "Inicializando NoteJsApplication...")
+
+        // 1. Inicialización segura de Firebase (Auth, Firestore, Cloud Storage)
         try {
-<<<<<<< Updated upstream
-            if (FirebaseApp.getApps(this).isEmpty()) {
-                val options = FirebaseOptions.fromResource(this)
-                if (options != null) {
-                    FirebaseApp.initializeApp(this, options)
-                } else {
-                    val dummyOptions = FirebaseOptions.Builder()
-                        .setApplicationId("1:1234567890:android:321abc")
-                        .setProjectId("dummy-project")
-                        .setApiKey("dummy-api-key")
-                        .build()
-                    FirebaseApp.initializeApp(this, dummyOptions)
-                }
-            }
-=======
-            FirebaseInitializer.ensureInitialized(this)
->>>>>>> Stashed changes
-        } catch (_: Throwable) {
-        }
-        LauncherIconManager.syncLauncherIcon(this, newConfig = resources.configuration)
-        try {
-            val filter = IntentFilter(Intent.ACTION_CONFIGURATION_CHANGED)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(configChangeReceiver, filter, Context.RECEIVER_EXPORTED)
+            val app = FirebaseInitializer.ensureInitialized(this)
+            if (app != null) {
+                Log.i(TAG, "FirebaseApp inicializado correctamente: ${app.name}")
             } else {
-                registerReceiver(configChangeReceiver, filter)
+                Log.w(TAG, "FirebaseApp no se pudo inicializar en este entorno; se operará en modo completamente local.")
             }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error no crítico durante la inicialización de Firebase", t)
+        }
+
+        // 2. Inicialización y migración previa de Room Database
+        try {
+            val db = AppDatabase.getDatabase(this)
+            Log.i(TAG, "Base de datos Room cargada correctamente (versión ${db.openHelper.readableDatabase.version})")
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error no crítico durante la inicialización de Room Database", t)
         }
     }
 
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        LauncherIconManager.syncLauncherIcon(this, newConfig = newConfig)
+    companion object {
+        private const val TAG = "NoteJsApplication"
     }
 }

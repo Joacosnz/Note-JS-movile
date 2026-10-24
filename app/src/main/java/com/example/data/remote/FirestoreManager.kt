@@ -80,19 +80,6 @@ class FirestoreManager(
     companion object {
         private fun createFirestore(context: Context): FirebaseFirestore? {
             val appContext = context.applicationContext
-<<<<<<< Updated upstream
-            if (FirebaseApp.getApps(appContext).isEmpty()) {
-                val options = com.google.firebase.FirebaseOptions.fromResource(appContext)
-                if (options != null) {
-                    FirebaseApp.initializeApp(appContext, options)
-                } else {
-                    val dummyOptions = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId("1:1234567890:android:321abc")
-                        .setProjectId("dummy-project")
-                        .setApiKey("dummy-api-key")
-                        .build()
-                    FirebaseApp.initializeApp(appContext, dummyOptions)
-=======
             val app = FirebaseInitializer.ensureInitialized(appContext) ?: return null
             return try {
                 val databaseId = appContext.getString(R.string.firestore_database_id)
@@ -104,7 +91,6 @@ class FirestoreManager(
                 } catch (e2: Exception) {
                     Log.e("FirestoreManager", "Could not get default FirebaseFirestore instance", e2)
                     null
->>>>>>> Stashed changes
                 }
             }
         }

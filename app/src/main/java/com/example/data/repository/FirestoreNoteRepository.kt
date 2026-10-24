@@ -44,24 +44,8 @@ class FirestoreNoteRepository(
 
         private fun createNamedFirestore(context: Context): FirebaseFirestore {
             val appContext = context.applicationContext
-<<<<<<< Updated upstream
-            if (FirebaseApp.getApps(appContext).isEmpty()) {
-                val options = com.google.firebase.FirebaseOptions.fromResource(appContext)
-                if (options != null) {
-                    FirebaseApp.initializeApp(appContext, options)
-                } else {
-                    val dummyOptions = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId("1:1234567890:android:321abc")
-                        .setProjectId("dummy-project")
-                        .setApiKey("dummy-api-key")
-                        .build()
-                    FirebaseApp.initializeApp(appContext, dummyOptions)
-                }
-            }
-=======
             val app = FirebaseInitializer.ensureInitialized(appContext)
                 ?: throw IllegalStateException("FirebaseApp could not be initialized")
->>>>>>> Stashed changes
             val databaseId = appContext.getString(R.string.firestore_database_id)
             return try {
                 FirebaseFirestore.getInstance(app, databaseId)

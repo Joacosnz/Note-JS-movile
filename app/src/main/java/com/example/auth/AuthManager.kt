@@ -42,23 +42,7 @@ class AuthManager(private val context: Context) {
 
     private val firebaseAuth: FirebaseAuth?
         get() = try {
-<<<<<<< Updated upstream
-            if (FirebaseApp.getApps(appContext).isEmpty()) {
-                val options = com.google.firebase.FirebaseOptions.fromResource(appContext)
-                if (options != null) {
-                    FirebaseApp.initializeApp(appContext, options)
-                } else {
-                    val dummyOptions = com.google.firebase.FirebaseOptions.Builder()
-                        .setApplicationId("1:1234567890:android:321abc")
-                        .setProjectId("dummy-project")
-                        .setApiKey("dummy-api-key")
-                        .build()
-                    FirebaseApp.initializeApp(appContext, dummyOptions)
-                }
-            }
-=======
             FirebaseInitializer.ensureInitialized(appContext)
->>>>>>> Stashed changes
             FirebaseAuth.getInstance()
         } catch (e: Exception) {
             Log.w(TAG, "FirebaseAuth no disponible en este entorno", e)
@@ -73,7 +57,7 @@ class AuthManager(private val context: Context) {
      * Este valor proviene directamente de `google-services.json` (oauth_client tipo 3).
      */
     fun getWebClientId(): String {
-        return try {
+        val fromRes = try {
             val resId = appContext.resources.getIdentifier("default_web_client_id", "string", appContext.packageName)
             if (resId != 0) {
                 appContext.getString(resId)
@@ -84,6 +68,10 @@ class AuthManager(private val context: Context) {
             Log.w(TAG, "No se pudo resolver default_web_client_id desde recursos: ${e.message}")
             ""
         }
+        if (fromRes.isNotBlank()) {
+            return fromRes
+        }
+        return "318447528237-ktfp85ramrfbq9fldrk5hbmhca2e9j4b.apps.googleusercontent.com"
     }
 
     /**

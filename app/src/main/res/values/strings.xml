@@ -8,4 +8,5 @@
     <string name="shortcut_scan_document_short">Escanear Documento</string>
     <string name="shortcut_scan_document_long">Escanear un documento</string>
     <string name="process_text_create_note">Crear nota</string>
+    <string name="default_web_client_id">318447528237-ktfp85ramrfbq9fldrk5hbmhca2e9j4b.apps.googleusercontent.com</string>
 </resources>
