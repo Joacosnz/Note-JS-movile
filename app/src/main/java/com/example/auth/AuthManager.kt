@@ -193,8 +193,19 @@ class AuthManager(private val context: Context) {
                 AuthResult.Error("Tipo de credencial no soportada: ${credential.type}")
             }
         } catch (e: GetCredentialCancellationException) {
-            Log.w(TAG, "Google Sign-In cancelado por el usuario: ${e.message}")
-            AuthResult.Cancelled
+            val runtimeSha1 = getAppSignatureSha1()
+            Log.w(
+                TAG,
+                "Google Sign-In cancelado (${e.message}) | pkg=${appContext.packageName} | apkSha1=$runtimeSha1 | expectedSha1=$EXPECTED_SHA1"
+            )
+            if (runtimeSha1.isNotBlank() && !runtimeSha1.equals(EXPECTED_SHA1, ignoreCase = true)) {
+                AuthResult.Error(
+                    "El APK en tu teléfono está firmado con otro SHA-1 ($runtimeSha1) distinto al registrado en Firebase ($EXPECTED_SHA1). " +
+                        "Copia debug.keystore.base64 y app/build.gradle.kts en tu proyecto o agrega ese SHA-1 en Firebase Console."
+                )
+            } else {
+                AuthResult.Cancelled
+            }
         } catch (e: GoogleIdTokenParsingException) {
             Log.e(TAG, "Token de Google malformado o no parseable", e)
             AuthResult.Error("Token de Google inválido", e)
@@ -205,11 +216,42 @@ class AuthManager(private val context: Context) {
             } catch (_: Exception) {}
             AuthResult.Error("La credencial de Google no es válida para este proyecto Firebase. Vuelve a intentarlo.", e)
         } catch (e: GetCredentialException) {
-            Log.e(TAG, "Error de Credential Manager", e)
-            AuthResult.Error(e.errorMessage?.toString() ?: "No se pudo obtener la credencial de Google", e)
+            val runtimeSha1 = getAppSignatureSha1()
+            Log.e(TAG, "Error de Credential Manager (apkSha1=$runtimeSha1)", e)
+            val baseMsg = e.errorMessage?.toString() ?: "No se pudo obtener la credencial de Google"
+            if (runtimeSha1.isNotBlank() && !runtimeSha1.equals(EXPECTED_SHA1, ignoreCase = true)) {
+                AuthResult.Error("$baseMsg (SHA-1 actual del APK: $runtimeSha1)", e)
+            } else {
+                AuthResult.Error(baseMsg, e)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error autenticando con Firebase", e)
             AuthResult.Error(e.localizedMessage ?: "Error autenticando con Firebase", e)
+        }
+    }
+
+    /**
+     * Obtiene la huella digital SHA-1 real con la que fue firmado el APK en ejecución.
+     */
+    fun getAppSignatureSha1(): String {
+        return try {
+            val pm = appContext.packageManager
+            val packageName = appContext.packageName
+            val signatures = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                val pkgInfo = pm.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+                pkgInfo.signingInfo?.apkContentsSigners ?: pkgInfo.signingInfo?.signingCertificateHistory
+            } else {
+                @Suppress("DEPRECATION")
+                val pkgInfo = pm.getPackageInfo(packageName, android.content.pm.PackageManager.GET_SIGNATURES)
+                @Suppress("DEPRECATION")
+                pkgInfo.signatures
+            }
+            val certBytes = signatures?.firstOrNull()?.toByteArray() ?: return ""
+            val md = java.security.MessageDigest.getInstance("SHA-1")
+            md.digest(certBytes).joinToString(":") { "%02X".format(it) }
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo leer la firma SHA-1 del APK: ${e.message}")
+            ""
         }
     }
 
@@ -273,5 +315,6 @@ class AuthManager(private val context: Context) {
 
     companion object {
         private const val TAG = "AuthManager"
+        const val EXPECTED_SHA1 = "43:D4:D7:F9:4E:D6:FC:D5:D1:53:B4:80:F5:4A:62:30:64:AE:46:EB"
     }
 }

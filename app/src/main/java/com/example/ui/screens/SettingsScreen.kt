@@ -344,7 +344,7 @@ fun SettingsScreen(
                                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 },
                                 onCancelled = {
-                                    Toast.makeText(context, "Inicio de sesión cancelado", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Inicio de sesión cancelado. Selecciona una cuenta de Google para continuar.", Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()

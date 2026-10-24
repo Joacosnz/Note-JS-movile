@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -165,19 +166,19 @@ fun InsertInlineMathDialog(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(60.dp)
+                        .heightIn(min = 60.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        NativeMathView(
-                            expression = latexCode.ifBlank { "Vista previa" },
+                        KaTeXMathView(
+                            latex = latexCode.ifBlank { "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}" },
                             isDark = isDark,
-                            fontSize = 17.sp,
                             color = if (isDark) amber else Color(0xFFB45309),
+                            displayMode = false,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

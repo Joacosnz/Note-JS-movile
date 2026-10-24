@@ -1,6 +1,7 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import groovy.json.JsonSlurper
 import java.time.Duration
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -8,6 +9,17 @@ plugins {
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
+}
+
+// If cloned from GitHub (where debug.keystore is in .gitignore), restore debug.keystore
+// from debug.keystore.base64 so debugConfig signs the APK with the registered SHA-1.
+val rootDebugKeystore = file("${rootDir}/debug.keystore")
+val rootDebugKeystoreBase64 = file("${rootDir}/debug.keystore.base64")
+if (!rootDebugKeystore.exists() && rootDebugKeystoreBase64.exists()) {
+  runCatching {
+    val cleanBase64 = rootDebugKeystoreBase64.readText().replace("\\s+".toRegex(), "")
+    rootDebugKeystore.writeBytes(Base64.getDecoder().decode(cleanBase64))
+  }
 }
 
 android {

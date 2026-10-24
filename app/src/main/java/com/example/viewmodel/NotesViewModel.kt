@@ -2046,7 +2046,7 @@ class NotesViewModel @JvmOverloads constructor(
                 }
                 is AuthResult.Cancelled -> {
                     _isSigningIn.value = false
-                    onComplete(false, "Inicio de sesión cancelado")
+                    onComplete(false, "Inicio de sesión cancelado. Selecciona una cuenta de Google para continuar.")
                 }
                 is AuthResult.Error -> {
                     _snackbarMessage.value = result.message

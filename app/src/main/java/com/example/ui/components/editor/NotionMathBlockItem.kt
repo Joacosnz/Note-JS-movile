@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.NoteBlock
+import com.example.ui.components.KaTeXMathView
 import com.example.ui.components.NativeMathView
 import kotlinx.coroutines.delay
 
@@ -490,7 +492,7 @@ fun NotionMathBlockItem(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(64.dp)
+                                .heightIn(min = 64.dp)
                                 .padding(horizontal = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -505,12 +507,11 @@ fun NotionMathBlockItem(
                                     )
                                 )
                             } else {
-                                NativeMathView(
-                                    expression = block.latexCode,
+                                KaTeXMathView(
+                                    latex = block.latexCode,
                                     isDark = isDark,
-                                    fontSize = 20.sp,
                                     color = if (isDark) amber else Color(0xFFB45309),
-                                    textAlign = TextAlign.Center,
+                                    displayMode = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -689,19 +690,22 @@ fun NotionMathBlockItem(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Fórmula renderizada centrada con tipografía matemática nítida
+                        // Fórmula renderizada centrada con motor KaTeX
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 12.dp),
+                                .padding(vertical = 6.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            NativeMathView(
-                                expression = block.latexCode,
+                            KaTeXMathView(
+                                latex = block.latexCode,
                                 isDark = isDark,
-                                fontSize = 22.sp,
                                 color = if (isDark) amber else Color(0xFFB45309),
-                                textAlign = TextAlign.Center,
+                                displayMode = true,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isEditing = true
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }

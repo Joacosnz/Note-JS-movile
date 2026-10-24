@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="katex.min.css">
+<script src="katex.min.js"></script>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    background-color: transparent !important;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 8px 12px;
+  }
+  #katex-math {
+    display: inline-block;
+    text-align: center;
+    min-width: 10px;
+  }
+  .katex-display {
+    margin: 0 !important;
+  }
+  .katex {
+    font-size: 1.15em !important;
+    line-height: 1.4 !important;
+  }
+  .katex-error {
+    color: #EF4444 !important;
+    font-family: monospace;
+    font-size: 13px !important;
+  }
+  ::-webkit-scrollbar {
+    height: 3px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(150, 150, 150, 0.3);
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+  <div id="katex-math"></div>
+  <script>
+    function updateFormula(latex, isDisplay, textColor) {
+      const el = document.getElementById('katex-math');
+      if (textColor) {
+        document.body.style.color = textColor;
+      }
+      try {
+        katex.render(latex, el, {
+          displayMode: isDisplay,
+          throwOnError: false,
+          errorColor: '#EF4444'
+        });
+      } catch (e) {
+        el.innerText = latex;
+      }
+      if (window.AndroidMathBridge && window.AndroidMathBridge.onRendered) {
+        requestAnimationFrame(() => {
+          const bodyH = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, el.offsetHeight);
+          window.AndroidMathBridge.onRendered(bodyH);
+        });
+      }
+    }
+  </script>
+</body>
+</html>

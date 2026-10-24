@@ -115,6 +115,7 @@ import com.example.ui.components.BatchFolderBottomSheet
 import com.example.ui.components.BatchTagDialog
 import com.example.ui.components.FolderTreeBottomSheet
 import com.example.ui.components.KeepColorPickerBottomSheet
+import com.example.ui.components.KeepNotesGrid
 import com.example.ui.components.NoteActionBottomSheet
 import com.example.ui.components.NoteCard
 import com.example.ui.components.NoteContentPreview
@@ -393,61 +394,19 @@ fun HomeScreen(
                                 )
                             } else {
                                 if (uiState.isGridView) {
-                                    // Intelligent Adaptive Grid (Note JS style)
-                                    LazyVerticalStaggeredGrid(
-                                        columns = StaggeredGridCells.Adaptive(minSize = 160.dp),
-                                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        verticalItemSpacing = 12.dp,
+                                    // Google Keep Style Staggered Grid
+                                    KeepNotesGrid(
+                                        notes = uiState.activeNotes,
+                                        onNoteClick = { note -> openNoteOrUnlock(note, viewModel) },
+                                        onNoteLongClick = { note -> previewNote = note },
+                                        onTogglePin = { note -> viewModel.togglePin(note) },
+                                        unlockedNoteIds = uiState.unlockedNoteIds,
+                                        isSelectionMode = uiState.isSelectionMode,
+                                        selectedNoteIds = uiState.selectedNoteIds,
+                                        onSelectToggle = { noteId -> viewModel.toggleNoteSelection(noteId) },
+                                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 100.dp),
                                         modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        if (pinned.isNotEmpty()) {
-                                            item(span = StaggeredGridItemSpan.FullLine) {
-                                                NoteJsSectionHeader("FIJADAS")
-                                            }
-                                            items(pinned, key = { it.id }) { note ->
-                                                NoteCard(
-                                                    note = note,
-                                                    isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                    onClick = {
-                                                        openNoteOrUnlock(note, viewModel)
-                                                    },
-                                                    onLongClick = { previewNote = note },
-                                                    onTogglePin = { viewModel.togglePin(note) },
-                                                    isSelectionMode = uiState.isSelectionMode,
-                                                    isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                    onSelectToggle = { viewModel.toggleNoteSelection(note.id) },
-                                                    modifier = Modifier
-                                                        .animateItem(placementSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
-                                                        .fillMaxWidth()
-                                                )
-                                            }
-
-                                            if (others.isNotEmpty()) {
-                                                item(span = StaggeredGridItemSpan.FullLine) {
-                                                    NoteJsSectionHeader("NOTAS")
-                                                }
-                                            }
-                                        }
-
-                                        items(others, key = { it.id }) { note ->
-                                            NoteCard(
-                                                note = note,
-                                                isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                onClick = {
-                                                    openNoteOrUnlock(note, viewModel)
-                                                },
-                                                onLongClick = { previewNote = note },
-                                                onTogglePin = { viewModel.togglePin(note) },
-                                                isSelectionMode = uiState.isSelectionMode,
-                                                isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                onSelectToggle = { viewModel.toggleNoteSelection(note.id) },
-                                                modifier = Modifier
-                                                    .animateItem(placementSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
-                                                    .fillMaxWidth()
-                                            )
-                                        }
-                                    }
+                                    )
                                 } else {
                                     // Iconic iOS Inset Grouped Table View
                                     LazyColumn(
