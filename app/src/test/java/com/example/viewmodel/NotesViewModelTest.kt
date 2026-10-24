@@ -5,7 +5,7 @@ import android.os.Looper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.AppDatabase
-import com.example.data.local.entity.Note
+import com.example.data.local.entity.NoteEntity
 import com.example.data.remote.FirestoreManager
 import com.example.data.repository.NoteRepository
 import com.google.firebase.FirebaseApp
@@ -81,7 +81,7 @@ class NotesViewModelTest {
 
     @Test
     fun insertNote_updatesNotesStateFlow() = runTest(testDispatcher) {
-        val note = Note(
+        val note = NoteEntity(
             title = "Nueva Nota",
             content = "Contenido persistido en Room"
         )
@@ -101,7 +101,7 @@ class NotesViewModelTest {
 
     @Test
     fun updateNote_modifiesPersistedNoteAndStateFlow() = runTest(testDispatcher) {
-        val note = Note(title = "Título Inicial", content = "Contenido Inicial")
+        val note = NoteEntity(title = "Título Inicial", content = "Contenido Inicial")
         val noteId = viewModel.insertNoteSuspending(note)
 
         val savedNote = database.noteDao().getNoteById(noteId)
@@ -121,7 +121,7 @@ class NotesViewModelTest {
 
     @Test
     fun deleteNote_removesFromRoomAndStateFlow() = runTest(testDispatcher) {
-        val note = Note(title = "Nota a eliminar", content = "Texto")
+        val note = NoteEntity(title = "Nota a eliminar", content = "Texto")
         val noteId = viewModel.insertNoteSuspending(note)
 
         val saved = database.noteDao().getNoteById(noteId)
@@ -135,7 +135,7 @@ class NotesViewModelTest {
 
     @Test
     fun deleteNoteById_removesNoteSuccessfully() = runTest(testDispatcher) {
-        val note = Note(title = "Nota por ID", content = "Contenido por ID")
+        val note = NoteEntity(title = "Nota por ID", content = "Contenido por ID")
         val noteId = viewModel.insertNoteSuspending(note)
         assertTrue(noteId > 0)
         assertNotNull(database.noteDao().getNoteById(noteId))

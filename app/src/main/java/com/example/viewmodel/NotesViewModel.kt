@@ -174,7 +174,7 @@ private data class SettingsState(
     val defaultLockPin: String
 )
 
-class NotesViewModel(
+class NotesViewModel @JvmOverloads constructor(
     application: Application,
     customRepository: NoteRepository? = null
 ) : AndroidViewModel(application) {

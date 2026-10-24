@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.os.Build
 import com.example.util.LauncherIconManager
 import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 
 class NoteJsApplication : Application() {
 
@@ -27,7 +28,17 @@ class NoteJsApplication : Application() {
         super.onCreate()
         try {
             if (FirebaseApp.getApps(this).isEmpty()) {
-                FirebaseApp.initializeApp(this)
+                val options = FirebaseOptions.fromResource(this)
+                if (options != null) {
+                    FirebaseApp.initializeApp(this, options)
+                } else {
+                    val dummyOptions = FirebaseOptions.Builder()
+                        .setApplicationId("1:1234567890:android:321abc")
+                        .setProjectId("dummy-project")
+                        .setApiKey("dummy-api-key")
+                        .build()
+                    FirebaseApp.initializeApp(this, dummyOptions)
+                }
             }
         } catch (_: Throwable) {
         }

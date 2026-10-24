@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.dao.NoteDao
-import com.example.data.local.entity.Note
 import com.example.data.local.entity.NoteEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -42,7 +41,7 @@ class NoteRoomPersistenceTest {
 
     @Test
     fun insertAndGetNote_persistsTitleAndContentOffline() = runTest {
-        val note = Note(
+        val note = NoteEntity(
             title = "Ideas de Arquitectura",
             content = "1. Utilizar Room para persistencia offline\n2. Sincronización en segundo plano con Firestore"
         )
@@ -58,8 +57,8 @@ class NoteRoomPersistenceTest {
 
     @Test
     fun observeAllNotes_emitsOfflineNotesReactively() = runTest {
-        val note1 = Note(title = "Nota 1", content = "Contenido 1")
-        val note2 = Note(title = "Nota 2", content = "Contenido 2")
+        val note1 = NoteEntity(title = "Nota 1", content = "Contenido 1")
+        val note2 = NoteEntity(title = "Nota 2", content = "Contenido 2")
 
         noteDao.insert(note1)
         noteDao.insert(note2)
@@ -72,7 +71,7 @@ class NoteRoomPersistenceTest {
 
     @Test
     fun updateTitleAndContent_updatesOfflineStorage() = runTest {
-        val note = Note(title = "Título Original", content = "Contenido Original")
+        val note = NoteEntity(title = "Título Original", content = "Contenido Original")
         val id = noteDao.insert(note)
 
         noteDao.updateTitleAndContent(
@@ -89,7 +88,7 @@ class NoteRoomPersistenceTest {
 
     @Test
     fun deleteNote_removesFromOfflineStorage() = runTest {
-        val note = Note(title = "Para Borrar", content = "Texto temporal")
+        val note = NoteEntity(title = "Para Borrar", content = "Texto temporal")
         val id = noteDao.insert(note)
 
         val existing = noteDao.getNoteById(id)
@@ -103,8 +102,8 @@ class NoteRoomPersistenceTest {
 
     @Test
     fun searchByTitleOrContent_findsMatchingOfflineNotes() = runTest {
-        noteDao.insert(Note(title = "Receta de Cocina", content = "Harina, azúcar y huevos"))
-        noteDao.insert(Note(title = "Reunión de Equipo", content = "Revisar sprint backlog"))
+        noteDao.insert(NoteEntity(title = "Receta de Cocina", content = "Harina, azúcar y huevos"))
+        noteDao.insert(NoteEntity(title = "Reunión de Equipo", content = "Revisar sprint backlog"))
 
         val searchByTitle = noteDao.searchByTitleOrContent("Cocina").first()
         assertEquals(1, searchByTitle.size)
@@ -117,17 +116,17 @@ class NoteRoomPersistenceTest {
 
     @Test
     fun retrieveAllNotes_orderedByCreationDate() = runTest {
-        val olderNote = Note(
+        val olderNote = NoteEntity(
             title = "Nota Antigua",
             content = "Creada primero",
             createdAt = 1000L
         )
-        val newerNote = Note(
+        val newerNote = NoteEntity(
             title = "Nota Reciente",
             content = "Creada después",
             createdAt = 5000L
         )
-        val middleNote = Note(
+        val middleNote = NoteEntity(
             title = "Nota Intermedia",
             content = "Creada en medio",
             createdAt = 3000L
@@ -151,8 +150,8 @@ class NoteRoomPersistenceTest {
 
     @Test
     fun deleteAllNotes_clearsAllStoredNotes() = runTest {
-        noteDao.insert(Note(title = "N1", content = "C1"))
-        noteDao.insert(Note(title = "N2", content = "C2"))
+        noteDao.insert(NoteEntity(title = "N1", content = "C1"))
+        noteDao.insert(NoteEntity(title = "N2", content = "C2"))
 
         assertEquals(2, noteDao.getAllNotes().first().size)
         noteDao.deleteAll()

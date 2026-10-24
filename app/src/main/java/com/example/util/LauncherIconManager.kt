@@ -94,6 +94,26 @@ object LauncherIconManager {
             val lightState = pm.getComponentEnabledSetting(lightAlias)
             val darkState = pm.getComponentEnabledSetting(darkAlias)
 
+            // Prevent breaking the Android Studio "Run" functionality in debug builds,
+            // as the IDE targets the default LauncherLight alias.
+            val isDebug = (appContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            if (isDebug) {
+                if (lightState != PackageManager.COMPONENT_ENABLED_STATE_ENABLED ||
+                    darkState != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                    pm.setComponentEnabledSetting(
+                        lightAlias,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                    pm.setComponentEnabledSetting(
+                        darkAlias,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+                return
+            }
+
             val needsUpdate = if (isDark) {
                 darkState != PackageManager.COMPONENT_ENABLED_STATE_ENABLED ||
                     lightState != PackageManager.COMPONENT_ENABLED_STATE_DISABLED

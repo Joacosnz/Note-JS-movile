@@ -43,7 +43,17 @@ class AuthManager(private val context: Context) {
     private val firebaseAuth: FirebaseAuth?
         get() = try {
             if (FirebaseApp.getApps(appContext).isEmpty()) {
-                FirebaseApp.initializeApp(appContext)
+                val options = com.google.firebase.FirebaseOptions.fromResource(appContext)
+                if (options != null) {
+                    FirebaseApp.initializeApp(appContext, options)
+                } else {
+                    val dummyOptions = com.google.firebase.FirebaseOptions.Builder()
+                        .setApplicationId("1:1234567890:android:321abc")
+                        .setProjectId("dummy-project")
+                        .setApiKey("dummy-api-key")
+                        .build()
+                    FirebaseApp.initializeApp(appContext, dummyOptions)
+                }
             }
             FirebaseAuth.getInstance()
         } catch (e: Exception) {
