@@ -10,7 +10,7 @@ import com.example.data.remote.mapper.toFirestoreCreateMap
 import com.example.data.remote.mapper.toFirestoreMap
 import com.example.data.remote.mapper.toFirestoreUpdateMap
 import com.example.model.SyncState
-import com.google.firebase.FirebaseApp
+import com.example.util.FirebaseInitializer
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -73,13 +73,14 @@ fun handleFirestoreError(exception: Exception, operationType: OperationType, pat
 }
 
 class FirestoreManager(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore?
 ) {
     constructor(context: Context) : this(createFirestore(context))
 
     companion object {
-        private fun createFirestore(context: Context): FirebaseFirestore {
+        private fun createFirestore(context: Context): FirebaseFirestore? {
             val appContext = context.applicationContext
+<<<<<<< Updated upstream
             if (FirebaseApp.getApps(appContext).isEmpty()) {
                 val options = com.google.firebase.FirebaseOptions.fromResource(appContext)
                 if (options != null) {
@@ -91,10 +92,21 @@ class FirestoreManager(
                         .setApiKey("dummy-api-key")
                         .build()
                     FirebaseApp.initializeApp(appContext, dummyOptions)
+=======
+            val app = FirebaseInitializer.ensureInitialized(appContext) ?: return null
+            return try {
+                val databaseId = appContext.getString(R.string.firestore_database_id)
+                FirebaseFirestore.getInstance(app, databaseId)
+            } catch (e: Exception) {
+                Log.w("FirestoreManager", "Could not get named FirebaseFirestore instance, trying default", e)
+                try {
+                    FirebaseFirestore.getInstance(app)
+                } catch (e2: Exception) {
+                    Log.e("FirestoreManager", "Could not get default FirebaseFirestore instance", e2)
+                    null
+>>>>>>> Stashed changes
                 }
             }
-            val databaseId = appContext.getString(R.string.firestore_database_id)
-            return FirebaseFirestore.getInstance(databaseId)
         }
     }
 
@@ -107,9 +119,6 @@ class FirestoreManager(
         _syncState.value = state
     }
 
-    /**
-     * Verifica si el dispositivo tiene conexión activa a internet a través de ConnectivityManager.
-     */
     fun checkNetworkAvailable(context: Context?): Boolean {
         if (context == null) return true
         return try {
@@ -124,10 +133,6 @@ class FirestoreManager(
         }
     }
 
-    /**
-     * Cierra y destruye explícitamente cualquier listener activo de Firestore
-     * para evitar lecturas fantasma y fugas de memoria/recursos al cambiar de cuenta o cerrar sesión.
-     */
     fun clearListeners() {
         notesListener?.remove()
         notesListener = null
@@ -164,8 +169,13 @@ class FirestoreManager(
 
         saveLocalCloudMirror(context, userId, note)
 
+        val currentFirestore = firestore ?: run {
+            _syncState.value = SyncState.OFFLINE
+            return false
+        }
+
         val noteId = note.remoteUuid.ifBlank { return false }
-        val docRef = firestore.collection("users")
+        val docRef = currentFirestore.collection("users")
             .document(userId)
             .collection("notes")
             .document(noteId)
@@ -202,7 +212,8 @@ class FirestoreManager(
     suspend fun deleteNote(userId: String, remoteUuid: String, context: Context? = null): Boolean {
         if (remoteUuid.isBlank()) return true
         deleteLocalCloudMirror(context, userId, remoteUuid)
-        val docRef = firestore.collection("users")
+        val currentFirestore = firestore ?: return false
+        val docRef = currentFirestore.collection("users")
             .document(userId)
             .collection("notes")
             .document(remoteUuid)
@@ -222,7 +233,12 @@ class FirestoreManager(
         val normalizedNote = note.copy(userId = userId, remoteUuid = noteId, isSynced = true)
         saveLocalCloudMirror(context, userId, normalizedNote)
 
-        val docRef = firestore.collection("users")
+        val currentFirestore = firestore ?: run {
+            _syncState.value = SyncState.OFFLINE
+            return normalizedNote
+        }
+
+        val docRef = currentFirestore.collection("users")
             .document(userId)
             .collection("notes")
             .document(noteId)
@@ -247,7 +263,12 @@ class FirestoreManager(
         val normalizedNote = note.copy(userId = userId, remoteUuid = noteId, isSynced = true)
         saveLocalCloudMirror(context, userId, normalizedNote)
 
-        val docRef = firestore.collection("users")
+        val currentFirestore = firestore ?: run {
+            _syncState.value = SyncState.OFFLINE
+            return normalizedNote
+        }
+
+        val docRef = currentFirestore.collection("users")
             .document(userId)
             .collection("notes")
             .document(noteId)
@@ -276,7 +297,8 @@ class FirestoreManager(
     }
 
     suspend fun getRemoteNoteById(userId: String, remoteUuid: String): Map<String, Any>? {
-        val docRef = firestore.collection("users")
+        val currentFirestore = firestore ?: return null
+        val docRef = currentFirestore.collection("users")
             .document(userId)
             .collection("notes")
             .document(remoteUuid)
@@ -292,7 +314,8 @@ class FirestoreManager(
     }
 
     suspend fun fetchNotesOnce(userId: String): List<Map<String, Any>> {
-        val collectionRef = firestore.collection("users")
+        val currentFirestore = firestore ?: return emptyList()
+        val collectionRef = currentFirestore.collection("users")
             .document(userId)
             .collection("notes")
         return try {
@@ -320,8 +343,16 @@ class FirestoreManager(
 
         clearListeners()
 
+        val currentFirestore = firestore
+        if (currentFirestore == null) {
+            _syncState.value = SyncState.OFFLINE
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+
         val path = "users/$userId/notes"
-        val subscription = firestore.collection("users")
+        val subscription = currentFirestore.collection("users")
             .document(userId)
             .collection("notes")
             .addSnapshotListener { snapshot, error ->

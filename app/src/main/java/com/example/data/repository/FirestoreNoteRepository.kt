@@ -8,7 +8,7 @@ import com.example.data.remote.handleFirestoreError
 import com.example.data.remote.mapper.toFirestoreCreateMap
 import com.example.data.remote.mapper.toFirestoreUpdateMap
 import com.example.data.remote.mapper.toNoteEntity
-import com.google.firebase.FirebaseApp
+import com.example.util.FirebaseInitializer
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentSnapshot
@@ -44,6 +44,7 @@ class FirestoreNoteRepository(
 
         private fun createNamedFirestore(context: Context): FirebaseFirestore {
             val appContext = context.applicationContext
+<<<<<<< Updated upstream
             if (FirebaseApp.getApps(appContext).isEmpty()) {
                 val options = com.google.firebase.FirebaseOptions.fromResource(appContext)
                 if (options != null) {
@@ -57,8 +58,16 @@ class FirestoreNoteRepository(
                     FirebaseApp.initializeApp(appContext, dummyOptions)
                 }
             }
+=======
+            val app = FirebaseInitializer.ensureInitialized(appContext)
+                ?: throw IllegalStateException("FirebaseApp could not be initialized")
+>>>>>>> Stashed changes
             val databaseId = appContext.getString(R.string.firestore_database_id)
-            return FirebaseFirestore.getInstance(databaseId)
+            return try {
+                FirebaseFirestore.getInstance(app, databaseId)
+            } catch (_: Exception) {
+                FirebaseFirestore.getInstance(app)
+            }
         }
     }
 

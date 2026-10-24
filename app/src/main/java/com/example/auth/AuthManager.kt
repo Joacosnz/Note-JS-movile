@@ -14,7 +14,7 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
-import com.google.firebase.FirebaseApp
+import com.example.util.FirebaseInitializer
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseUser
@@ -42,6 +42,7 @@ class AuthManager(private val context: Context) {
 
     private val firebaseAuth: FirebaseAuth?
         get() = try {
+<<<<<<< Updated upstream
             if (FirebaseApp.getApps(appContext).isEmpty()) {
                 val options = com.google.firebase.FirebaseOptions.fromResource(appContext)
                 if (options != null) {
@@ -55,6 +56,9 @@ class AuthManager(private val context: Context) {
                     FirebaseApp.initializeApp(appContext, dummyOptions)
                 }
             }
+=======
+            FirebaseInitializer.ensureInitialized(appContext)
+>>>>>>> Stashed changes
             FirebaseAuth.getInstance()
         } catch (e: Exception) {
             Log.w(TAG, "FirebaseAuth no disponible en este entorno", e)

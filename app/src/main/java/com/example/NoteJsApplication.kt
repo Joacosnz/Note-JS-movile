@@ -7,9 +7,13 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Build
+import com.example.util.FirebaseInitializer
 import com.example.util.LauncherIconManager
+<<<<<<< Updated upstream
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+=======
+>>>>>>> Stashed changes
 
 class NoteJsApplication : Application() {
 
@@ -27,6 +31,7 @@ class NoteJsApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         try {
+<<<<<<< Updated upstream
             if (FirebaseApp.getApps(this).isEmpty()) {
                 val options = FirebaseOptions.fromResource(this)
                 if (options != null) {
@@ -40,6 +45,9 @@ class NoteJsApplication : Application() {
                     FirebaseApp.initializeApp(this, dummyOptions)
                 }
             }
+=======
+            FirebaseInitializer.ensureInitialized(this)
+>>>>>>> Stashed changes
         } catch (_: Throwable) {
         }
         LauncherIconManager.syncLauncherIcon(this, newConfig = resources.configuration)

@@ -42,6 +42,8 @@ abstract class FirestoreEmulatorTestBase {
 
     @Before
     fun setUpFirebase() {
+        org.junit.Assume.assumeTrue("Firebase emulator is not running on $FIRESTORE_HOST:$FIRESTORE_PORT", isEmulatorAvailable())
+
         val context = ApplicationProvider.getApplicationContext<Context>()
         databaseId = context.getString(R.string.firestore_database_id)
 
@@ -101,6 +103,17 @@ abstract class FirestoreEmulatorTestBase {
         }
         if (task.isSuccessful) return task.result
         throw task.exception ?: RuntimeException("Task failed without exception")
+    }
+
+    private fun isEmulatorAvailable(): Boolean {
+        return try {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(FIRESTORE_HOST, FIRESTORE_PORT), 300)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun clearEmulatorData() {
