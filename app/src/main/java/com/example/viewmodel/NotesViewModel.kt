@@ -15,8 +15,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.auth.AuthManager
 import com.example.auth.AuthResult
 import com.example.data.local.AppDatabase
+import com.example.data.local.entity.CalendarCategoryPresets
+import com.example.data.local.entity.CalendarItemType
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.NoteEntity
+import com.example.data.local.entity.RecurrenceRule
+import com.example.data.local.entity.ReminderEntity
+import com.example.data.local.entity.ReminderSubtask
+import com.example.data.local.entity.ReminderSubtaskSerializer
 import com.example.data.local.entity.SignatureEntity
 import com.example.data.remote.FirebaseStorageManager
 import com.example.data.remote.FirestoreManager
@@ -134,6 +140,8 @@ data class NotesUiState(
     val defaultPaperStyle: String = "BLANK",
     val geminiApiKey: String = "",
     val defaultLockPin: String = "1234",
+    val isBiometricLockEnabled: Boolean = true,
+    val isAppBiometricLockEnabled: Boolean = false,
     val isViewingPrivateFolder: Boolean = false,
     val isPrivateUnlocked: Boolean = isViewingPrivateFolder
 )
@@ -142,7 +150,8 @@ private data class RawData(
     val active: List<NoteEntity>,
     val archived: List<NoteEntity>,
     val trashed: List<NoteEntity>,
-    val folders: List<FolderEntity>
+    val folders: List<FolderEntity>,
+    val standaloneReminders: List<ReminderEntity> = emptyList()
 )
 
 private data class FilterState(
@@ -171,7 +180,9 @@ private data class SettingsState(
     val paperThemeMode: PaperThemeMode,
     val defaultPaperStyle: String,
     val geminiApiKey: String,
-    val defaultLockPin: String
+    val defaultLockPin: String,
+    val isBiometricLockEnabled: Boolean,
+    val isAppBiometricLockEnabled: Boolean
 )
 
 class NotesViewModel @JvmOverloads constructor(
@@ -206,6 +217,12 @@ class NotesViewModel @JvmOverloads constructor(
     val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
 
     val pendingSyncCount: StateFlow<Int>
+    val anonymousNotesCount: StateFlow<Int>
+    val isAnonymousSession: StateFlow<Boolean> = currentUser.map { it == null }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = authManager.currentUser == null
+    )
 
     private val _isSelectionMode = MutableStateFlow(false)
     private val _selectedNoteIds = MutableStateFlow<Set<Long>>(emptySet())
@@ -214,6 +231,9 @@ class NotesViewModel @JvmOverloads constructor(
 
     private val _driveSyncProgress = MutableStateFlow<DriveSyncProgress>(DriveSyncProgress.Idle)
     val driveSyncProgress: StateFlow<DriveSyncProgress> = _driveSyncProgress.asStateFlow()
+
+    private val _isManualSyncing = MutableStateFlow(false)
+    val isManualSyncing: StateFlow<Boolean> = _isManualSyncing.asStateFlow()
 
     private val _lastDriveSyncTime = MutableStateFlow<Long>(0L)
     val lastDriveSyncTime: StateFlow<Long> = _lastDriveSyncTime.asStateFlow()
@@ -241,6 +261,11 @@ class NotesViewModel @JvmOverloads constructor(
     val unifiedReminders: StateFlow<List<UnifiedReminderItem>>
 
     /**
+     * Flujo reactivo de recordatorios y eventos de calendario independientes sincronizados con Room y Firestore.
+     */
+    val calendarReminders: StateFlow<List<ReminderEntity>>
+
+    /**
      * Flujo reactivo de notas archivadas.
      */
     val archivedNotes: StateFlow<List<NoteEntity>>
@@ -259,7 +284,8 @@ class NotesViewModel @JvmOverloads constructor(
             signatureDao = database.signatureDao(),
             firestoreManager = firestoreManager,
             firebaseStorageManager = firebaseStorageManager,
-            context = application.applicationContext
+            context = application.applicationContext,
+            reminderDao = database.reminderDao()
         )
 
         allNotes = repository.allNotes.stateIn(
@@ -275,6 +301,17 @@ class NotesViewModel @JvmOverloads constructor(
         )
 
         notes = activeNotes
+
+        calendarReminders = combine(
+            repository.reminders,
+            repository.activeNotes
+        ) { standaloneList, notesList ->
+            mergeStandaloneAndNoteReminders(standaloneList, notesList)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
         unifiedReminders = repository.activeNotes.map { notesList ->
             extractUnifiedReminders(notesList)
@@ -297,6 +334,12 @@ class NotesViewModel @JvmOverloads constructor(
         )
 
         pendingSyncCount = repository.pendingSyncCount.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0
+        )
+
+        anonymousNotesCount = repository.anonymousNotesCount.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = 0
@@ -332,9 +375,10 @@ class NotesViewModel @JvmOverloads constructor(
 
     private val rawDataFlow = combine(
         rawNotesFlow,
-        repository.folders
-    ) { notesTriple, folders ->
-        RawData(notesTriple.first, notesTriple.second, notesTriple.third, folders)
+        repository.folders,
+        repository.reminders
+    ) { notesTriple, folders, standaloneReminders ->
+        RawData(notesTriple.first, notesTriple.second, notesTriple.third, folders, standaloneReminders)
     }
 
     private data class FilterPart2(
@@ -392,13 +436,27 @@ class NotesViewModel @JvmOverloads constructor(
     }
 
     private val settingsStateFlow = combine(
-        settingsManager.themeMode,
-        settingsManager.paperThemeMode,
-        settingsManager.defaultPaperStyle,
-        settingsManager.geminiApiKey,
-        settingsManager.defaultLockPin
-    ) { mode, paperTheme, paperStyle, apiKey, pin ->
-        SettingsState(mode, paperTheme, paperStyle, apiKey, pin)
+        combine(
+            settingsManager.themeMode,
+            settingsManager.paperThemeMode,
+            settingsManager.defaultPaperStyle,
+            settingsManager.geminiApiKey,
+            settingsManager.defaultLockPin
+        ) { mode, paperTheme, paperStyle, apiKey, pin ->
+            listOf(mode, paperTheme, paperStyle, apiKey, pin)
+        },
+        settingsManager.isBiometricLockEnabled,
+        settingsManager.isAppBiometricLockEnabled
+    ) { base, bioLock, appBioLock ->
+        SettingsState(
+            themeMode = base[0] as ThemeMode,
+            paperThemeMode = base[1] as PaperThemeMode,
+            defaultPaperStyle = base[2] as String,
+            geminiApiKey = base[3] as String,
+            defaultLockPin = base[4] as String,
+            isBiometricLockEnabled = bioLock,
+            isAppBiometricLockEnabled = appBioLock
+        )
     }
 
     val uiState: StateFlow<NotesUiState> = combine(
@@ -516,7 +574,8 @@ class NotesViewModel @JvmOverloads constructor(
             isSelectionMode = selection.isSelectionMode,
             selectedNoteIds = selection.selectedIds,
             allActiveNotesCount = raw.active.count { !it.isLocked },
-            remindersCount = remindersList.size,
+            remindersCount = raw.standaloneReminders.count { !it.isCompleted && !it.pendingDelete } +
+                remindersList.count { note -> raw.standaloneReminders.none { it.linkedNoteId == note.id } },
             archivedCount = raw.archived.size,
             trashedCount = raw.trashed.size,
             folderNoteCounts = folderCounts,
@@ -526,6 +585,8 @@ class NotesViewModel @JvmOverloads constructor(
             defaultPaperStyle = settings.defaultPaperStyle,
             geminiApiKey = settings.geminiApiKey,
             defaultLockPin = settings.defaultLockPin,
+            isBiometricLockEnabled = settings.isBiometricLockEnabled,
+            isAppBiometricLockEnabled = settings.isAppBiometricLockEnabled,
             isViewingPrivateFolder = filter.isViewingPrivateFolder,
             isPrivateUnlocked = filter.isViewingPrivateFolder
         )
@@ -911,6 +972,24 @@ class NotesViewModel @JvmOverloads constructor(
         _snackbarMessage.value = "PIN por defecto actualizado"
     }
 
+    fun setBiometricLockEnabled(enabled: Boolean) {
+        settingsManager.setBiometricLockEnabled(enabled)
+        _snackbarMessage.value = if (enabled) {
+            "Protección biométrica (Huella / Rostro) activada"
+        } else {
+            "Protección biométrica desactivada • Se usará PIN"
+        }
+    }
+
+    fun setAppBiometricLockEnabled(enabled: Boolean) {
+        settingsManager.setAppBiometricLockEnabled(enabled)
+        _snackbarMessage.value = if (enabled) {
+            "Bloqueo biométrico al abrir la aplicación activado"
+        } else {
+            "Bloqueo biométrico al abrir la aplicación desactivado"
+        }
+    }
+
     fun setActiveTab(tab: NavTab) {
         selectTab(tab)
     }
@@ -1235,7 +1314,37 @@ class NotesViewModel @JvmOverloads constructor(
                 )
                 repository.update(updated)
                 ReminderScheduler.scheduleReminder(context, noteId, timestamp, title, content, offsetsMinutes)
-                _snackbarMessage.value = "Recordatorio programado"
+
+                // Sincronizar también en el Centro de Recordatorios y Calendario
+                val linkedReminders = repository.getRemindersByLinkedNoteId(noteId)
+                val existingLinked = linkedReminders.firstOrNull()
+                if (existingLinked != null) {
+                    repository.updateReminder(
+                        existingLinked.copy(
+                            title = title.ifBlank { "Recordatorio de nota" },
+                            scheduledAt = timestamp,
+                            isCompleted = false,
+                            linkedNoteTitle = title.ifBlank { "Nota vinculada" },
+                            linkedNoteUuid = updated.remoteUuid
+                        )
+                    )
+                } else {
+                    repository.insertReminder(
+                        ReminderEntity(
+                            title = title.ifBlank { "Recordatorio de nota" },
+                            notes = extractNotePlainText("", content).trim().take(300),
+                            scheduledAt = timestamp,
+                            itemType = CalendarItemType.REMINDER.code,
+                            listName = note.folder.takeIf { it.isNotBlank() && it != "Notas" } ?: "Personal",
+                            colorHex = CalendarCategoryPresets.colorForList(note.folder),
+                            linkedNoteId = noteId,
+                            linkedNoteUuid = updated.remoteUuid,
+                            linkedNoteTitle = title.ifBlank { "Nota vinculada" },
+                            alertOffsetMinutes = offsetsMinutes.firstOrNull() ?: 0
+                        )
+                    )
+                }
+                _snackbarMessage.value = "Recordatorio programado en el Calendario"
             }
         }
     }
@@ -1247,8 +1356,234 @@ class NotesViewModel @JvmOverloads constructor(
                 val updated = note.copy(reminderTimestamp = null, isReminderDone = false, updatedAt = System.currentTimeMillis())
                 repository.update(updated)
                 ReminderScheduler.cancelReminder(context, noteId)
+                val linked = repository.getRemindersByLinkedNoteId(noteId)
+                for (rem in linked) {
+                    repository.deleteReminder(rem)
+                }
                 _snackbarMessage.value = "Recordatorio cancelado"
             }
+        }
+    }
+
+    // --- CENTRO UNIFICADO DE RECORDATORIOS Y CALENDARIO (CRUD + INTERACCIONES) ---
+
+    private fun mergeStandaloneAndNoteReminders(
+        standaloneList: List<ReminderEntity>,
+        notesList: List<NoteEntity>
+    ): List<ReminderEntity> {
+        val result = standaloneList.toMutableList()
+        val linkedNoteIds = standaloneList.mapNotNull { it.linkedNoteId }.toSet()
+
+        // Incluir notas con recordatorio legacy que aún no tengan entidad independiente
+        for (note in notesList) {
+            if (note.isLocked || note.isTrashed) continue
+            val ts = note.reminderTimestamp
+            if (ts != null && note.id !in linkedNoteIds) {
+                result.add(
+                    ReminderEntity(
+                        id = -note.id, // ID negativo sintético para distinguir recordatorios legacy de notas
+                        remoteUuid = "legacy_note_${note.id}",
+                        userId = note.userId,
+                        itemType = CalendarItemType.REMINDER.code,
+                        title = note.title.ifBlank { "Recordatorio de nota" },
+                        notes = extractNotePlainText("", note.content).trim().take(240),
+                        scheduledAt = ts,
+                        isCompleted = note.isReminderDone,
+                        listName = note.folder.takeIf { it.isNotBlank() && it != "Notas" } ?: "Personal",
+                        colorHex = CalendarCategoryPresets.colorForList(note.folder),
+                        linkedNoteId = note.id,
+                        linkedNoteUuid = note.remoteUuid,
+                        linkedNoteTitle = note.title.ifBlank { "Nota vinculada" }
+                    )
+                )
+            }
+        }
+        return result.sortedWith(
+            compareBy<ReminderEntity> { it.scheduledAt }
+                .thenByDescending { it.priority }
+        )
+    }
+
+    fun saveCalendarItem(
+        item: ReminderEntity,
+        onSaved: (Long) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val linkedNote = item.linkedNoteId?.let { repository.getNoteById(it) }
+            val enriched = item.copy(
+                title = item.title.trim().ifBlank {
+                    if (item.isEvent) "Nuevo evento" else "Nuevo recordatorio"
+                },
+                linkedNoteUuid = linkedNote?.remoteUuid ?: item.linkedNoteUuid,
+                linkedNoteTitle = linkedNote?.title?.ifBlank { "Nota sin título" } ?: item.linkedNoteTitle
+            )
+
+            val savedId = if (enriched.id > 0L) {
+                repository.updateReminder(enriched)
+                enriched.id
+            } else {
+                // Si venía de un ID sintético negativo (legacy note reminder), promover a entidad real
+                repository.insertReminder(enriched.copy(id = 0L))
+            }
+
+            // Si está vinculado a una nota, mantener sincronizado el timestamp de la nota
+            if (linkedNote != null && enriched.isReminder) {
+                repository.update(
+                    linkedNote.copy(
+                        reminderTimestamp = enriched.scheduledAt,
+                        isReminderDone = enriched.isCompleted,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+
+            _snackbarMessage.value = if (enriched.isEvent) {
+                "Evento guardado y sincronizado"
+            } else {
+                "Recordatorio guardado y sincronizado"
+            }
+            onSaved(savedId)
+        }
+    }
+
+    fun toggleCalendarReminderCompleted(reminder: ReminderEntity) {
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            val newCompleted = !reminder.isCompleted
+            val now = System.currentTimeMillis()
+
+            if (reminder.id < 0L && reminder.linkedNoteId != null) {
+                // Promover recordatorio legacy de nota y alternar su estado
+                val note = repository.getNoteById(reminder.linkedNoteId)
+                if (note != null) {
+                    val updatedNote = note.copy(isReminderDone = newCompleted, updatedAt = now)
+                    repository.update(updatedNote)
+                    if (newCompleted) {
+                        ReminderScheduler.cancelReminder(context, note.id)
+                    }
+                }
+                val promoted = reminder.copy(
+                    id = 0L,
+                    remoteUuid = UUID.randomUUID().toString(),
+                    isCompleted = newCompleted,
+                    completedAt = if (newCompleted) now else 0L
+                )
+                repository.insertReminder(promoted)
+                return@launch
+            }
+
+            val updated = reminder.copy(
+                isCompleted = newCompleted,
+                completedAt = if (newCompleted) now else 0L,
+                updatedAt = now
+            )
+            repository.updateReminder(updated)
+
+            // Si tiene recurrencia activa y se acaba de completar, programar la siguiente ocurrencia automáticamente
+            if (newCompleted && RecurrenceRule.fromCode(reminder.recurrenceRule) != RecurrenceRule.NONE) {
+                val nextStart = reminder.computeNextOccurrenceMillis()
+                if (nextStart != null) {
+                    val duration = (reminder.endTimeMillis - reminder.scheduledAt).coerceAtLeast(0L)
+                    val resetSubtasks = reminder.subtasks.map { it.copy(isCompleted = false) }
+                    val nextOccurrence = reminder.copy(
+                        id = 0L,
+                        remoteUuid = UUID.randomUUID().toString(),
+                        scheduledAt = nextStart,
+                        endTimeMillis = if (duration > 0L) nextStart + duration else 0L,
+                        isCompleted = false,
+                        completedAt = 0L,
+                        subtasksJson = ReminderSubtaskSerializer.serialize(resetSubtasks),
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                    repository.insertReminder(nextOccurrence)
+                }
+            }
+
+            // Actualizar nota vinculada si existe
+            if (reminder.linkedNoteId != null) {
+                val note = repository.getNoteById(reminder.linkedNoteId)
+                if (note != null && note.reminderTimestamp != null) {
+                    repository.update(
+                        note.copy(
+                            isReminderDone = newCompleted,
+                            updatedAt = now
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun toggleReminderSubtask(reminder: ReminderEntity, subtaskId: String) {
+        viewModelScope.launch {
+            val currentSubtasks = reminder.subtasks
+            val updatedSubtasks = currentSubtasks.map { sub ->
+                if (sub.id == subtaskId) sub.copy(isCompleted = !sub.isCompleted) else sub
+            }
+            val updated = reminder.copy(
+                subtasksJson = ReminderSubtaskSerializer.serialize(updatedSubtasks),
+                updatedAt = System.currentTimeMillis()
+            )
+            if (updated.id > 0L) {
+                repository.updateReminder(updated)
+            } else {
+                repository.insertReminder(updated.copy(id = 0L, remoteUuid = UUID.randomUUID().toString()))
+            }
+        }
+    }
+
+    fun rescheduleCalendarItem(
+        reminder: ReminderEntity,
+        newStartMillis: Long,
+        newEndMillis: Long = 0L,
+        isAllDay: Boolean = reminder.isAllDay
+    ) {
+        viewModelScope.launch {
+            val resolvedEnd = when {
+                newEndMillis > newStartMillis -> newEndMillis
+                reminder.isEvent && reminder.endTimeMillis > reminder.scheduledAt -> {
+                    val duration = reminder.endTimeMillis - reminder.scheduledAt
+                    newStartMillis + duration
+                }
+                reminder.isEvent -> newStartMillis + 3_600_000L
+                else -> 0L
+            }
+            val updated = reminder.copy(
+                scheduledAt = newStartMillis,
+                endTimeMillis = resolvedEnd,
+                isAllDay = isAllDay,
+                updatedAt = System.currentTimeMillis()
+            )
+            if (updated.id > 0L) {
+                repository.updateReminder(updated)
+            } else {
+                repository.insertReminder(updated.copy(id = 0L, remoteUuid = UUID.randomUUID().toString()))
+            }
+            _snackbarMessage.value = "Horario actualizado en el calendario"
+        }
+    }
+
+    fun deleteCalendarItem(reminder: ReminderEntity) {
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            if (reminder.id > 0L) {
+                repository.deleteReminder(reminder)
+            }
+            if (reminder.linkedNoteId != null) {
+                val note = repository.getNoteById(reminder.linkedNoteId)
+                if (note != null && note.reminderTimestamp != null) {
+                    repository.update(
+                        note.copy(
+                            reminderTimestamp = null,
+                            isReminderDone = false,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                    ReminderScheduler.cancelReminder(context, note.id)
+                }
+            }
+            _snackbarMessage.value = if (reminder.isEvent) "Evento eliminado" else "Recordatorio eliminado"
         }
     }
 
@@ -1745,8 +2080,13 @@ class NotesViewModel @JvmOverloads constructor(
                 )
             }
 
-            val savedId = repository.insert(entity)
-            onSaved(if (id > 0) id else savedId)
+            if (existing != null) {
+                repository.update(entity)
+                onSaved(existing.id)
+            } else {
+                val savedId = repository.insert(entity)
+                onSaved(savedId)
+            }
         }
     }
 
@@ -2078,18 +2418,49 @@ class NotesViewModel @JvmOverloads constructor(
     /**
      * Fuerza el drenado inmediato de la cola de sincronización offline y la descarga de notas remotas desde Firestore.
      */
-    fun syncPendingNotesNow() {
+    fun syncPendingNotesNow(onComplete: ((Boolean, String) -> Unit)? = null) {
+        if (_isManualSyncing.value) return
         viewModelScope.launch(Dispatchers.IO) {
             val uid = resolveEffectiveCloudUserId()
 
             if (uid != null) {
-                firestoreManager.setSyncState(SyncState.SYNCING)
-                repository.syncPendingNotesSuspending(uid, forcePushAll = true)
-                repository.startListeningToCloud(uid)
-                firestoreManager.setSyncState(SyncState.SYNCED)
-                _snackbarMessage.value = "Sincronización en la nube completada"
+                _isManualSyncing.value = true
+                try {
+                    val context = getApplication<Application>()
+                    if (!firestoreManager.checkNetworkAvailable(context)) {
+                        firestoreManager.setSyncState(SyncState.OFFLINE)
+                        val offlineMsg = "Sin conexión a internet • Los cambios se sincronizarán automáticamente al reconectar"
+                        _snackbarMessage.value = offlineMsg
+                        withContext(Dispatchers.Main) {
+                            onComplete?.invoke(false, offlineMsg)
+                        }
+                        return@launch
+                    }
+                    firestoreManager.setSyncState(SyncState.SYNCING)
+                    repository.startListeningToCloud(uid)
+                    repository.syncPendingNotesSuspending(uid, forcePushAll = true)
+                    firestoreManager.setSyncState(SyncState.SYNCED)
+                    _lastDriveSyncTime.value = System.currentTimeMillis()
+                    val okMsg = "Sincronización instantánea en la nube completada"
+                    _snackbarMessage.value = okMsg
+                    withContext(Dispatchers.Main) {
+                        onComplete?.invoke(true, okMsg)
+                    }
+                } catch (e: Exception) {
+                    val errMsg = "Error al sincronizar: ${e.localizedMessage ?: "Intenta nuevamente"}"
+                    _snackbarMessage.value = errMsg
+                    withContext(Dispatchers.Main) {
+                        onComplete?.invoke(false, errMsg)
+                    }
+                } finally {
+                    _isManualSyncing.value = false
+                }
             } else {
-                _snackbarMessage.value = "Inicia sesión con Google para sincronizar tus notas en la nube"
+                val noAuthMsg = "Inicia sesión con Google para sincronizar tus notas en la nube"
+                _snackbarMessage.value = noAuthMsg
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false, noAuthMsg)
+                }
             }
         }
     }

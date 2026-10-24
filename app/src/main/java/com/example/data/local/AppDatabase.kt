@@ -7,13 +7,18 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.local.dao.CalendarEventDao
 import com.example.data.local.dao.FolderDao
 import com.example.data.local.dao.NoteDao
+import com.example.data.local.dao.ReminderDao
 import com.example.data.local.dao.SignatureDao
 import com.example.data.local.dao.WebLinkCacheDao
+import com.example.data.local.entity.CalendarEvent
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.NoteEntity
 import com.example.data.local.entity.NoteFtsEntity
+import com.example.data.local.entity.Reminder
+import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.SignatureEntity
 import com.example.data.local.entity.WebLinkCacheEntity
 
@@ -23,9 +28,12 @@ import com.example.data.local.entity.WebLinkCacheEntity
         NoteFtsEntity::class,
         FolderEntity::class,
         SignatureEntity::class,
-        WebLinkCacheEntity::class
+        WebLinkCacheEntity::class,
+        ReminderEntity::class,
+        Reminder::class,
+        CalendarEvent::class
     ],
-    version = 15,
+    version = 17,
     exportSchema = false,
 )
 @TypeConverters(UriConverters::class)
@@ -35,6 +43,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun folderDao(): FolderDao
     abstract fun signatureDao(): SignatureDao
     abstract fun webLinkCacheDao(): WebLinkCacheDao
+    abstract fun reminderDao(): ReminderDao
+    abstract fun calendarEventDao(): CalendarEventDao
 
     companion object {
         @Volatile
@@ -129,6 +139,207 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `reminders` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `remoteUuid` TEXT NOT NULL DEFAULT '',
+                        `userId` TEXT NOT NULL DEFAULT 'LOCAL_ANONYMOUS',
+                        `itemType` TEXT NOT NULL DEFAULT 'REMINDER',
+                        `title` TEXT NOT NULL,
+                        `notes` TEXT NOT NULL DEFAULT '',
+                        `location` TEXT NOT NULL DEFAULT '',
+                        `scheduledAt` INTEGER NOT NULL,
+                        `endTimeMillis` INTEGER NOT NULL DEFAULT 0,
+                        `isAllDay` INTEGER NOT NULL DEFAULT 0,
+                        `isCompleted` INTEGER NOT NULL DEFAULT 0,
+                        `completedAt` INTEGER NOT NULL DEFAULT 0,
+                        `priority` INTEGER NOT NULL DEFAULT 0,
+                        `listName` TEXT NOT NULL DEFAULT 'Personal',
+                        `colorHex` INTEGER NOT NULL DEFAULT 4278221567,
+                        `recurrenceRule` TEXT NOT NULL DEFAULT 'NONE',
+                        `subtasksJson` TEXT NOT NULL DEFAULT '[]',
+                        `linkedNoteId` INTEGER,
+                        `linkedNoteUuid` TEXT NOT NULL DEFAULT '',
+                        `linkedNoteTitle` TEXT NOT NULL DEFAULT '',
+                        `alertOffsetMinutes` INTEGER NOT NULL DEFAULT 0,
+                        `isSynced` INTEGER NOT NULL DEFAULT 0,
+                        `pendingDelete` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `lastModifiedLocal` INTEGER NOT NULL DEFAULT 0,
+                        `updatedAtServer` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminders_remoteUuid` ON `reminders` (`remoteUuid`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminders_userId_pendingDelete_scheduledAt` ON `reminders` (`userId`, `pendingDelete`, `scheduledAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminders_linkedNoteId` ON `reminders` (`linkedNoteId`)")
+
+                // Migrate existing note-level reminders into the standalone reminders table linked to their note
+                db.execSQL(
+                    """
+                    INSERT INTO `reminders` (
+                        `remoteUuid`, `userId`, `itemType`, `title`, `notes`, `location`,
+                        `scheduledAt`, `endTimeMillis`, `isAllDay`, `isCompleted`, `completedAt`,
+                        `priority`, `listName`, `colorHex`, `recurrenceRule`, `subtasksJson`,
+                        `linkedNoteId`, `linkedNoteUuid`, `linkedNoteTitle`, `alertOffsetMinutes`,
+                        `isSynced`, `pendingDelete`, `createdAt`, `updatedAt`, `lastModifiedLocal`, `updatedAtServer`
+                    )
+                    SELECT
+                        'rem_note_' || `id` || '_' || COALESCE(NULLIF(`remoteUuid`, ''), hex(randomblob(6))),
+                        `userId`,
+                        'REMINDER',
+                        CASE WHEN TRIM(`title`) = '' THEN 'Recordatorio de nota' ELSE `title` END,
+                        '',
+                        '',
+                        `reminderTimestamp`,
+                        0,
+                        0,
+                        `isReminderDone`,
+                        CASE WHEN `isReminderDone` = 1 THEN `updatedAt` ELSE 0 END,
+                        0,
+                        CASE WHEN TRIM(`folder`) = '' OR `folder` = 'Notas' THEN 'Personal' ELSE `folder` END,
+                        4278221567,
+                        'NONE',
+                        '[]',
+                        `id`,
+                        `remoteUuid`,
+                        CASE WHEN TRIM(`title`) = '' THEN 'Nota vinculada' ELSE `title` END,
+                        0,
+                        0,
+                        0,
+                        `createdAt`,
+                        `updatedAt`,
+                        `lastModifiedLocal`,
+                        0
+                    FROM `notes`
+                    WHERE `reminderTimestamp` IS NOT NULL
+                      AND `isTrashed` = 0
+                      AND `pendingDelete` = 0
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `reminder_items` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `timestamp` INTEGER NOT NULL,
+                        `linkedNoteId` INTEGER,
+                        `isCompleted` INTEGER NOT NULL DEFAULT 0,
+                        `remoteUuid` TEXT NOT NULL DEFAULT '',
+                        `userId` TEXT NOT NULL DEFAULT 'LOCAL_ANONYMOUS',
+                        `priority` INTEGER NOT NULL DEFAULT 0,
+                        `listName` TEXT NOT NULL DEFAULT 'Personal',
+                        `colorHex` INTEGER NOT NULL DEFAULT 4278221567,
+                        `recurrenceRule` TEXT NOT NULL DEFAULT 'NONE',
+                        `subtasksJson` TEXT NOT NULL DEFAULT '[]',
+                        `linkedNoteUuid` TEXT NOT NULL DEFAULT '',
+                        `linkedNoteTitle` TEXT NOT NULL DEFAULT '',
+                        `alertOffsetMinutes` INTEGER NOT NULL DEFAULT 0,
+                        `completedAt` INTEGER NOT NULL DEFAULT 0,
+                        `isSynced` INTEGER NOT NULL DEFAULT 0,
+                        `pendingDelete` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `lastModifiedLocal` INTEGER NOT NULL DEFAULT 0,
+                        `updatedAtServer` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`linkedNoteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminder_items_linkedNoteId` ON `reminder_items` (`linkedNoteId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminder_items_timestamp` ON `reminder_items` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminder_items_remoteUuid` ON `reminder_items` (`remoteUuid`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reminder_items_userId_pendingDelete_timestamp` ON `reminder_items` (`userId`, `pendingDelete`, `timestamp`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `calendar_events` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `timestamp` INTEGER NOT NULL,
+                        `linkedNoteId` INTEGER,
+                        `isCompleted` INTEGER NOT NULL DEFAULT 0,
+                        `endTimestamp` INTEGER NOT NULL DEFAULT 0,
+                        `isAllDay` INTEGER NOT NULL DEFAULT 0,
+                        `location` TEXT NOT NULL DEFAULT '',
+                        `remoteUuid` TEXT NOT NULL DEFAULT '',
+                        `userId` TEXT NOT NULL DEFAULT 'LOCAL_ANONYMOUS',
+                        `listName` TEXT NOT NULL DEFAULT 'Personal',
+                        `colorHex` INTEGER NOT NULL DEFAULT 4278221567,
+                        `recurrenceRule` TEXT NOT NULL DEFAULT 'NONE',
+                        `linkedNoteUuid` TEXT NOT NULL DEFAULT '',
+                        `linkedNoteTitle` TEXT NOT NULL DEFAULT '',
+                        `alertOffsetMinutes` INTEGER NOT NULL DEFAULT 0,
+                        `isSynced` INTEGER NOT NULL DEFAULT 0,
+                        `pendingDelete` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `lastModifiedLocal` INTEGER NOT NULL DEFAULT 0,
+                        `updatedAtServer` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`linkedNoteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_calendar_events_linkedNoteId` ON `calendar_events` (`linkedNoteId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_calendar_events_timestamp` ON `calendar_events` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_calendar_events_remoteUuid` ON `calendar_events` (`remoteUuid`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_calendar_events_userId_pendingDelete_timestamp` ON `calendar_events` (`userId`, `pendingDelete`, `timestamp`)")
+
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO `reminder_items` (
+                        `id`, `title`, `description`, `timestamp`, `linkedNoteId`, `isCompleted`,
+                        `remoteUuid`, `userId`, `priority`, `listName`, `colorHex`, `recurrenceRule`,
+                        `subtasksJson`, `linkedNoteUuid`, `linkedNoteTitle`, `alertOffsetMinutes`,
+                        `completedAt`, `isSynced`, `pendingDelete`, `createdAt`, `updatedAt`,
+                        `lastModifiedLocal`, `updatedAtServer`
+                    )
+                    SELECT
+                        `id`, `title`, `notes`, `scheduledAt`,
+                        CASE WHEN `linkedNoteId` IN (SELECT `id` FROM `notes`) THEN `linkedNoteId` ELSE NULL END,
+                        `isCompleted`, `remoteUuid`, `userId`, `priority`, `listName`, `colorHex`,
+                        `recurrenceRule`, `subtasksJson`, `linkedNoteUuid`, `linkedNoteTitle`,
+                        `alertOffsetMinutes`, `completedAt`, `isSynced`, `pendingDelete`,
+                        `createdAt`, `updatedAt`, `lastModifiedLocal`, `updatedAtServer`
+                    FROM `reminders`
+                    WHERE UPPER(`itemType`) != 'EVENT'
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO `calendar_events` (
+                        `id`, `title`, `description`, `timestamp`, `linkedNoteId`, `isCompleted`,
+                        `endTimestamp`, `isAllDay`, `location`, `remoteUuid`, `userId`, `listName`,
+                        `colorHex`, `recurrenceRule`, `linkedNoteUuid`, `linkedNoteTitle`,
+                        `alertOffsetMinutes`, `isSynced`, `pendingDelete`, `createdAt`, `updatedAt`,
+                        `lastModifiedLocal`, `updatedAtServer`
+                    )
+                    SELECT
+                        `id`, `title`, `notes`, `scheduledAt`,
+                        CASE WHEN `linkedNoteId` IN (SELECT `id` FROM `notes`) THEN `linkedNoteId` ELSE NULL END,
+                        `isCompleted`, `endTimeMillis`, `isAllDay`, `location`, `remoteUuid`, `userId`,
+                        `listName`, `colorHex`, `recurrenceRule`, `linkedNoteUuid`, `linkedNoteTitle`,
+                        `alertOffsetMinutes`, `isSynced`, `pendingDelete`, `createdAt`, `updatedAt`,
+                        `lastModifiedLocal`, `updatedAtServer`
+                    FROM `reminders`
+                    WHERE UPPER(`itemType`) = 'EVENT'
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -145,7 +356,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_11_12,
                         MIGRATION_12_13,
                         MIGRATION_13_14,
-                        MIGRATION_14_15
+                        MIGRATION_14_15,
+                        MIGRATION_15_16,
+                        MIGRATION_16_17
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

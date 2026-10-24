@@ -43,11 +43,13 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -110,6 +112,7 @@ import com.example.ui.components.SortBottomSheet
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
 import com.example.ui.theme.isAppInDarkTheme
+import com.example.ui.utils.BiometricAuthManager
 import com.example.util.ThemeMode
 import com.example.util.PaperThemeMode
 import com.example.viewmodel.NotesViewModel
@@ -129,7 +132,9 @@ fun SettingsScreen(
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val isSigningIn by viewModel.isSigningIn.collectAsStateWithLifecycle()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsStateWithLifecycle()
+    val anonymousNotesCount by viewModel.anonymousNotesCount.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val isManualSyncing by viewModel.isManualSyncing.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
@@ -219,12 +224,6 @@ fun SettingsScreen(
     var newPinInput by remember(uiState.defaultLockPin) { mutableStateOf(uiState.defaultLockPin) }
     var isPinVisible by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isFirebaseConnected, isDriveConnected, pendingSyncCount) {
-        if ((isFirebaseConnected || isDriveConnected) && pendingSyncCount > 0) {
-            viewModel.syncPendingNotesNow()
-        }
-    }
-
     BackHandler {
         viewModel.navigateBack()
     }
@@ -289,26 +288,48 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 IconBadge(
-                                    icon = Icons.Default.CloudUpload,
-                                    badgeColor = Color(0xFF4285F4)
+                                    icon = Icons.Default.AccountCircle,
+                                    badgeColor = Color(0xFF34A853)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "Sesión Anónima Activa",
+                                            style = MaterialTheme.typography.bodyLarge.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 16.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFF34A853).copy(alpha = 0.15f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "Offline-First",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                ),
+                                                color = Color(0xFF34A853),
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "Sincronización Offline-First y Respaldo",
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 16.sp
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = if (pendingSyncCount > 0)
-                                            "$pendingSyncCount notas locales listas para vincular a tu cuenta"
+                                        text = if (anonymousNotesCount > 0)
+                                            "$anonymousNotesCount notas en sesión anónima listas para vincular"
                                         else
-                                            "Modo local activo • Tus notas están seguras en Room",
+                                            "Acceso inmediato sin registro • Guardado seguro en Room",
                                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -320,7 +341,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Text(
-                                text = "Inicia sesión con Google para activar la sincronización en tiempo real con Firebase Firestore y Cloud Storage, aislando tus notas por cuenta.",
+                                text = "Puedes crear y editar notas sin conexión ni cuenta. Cuando decidas vincular tu cuenta de Google, todas tus notas anónimas se migrarán y sincronizarán automáticamente en la nube.",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp
@@ -333,18 +354,22 @@ fun SettingsScreen(
                             GoogleSignInButton(
                                 authManager = authManager,
                                 isLoading = isSigningIn,
-                                text = "Continuar con Google",
+                                text = "Vincular cuenta de Google",
                                 onSuccess = { user ->
                                     isFirebaseConnected = true
                                     viewModel.repository.startListeningToCloud(user.uid)
                                     val displayName = user.displayName ?: user.email ?: "Usuario"
-                                    Toast.makeText(context, "Sesión iniciada como $displayName", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        context,
+                                        "Cuenta vinculada como $displayName. Sincronizando notas...",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 },
                                 onError = { msg ->
                                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 },
                                 onCancelled = {
-                                    Toast.makeText(context, "Inicio de sesión cancelado. Selecciona una cuenta de Google para continuar.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Vinculación cancelada. Tus notas siguen seguras en tu sesión anónima.", Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -491,52 +516,83 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
 
-                            // Fila de cola Offline-First (Room <-> Firestore + Cloud Storage)
+                            // Panel unificado de Sincronización Instantánea en la Nube
+                            val isSyncingNow = isManualSyncing || syncState == com.example.model.SyncState.SYNCING
                             SettingsRow(
                                 icon = Icons.Default.CloudSync,
                                 badgeColor = statusBadgeColor,
-                                title = "Sincronización Cloud (Firestore)",
-                                subtitle = if (pendingSyncCount > 0)
-                                    "$pendingSyncCount cambios locales pendientes • Toca para sincronizar ahora"
-                                else
-                                    "Base de datos local Room sincronizada en tiempo real",
+                                title = "Sincronización Instantánea en la Nube",
+                                subtitle = when {
+                                    isSyncingNow -> "Sincronizando cambios entre dispositivos..."
+                                    pendingSyncCount > 0 -> "$pendingSyncCount cambios locales pendientes • Toca para sincronizar"
+                                    syncState == com.example.model.SyncState.OFFLINE -> "Sin conexión • Se sincronizará automáticamente al conectar"
+                                    else -> "Tus notas se sincronizan al instante en todos tus dispositivos"
+                                },
+                                valueText = if (isSyncingNow) "Sincronizando..." else "Sincronizar",
                                 onClick = {
-                                    viewModel.syncPendingNotesNow()
+                                    viewModel.syncPendingNotesNow { _, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
                                 },
                                 testTag = "btn_sync_firestore_now"
                             )
 
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 60.dp),
-                                thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-
-                            // Fila de sincronización manual de Notas y PDFs con Google Drive
-                            SettingsRow(
-                                icon = Icons.Default.CloudSync,
-                                badgeColor = Color(0xFF34A853),
-                                title = "Sincronizar Notas y PDFs",
-                                subtitle = "Subir notas y PDFs a tu carpeta 'Note JS' en Drive",
-                                onClick = { showManualDriveSyncDialog = true },
-                                testTag = "btn_manual_drive_sync"
-                            )
-
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 60.dp),
-                                thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-
-                            // Única fila de opciones de Note JS Cloud
-                            SettingsRow(
-                                icon = Icons.Default.CloudUpload,
-                                badgeColor = Color(0xFF4285F4),
-                                title = "Copia de seguridad en Drive",
-                                subtitle = "Respaldar o recuperar notas",
-                                onClick = { showDriveOptions = true },
-                                testTag = "btn_drive_options"
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        viewModel.syncPendingNotesNow { _, msg ->
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    enabled = !isSyncingNow,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = amber,
+                                        contentColor = Color.Black
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("btn_manual_drive_sync")
+                                ) {
+                                    if (isSyncingNow) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            color = Color.Black,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = "Sincronizando con la nube...",
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudSync,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (pendingSyncCount > 0)
+                                                "Sincronizar ahora ($pendingSyncCount pendientes)"
+                                            else
+                                                "Sincronizar ahora en la nube",
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -627,16 +683,108 @@ fun SettingsScreen(
 
             // SECCIÓN: SEGURIDAD Y PRIVACIDAD
             item {
+                val biometricStatusLabel = remember(context) {
+                    BiometricAuthManager.getBiometricStatusDescription(context)
+                }
                 SettingsSectionHeader("SEGURIDAD Y PRIVACIDAD")
                 SettingsGroupCard {
+                    SettingsSwitchRow(
+                        icon = Icons.Default.Fingerprint,
+                        badgeColor = Color(0xFF5856D6),
+                        title = "Desbloqueo Biométrico (Huella / Rostro)",
+                        subtitle = biometricStatusLabel,
+                        checked = uiState.isBiometricLockEnabled,
+                        onCheckedChange = { enabled ->
+                            viewModel.setBiometricLockEnabled(enabled)
+                        },
+                        testTag = "settings_switch_biometric_lock"
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 60.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    SettingsSwitchRow(
+                        icon = Icons.Default.Security,
+                        badgeColor = Color(0xFF007AFF),
+                        title = "Bloquear Note JS al abrir",
+                        subtitle = if (uiState.isAppBiometricLockEnabled)
+                            "Solicita huella, rostro o PIN al iniciar la app"
+                        else
+                            "Acceso directo al abrir la aplicación",
+                        checked = uiState.isAppBiometricLockEnabled,
+                        onCheckedChange = { enabled ->
+                            if (enabled && uiState.isBiometricLockEnabled && BiometricAuthManager.isBiometricAvailable(context)) {
+                                BiometricAuthManager.authenticateWithBiometrics(
+                                    context = context,
+                                    title = "Activar Bloqueo de Aplicación",
+                                    subtitle = "Confirma tu huella dactilar o reconocimiento facial",
+                                    onSuccess = {
+                                        viewModel.setAppBiometricLockEnabled(true)
+                                    },
+                                    onFallbackToPin = {
+                                        viewModel.setAppBiometricLockEnabled(true)
+                                    },
+                                    onError = { _ -> }
+                                )
+                            } else {
+                                viewModel.setAppBiometricLockEnabled(enabled)
+                            }
+                        },
+                        testTag = "settings_switch_app_biometric_lock"
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 60.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
                     SettingsRow(
                         icon = Icons.Default.Lock,
-                        badgeColor = Color(0xFF5856D6),
-                        title = "Carpeta Privada",
-                        valueText = "Biometría / PIN",
-                        subtitle = "Protegida con la huella o el PIN del sistema",
+                        badgeColor = Color(0xFF34C759),
+                        title = "Verificar BiometricPrompt ahora",
+                        valueText = "Huella / Rostro",
+                        subtitle = "Probar autenticación biométrica en este dispositivo",
                         onClick = {
-                            Toast.makeText(context, "La Carpeta Privada utiliza la seguridad biométrica o el PIN de tu dispositivo", Toast.LENGTH_SHORT).show()
+                            BiometricAuthManager.authenticateWithBiometrics(
+                                context = context,
+                                title = "Verificación Biométrica",
+                                subtitle = "Escanea tu huella dactilar o rostro para verificar BiometricPrompt",
+                                onSuccess = {
+                                    Toast.makeText(
+                                        context,
+                                        "Autenticación biométrica verificada correctamente",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                onFallbackToPin = {
+                                    showPinDialog = true
+                                },
+                                onError = { err ->
+                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        testTag = "settings_row_test_biometric"
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 60.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    SettingsRow(
+                        icon = Icons.Default.Key,
+                        badgeColor = Color(0xFFFF9500),
+                        title = "PIN de Seguridad de Respaldo",
+                        valueText = "Configurar",
+                        subtitle = "Usado para desbloquear notas si cancelas la huella o rostro",
+                        onClick = {
+                            showPinDialog = true
                         },
                         testTag = "settings_row_pin"
                     )

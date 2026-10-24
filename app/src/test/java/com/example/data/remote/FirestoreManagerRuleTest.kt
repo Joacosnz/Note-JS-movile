@@ -143,4 +143,65 @@ class FirestoreManagerRuleTest : FirestoreEmulatorTestBase() {
         }
         deferred.await()
     }
+
+    @Test
+    fun saveAndFetchReminders_asAuthenticatedOwner_succeeds() {
+        val uid = signInTestUser("reminder-owner@example.com")
+        val reminder = com.example.data.local.entity.ReminderEntity(
+            id = 7,
+            remoteUuid = "rem-uuid-7",
+            userId = uid,
+            title = "Entrega de sprint",
+            notes = "Con nota vinculada",
+            itemType = "EVENT",
+            scheduledAt = 1710000000000L,
+            endTimeMillis = 1710003600000L,
+            priority = 3,
+            listName = "Trabajo",
+            linkedNoteUuid = "note-uuid-42",
+            linkedNoteTitle = "Nota de prueba"
+        )
+
+        awaitTask(
+            firestore
+                .collection("users")
+                .document(uid)
+                .collection("reminders")
+                .document(reminder.remoteUuid)
+                .set(reminder.toFirestoreCreateMap())
+        )
+
+        val snap = awaitTask(
+            firestore
+                .collection("users")
+                .document(uid)
+                .collection("reminders")
+                .document(reminder.remoteUuid)
+                .get()
+        )
+        assertNotNull(snap)
+        assertTrue(snap!!.exists())
+        assertEquals("Entrega de sprint", snap.getString("title"))
+        assertEquals("EVENT", snap.getString("itemType"))
+
+        val updated = reminder.copy(isCompleted = true, completedAt = 1710005000000L)
+        awaitTask(
+            firestore
+                .collection("users")
+                .document(uid)
+                .collection("reminders")
+                .document(reminder.remoteUuid)
+                .update(updated.toFirestoreUpdateMap())
+        )
+
+        awaitTask(
+            firestore
+                .collection("users")
+                .document(uid)
+                .collection("reminders")
+                .document(reminder.remoteUuid)
+                .delete()
+        )
+    }
 }
+

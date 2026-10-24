@@ -1,6 +1,9 @@
 package com.example.data.remote.mapper
 
+import com.example.data.local.entity.CalendarItemType
 import com.example.data.local.entity.NoteEntity
+import com.example.data.local.entity.RecurrenceRule
+import com.example.data.local.entity.ReminderEntity
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
 import com.example.util.NoteBlockSerializer
@@ -66,7 +69,7 @@ fun NoteEntity.toFirestoreUpdateMap(): Map<String, Any> {
         "mathEvaluations" to mathEvaluations.take(100000),
         "pdfPath" to pdfPath.take(2000),
         "pdfAnnotationData" to pdfAnnotationData.take(500000),
-        "reminderTimestamp" to reminderTimestamp,
+        "reminderTimestamp" to (reminderTimestamp ?: FieldValue.delete()),
         "isReminderDone" to isReminderDone,
         "lastModifiedLocal" to lastModifiedLocal.coerceAtLeast(0L),
         "remoteUrl" to remoteUrl.take(2000),
@@ -270,3 +273,203 @@ fun Map<String, Any?>.toNoteEntity(fallbackUserId: String = NoteEntity.LOCAL_ANO
         attachmentsJson = attachmentsJson
     )
 }
+
+// --- MAPPERS PARA RECORDATORIOS Y EVENTOS DE CALENDARIO ---
+
+fun ReminderEntity.toFirestoreCreateMap(): Map<String, Any> {
+    val ensuredUuid = remoteUuid.ifBlank { UUID.randomUUID().toString() }
+    val normalizedType = if (itemType.equals(CalendarItemType.EVENT.code, ignoreCase = true)) {
+        CalendarItemType.EVENT.code
+    } else {
+        CalendarItemType.REMINDER.code
+    }
+    val safeTitle = title.trim().ifBlank { "Recordatorio" }.take(2000)
+    val safeListName = listName.trim().ifBlank { "Personal" }.take(200)
+    val safeRecurrence = recurrenceRule.trim().ifBlank { RecurrenceRule.NONE.code }.take(100)
+
+    val map = mutableMapOf<String, Any?>(
+        "remoteUuid" to ensuredUuid,
+        "userId" to userId,
+        "itemType" to normalizedType,
+        "title" to safeTitle,
+        "notes" to notes.take(50000),
+        "location" to location.take(2000),
+        "scheduledAt" to scheduledAt.coerceAtLeast(0L),
+        "endTimeMillis" to endTimeMillis.coerceAtLeast(0L),
+        "isAllDay" to isAllDay,
+        "isCompleted" to isCompleted,
+        "completedAt" to completedAt.coerceAtLeast(0L),
+        "priority" to priority.coerceIn(0, 3),
+        "listName" to safeListName,
+        "colorHex" to colorHex,
+        "recurrenceRule" to safeRecurrence,
+        "subtasksJson" to subtasksJson.ifBlank { "[]" }.take(100000),
+        "linkedNoteId" to linkedNoteId,
+        "linkedNoteUuid" to linkedNoteUuid.take(128),
+        "linkedNoteTitle" to linkedNoteTitle.take(5000),
+        "alertOffsetMinutes" to alertOffsetMinutes.coerceIn(-1, 43200),
+        "lastModifiedLocal" to lastModifiedLocal.coerceAtLeast(0L),
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+    @Suppress("UNCHECKED_CAST")
+    return map.filterValues { it != null } as Map<String, Any>
+}
+
+fun ReminderEntity.toFirestoreUpdateMap(): Map<String, Any> {
+    val normalizedType = if (itemType.equals(CalendarItemType.EVENT.code, ignoreCase = true)) {
+        CalendarItemType.EVENT.code
+    } else {
+        CalendarItemType.REMINDER.code
+    }
+    val safeTitle = title.trim().ifBlank { "Recordatorio" }.take(2000)
+    val safeListName = listName.trim().ifBlank { "Personal" }.take(200)
+    val safeRecurrence = recurrenceRule.trim().ifBlank { RecurrenceRule.NONE.code }.take(100)
+
+    val map = mutableMapOf<String, Any?>(
+        "itemType" to normalizedType,
+        "title" to safeTitle,
+        "notes" to notes.take(50000),
+        "location" to location.take(2000),
+        "scheduledAt" to scheduledAt.coerceAtLeast(0L),
+        "endTimeMillis" to endTimeMillis.coerceAtLeast(0L),
+        "isAllDay" to isAllDay,
+        "isCompleted" to isCompleted,
+        "completedAt" to completedAt.coerceAtLeast(0L),
+        "priority" to priority.coerceIn(0, 3),
+        "listName" to safeListName,
+        "colorHex" to colorHex,
+        "recurrenceRule" to safeRecurrence,
+        "subtasksJson" to subtasksJson.ifBlank { "[]" }.take(100000),
+        "linkedNoteId" to (linkedNoteId ?: FieldValue.delete()),
+        "linkedNoteUuid" to linkedNoteUuid.take(128),
+        "linkedNoteTitle" to linkedNoteTitle.take(5000),
+        "alertOffsetMinutes" to alertOffsetMinutes.coerceIn(-1, 43200),
+        "lastModifiedLocal" to lastModifiedLocal.coerceAtLeast(0L),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+    @Suppress("UNCHECKED_CAST")
+    return map.filterValues { it != null } as Map<String, Any>
+}
+
+fun ReminderEntity.toFirestoreMap(): Map<String, Any?> {
+    return mapOf(
+        "remoteUuid" to remoteUuid,
+        "userId" to userId,
+        "itemType" to itemType,
+        "title" to title,
+        "notes" to notes,
+        "location" to location,
+        "scheduledAt" to scheduledAt,
+        "endTimeMillis" to endTimeMillis,
+        "isAllDay" to isAllDay,
+        "isCompleted" to isCompleted,
+        "completedAt" to completedAt,
+        "priority" to priority,
+        "listName" to listName,
+        "colorHex" to colorHex,
+        "recurrenceRule" to recurrenceRule,
+        "subtasksJson" to subtasksJson,
+        "linkedNoteId" to linkedNoteId,
+        "linkedNoteUuid" to linkedNoteUuid,
+        "linkedNoteTitle" to linkedNoteTitle,
+        "alertOffsetMinutes" to alertOffsetMinutes,
+        "createdAt" to createdAt,
+        "updatedAt" to updatedAt,
+        "lastModifiedLocal" to lastModifiedLocal,
+        "updatedAtServer" to System.currentTimeMillis()
+    )
+}
+
+fun Map<String, Any?>.toReminderEntity(
+    fallbackUserId: String = NoteEntity.LOCAL_ANONYMOUS_USER_ID
+): ReminderEntity {
+    val remoteUuid = this["remoteUuid"] as? String ?: UUID.randomUUID().toString()
+    val userId = (this["userId"] as? String)?.takeIf { it.isNotBlank() } ?: fallbackUserId
+    val itemType = (this["itemType"] as? String)?.takeIf { it.isNotBlank() } ?: CalendarItemType.REMINDER.code
+    val title = (this["title"] as? String)?.takeIf { it.isNotBlank() } ?: "Recordatorio"
+    val notes = this["notes"] as? String ?: ""
+    val location = this["location"] as? String ?: ""
+    val scheduledAt = (this["scheduledAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+    val endTimeMillis = (this["endTimeMillis"] as? Number)?.toLong() ?: 0L
+    val isAllDay = this["isAllDay"] as? Boolean ?: false
+    val isCompleted = this["isCompleted"] as? Boolean ?: false
+    val completedAt = (this["completedAt"] as? Number)?.toLong() ?: 0L
+    val priority = ((this["priority"] as? Number)?.toInt() ?: 0).coerceIn(0, 3)
+    val listName = (this["listName"] as? String)?.takeIf { it.isNotBlank() } ?: "Personal"
+    val colorHex = (this["colorHex"] as? Number)?.toLong() ?: 0xFF007AFFL
+    val recurrenceRule = (this["recurrenceRule"] as? String)?.takeIf { it.isNotBlank() } ?: RecurrenceRule.NONE.code
+    val subtasksJson = (this["subtasksJson"] as? String)?.takeIf { it.isNotBlank() } ?: "[]"
+    val linkedNoteId = (this["linkedNoteId"] as? Number)?.toLong()
+    val linkedNoteUuid = this["linkedNoteUuid"] as? String ?: ""
+    val linkedNoteTitle = this["linkedNoteTitle"] as? String ?: ""
+    val alertOffsetMinutes = ((this["alertOffsetMinutes"] as? Number)?.toInt() ?: 0).coerceIn(-1, 43200)
+
+    val createdAt = (this["createdAt"] as? Timestamp)?.toDate()?.time
+        ?: (this["createdAt"] as? Number)?.toLong()
+        ?: System.currentTimeMillis()
+    val serverUpdatedAt = (this["updatedAt"] as? Timestamp)?.toDate()?.time
+        ?: (this["updatedAtServer"] as? Number)?.toLong()
+        ?: (this["updatedAt"] as? Number)?.toLong()
+        ?: System.currentTimeMillis()
+    val lastModifiedLocal = (this["lastModifiedLocal"] as? Number)?.toLong() ?: serverUpdatedAt
+    val updatedAt = maxOf(lastModifiedLocal, serverUpdatedAt)
+
+    return ReminderEntity(
+        remoteUuid = remoteUuid,
+        userId = userId,
+        itemType = itemType,
+        title = title,
+        notes = notes,
+        location = location,
+        scheduledAt = scheduledAt,
+        endTimeMillis = endTimeMillis,
+        isAllDay = isAllDay,
+        isCompleted = isCompleted,
+        completedAt = completedAt,
+        priority = priority,
+        listName = listName,
+        colorHex = colorHex,
+        recurrenceRule = recurrenceRule,
+        subtasksJson = subtasksJson,
+        linkedNoteId = linkedNoteId,
+        linkedNoteUuid = linkedNoteUuid,
+        linkedNoteTitle = linkedNoteTitle,
+        alertOffsetMinutes = alertOffsetMinutes,
+        isSynced = true,
+        pendingDelete = false,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        lastModifiedLocal = lastModifiedLocal,
+        updatedAtServer = serverUpdatedAt
+    )
+}
+
+fun com.example.data.local.entity.Reminder.toFirestoreCreateMap(): Map<String, Any> =
+    toReminderEntity().toFirestoreCreateMap()
+
+fun com.example.data.local.entity.Reminder.toFirestoreUpdateMap(): Map<String, Any> =
+    toReminderEntity().toFirestoreUpdateMap()
+
+fun com.example.data.local.entity.Reminder.toFirestoreMap(): Map<String, Any?> =
+    toReminderEntity().toFirestoreMap()
+
+fun Map<String, Any?>.toReminder(
+    fallbackUserId: String = NoteEntity.LOCAL_ANONYMOUS_USER_ID
+): com.example.data.local.entity.Reminder =
+    com.example.data.local.entity.Reminder.fromReminderEntity(toReminderEntity(fallbackUserId))
+
+fun com.example.data.local.entity.CalendarEvent.toFirestoreCreateMap(): Map<String, Any> =
+    toReminderEntity().toFirestoreCreateMap()
+
+fun com.example.data.local.entity.CalendarEvent.toFirestoreUpdateMap(): Map<String, Any> =
+    toReminderEntity().toFirestoreUpdateMap()
+
+fun com.example.data.local.entity.CalendarEvent.toFirestoreMap(): Map<String, Any?> =
+    toReminderEntity().toFirestoreMap()
+
+fun Map<String, Any?>.toCalendarEvent(
+    fallbackUserId: String = NoteEntity.LOCAL_ANONYMOUS_USER_ID
+): com.example.data.local.entity.CalendarEvent =
+    com.example.data.local.entity.CalendarEvent.fromReminderEntity(toReminderEntity(fallbackUserId))
+

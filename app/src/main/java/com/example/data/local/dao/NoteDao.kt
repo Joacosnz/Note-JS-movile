@@ -255,7 +255,7 @@ interface NoteDao {
         SET isSynced = 1,
             updatedAtServer = :serverTimestamp
         WHERE remoteUuid = :remoteUuid
-          AND lastModifiedLocal = :expectedLocalTimestamp
+          AND lastModifiedLocal <= :expectedLocalTimestamp
     """)
     suspend fun markNoteSyncedIfUnchanged(
         remoteUuid: String,
@@ -296,5 +296,28 @@ interface NoteDao {
           AND syncEnabled = 1
     """)
     fun observePendingSyncCount(userId: String): Flow<Int>
+
+    /**
+     * Obtiene de forma síncrona/suspendida el número actual de notas pendientes de sincronización
+     * (creaciones, ediciones offline o eliminaciones diferidas).
+     */
+    @Query("""
+        SELECT COUNT(*) FROM notes
+        WHERE (userId = :userId OR userId = 'LOCAL_ANONYMOUS')
+          AND (isSynced = 0 OR pendingDelete = 1)
+          AND syncEnabled = 1
+    """)
+    suspend fun getPendingSyncCountNow(userId: String): Int
+
+    /**
+     * Observa cuántas notas fueron creadas en sesión anónima/local y están listas para vincularse
+     * a una cuenta de Google cuando el usuario decida iniciar sesión.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM notes
+        WHERE (userId = 'LOCAL_ANONYMOUS' OR userId = '' OR userId IS NULL)
+          AND pendingDelete = 0
+    """)
+    fun observeAnonymousNotesCount(): Flow<Int>
 }
 

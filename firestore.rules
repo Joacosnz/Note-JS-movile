@@ -77,8 +77,61 @@ service cloud.firestore {
              data.remoteImageUrl.size() <= 2000 &&
              data.attachmentsJson is string &&
              data.attachmentsJson.size() <= 200000 &&
-             data.createdAt is timestamp &&
-             data.createdAt <= request.time &&
+             ((data.createdAt is timestamp && data.createdAt <= request.time) || (data.createdAt is int && data.createdAt >= 0)) &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidReminder(data, userId, reminderId) {
+      return data.remoteUuid is string &&
+             data.remoteUuid == reminderId &&
+             data.remoteUuid.size() >= 1 &&
+             data.remoteUuid.size() <= 128 &&
+             data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.userId == userId &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.itemType is string &&
+             (data.itemType == 'REMINDER' || data.itemType == 'EVENT') &&
+             data.title is string &&
+             data.title.size() >= 1 &&
+             data.title.size() <= 2000 &&
+             data.notes is string &&
+             data.notes.size() <= 50000 &&
+             data.location is string &&
+             data.location.size() <= 2000 &&
+             data.scheduledAt is int &&
+             data.scheduledAt >= 0 &&
+             data.endTimeMillis is int &&
+             data.endTimeMillis >= 0 &&
+             data.isAllDay is bool &&
+             data.isCompleted is bool &&
+             data.completedAt is int &&
+             data.completedAt >= 0 &&
+             data.priority is int &&
+             data.priority >= 0 &&
+             data.priority <= 3 &&
+             data.listName is string &&
+             data.listName.size() >= 1 &&
+             data.listName.size() <= 200 &&
+             data.colorHex is int &&
+             data.recurrenceRule is string &&
+             data.recurrenceRule.size() >= 1 &&
+             data.recurrenceRule.size() <= 100 &&
+             data.subtasksJson is string &&
+             data.subtasksJson.size() <= 100000 &&
+             (!('linkedNoteId' in data) || data.linkedNoteId == null || data.linkedNoteId is int) &&
+             data.linkedNoteUuid is string &&
+             data.linkedNoteUuid.size() <= 128 &&
+             data.linkedNoteTitle is string &&
+             data.linkedNoteTitle.size() <= 5000 &&
+             data.alertOffsetMinutes is int &&
+             data.alertOffsetMinutes >= -1 &&
+             data.alertOffsetMinutes <= 43200 &&
+             data.lastModifiedLocal is int &&
+             data.lastModifiedLocal >= 0 &&
+             ((data.createdAt is timestamp && data.createdAt <= request.time) || (data.createdAt is int && data.createdAt >= 0)) &&
              data.updatedAt is timestamp &&
              data.updatedAt <= request.time;
     }
@@ -123,19 +176,73 @@ service cloud.firestore {
                        isValidNote(incoming(), userId, noteId) &&
                        incoming().userId == existing().userId &&
                        incoming().remoteUuid == existing().remoteUuid &&
-                       incoming().createdAt == existing().createdAt &&
+                       (incoming().createdAt == existing().createdAt || (incoming().createdAt is timestamp && incoming().createdAt <= request.time)) &&
                        incoming().diff(existing()).affectedKeys().hasOnly([
                          'title', 'content', 'noteType', 'colorIndex', 'paperStyle',
                          'isPinned', 'isArchived', 'isTrashed', 'isLocked', 'lockPin',
                          'tags', 'folder', 'checklistData', 'drawingData',
                          'mathEvaluations', 'pdfPath', 'pdfAnnotationData',
                          'reminderTimestamp', 'isReminderDone', 'lastModifiedLocal',
-                         'remoteUrl', 'remoteImageUrl', 'attachmentsJson', 'updatedAt'
+                         'remoteUrl', 'remoteImageUrl', 'attachmentsJson', 'createdAt', 'updatedAt'
                        ]);
 
       allow delete: if isSignedIn() &&
                        isValidId(userId) &&
                        isValidId(noteId) &&
+                       request.auth.uid == userId;
+    }
+
+    match /users/{userId}/reminders/{reminderId} {
+      allow get: if isSignedIn() &&
+                    isValidId(userId) &&
+                    isValidId(reminderId) &&
+                    request.auth.uid == userId;
+
+      allow list: if isSignedIn() &&
+                     request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidId(reminderId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll([
+                         'remoteUuid', 'userId', 'itemType', 'title', 'notes',
+                         'location', 'scheduledAt', 'endTimeMillis', 'isAllDay',
+                         'isCompleted', 'completedAt', 'priority', 'listName',
+                         'colorHex', 'recurrenceRule', 'subtasksJson',
+                         'linkedNoteUuid', 'linkedNoteTitle', 'alertOffsetMinutes',
+                         'lastModifiedLocal', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'remoteUuid', 'userId', 'itemType', 'title', 'notes',
+                         'location', 'scheduledAt', 'endTimeMillis', 'isAllDay',
+                         'isCompleted', 'completedAt', 'priority', 'listName',
+                         'colorHex', 'recurrenceRule', 'subtasksJson',
+                         'linkedNoteId', 'linkedNoteUuid', 'linkedNoteTitle',
+                         'alertOffsetMinutes', 'lastModifiedLocal', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidReminder(incoming(), userId, reminderId);
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidId(reminderId) &&
+                       request.auth.uid == userId &&
+                       isValidReminder(incoming(), userId, reminderId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().remoteUuid == existing().remoteUuid &&
+                       (incoming().createdAt == existing().createdAt || (incoming().createdAt is timestamp && incoming().createdAt <= request.time)) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'itemType', 'title', 'notes', 'location', 'scheduledAt',
+                         'endTimeMillis', 'isAllDay', 'isCompleted', 'completedAt',
+                         'priority', 'listName', 'colorHex', 'recurrenceRule',
+                         'subtasksJson', 'linkedNoteId', 'linkedNoteUuid',
+                         'linkedNoteTitle', 'alertOffsetMinutes', 'lastModifiedLocal',
+                         'createdAt', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidId(reminderId) &&
                        request.auth.uid == userId;
     }
   }

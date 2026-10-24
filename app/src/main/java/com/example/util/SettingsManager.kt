@@ -43,6 +43,12 @@ class SettingsManager(context: Context) {
     private val _defaultLockPin = MutableStateFlow(getDefaultLockPin())
     val defaultLockPin: StateFlow<String> = _defaultLockPin.asStateFlow()
 
+    private val _isBiometricLockEnabled = MutableStateFlow(isBiometricLockEnabled())
+    val isBiometricLockEnabled: StateFlow<Boolean> = _isBiometricLockEnabled.asStateFlow()
+
+    private val _isAppBiometricLockEnabled = MutableStateFlow(isAppBiometricLockEnabled())
+    val isAppBiometricLockEnabled: StateFlow<Boolean> = _isAppBiometricLockEnabled.asStateFlow()
+
     fun getThemeMode(): ThemeMode {
         val name = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
         return try {
@@ -121,6 +127,24 @@ class SettingsManager(context: Context) {
         _defaultLockPin.value = pin.trim()
     }
 
+    fun isBiometricLockEnabled(): Boolean {
+        return prefs.getBoolean(KEY_BIOMETRIC_LOCK_ENABLED, true)
+    }
+
+    fun setBiometricLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BIOMETRIC_LOCK_ENABLED, enabled).apply()
+        _isBiometricLockEnabled.value = enabled
+    }
+
+    fun isAppBiometricLockEnabled(): Boolean {
+        return prefs.getBoolean(KEY_APP_BIOMETRIC_LOCK_ENABLED, false)
+    }
+
+    fun setAppBiometricLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_APP_BIOMETRIC_LOCK_ENABLED, enabled).apply()
+        _isAppBiometricLockEnabled.value = enabled
+    }
+
     fun getManualNoteOrder(): List<Long> {
         val raw = prefs.getString(KEY_MANUAL_NOTE_ORDER, "") ?: ""
         if (raw.isBlank()) return emptyList()
@@ -139,6 +163,8 @@ class SettingsManager(context: Context) {
         private const val KEY_DEFAULT_SORT = "key_default_sort"
         private const val KEY_GEMINI_API_KEY = "key_gemini_api_key"
         private const val KEY_DEFAULT_LOCK_PIN = "key_default_lock_pin"
+        private const val KEY_BIOMETRIC_LOCK_ENABLED = "key_biometric_lock_enabled"
+        private const val KEY_APP_BIOMETRIC_LOCK_ENABLED = "key_app_biometric_lock_enabled"
         private const val KEY_MANUAL_NOTE_ORDER = "key_manual_note_order"
     }
 }

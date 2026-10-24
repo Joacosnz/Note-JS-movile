@@ -1,105 +1,112 @@
-# Integración Bidireccional de Recordatorios ↔ Checklists con Enlaces Profundos
+# Centro Unificado de Recordatorios y Calendario
 
-Implementa un sistema unificado de gestión de tareas y recordatorios bidireccional en Note JS. Permite programar fecha y hora para cualquier ítem de lista dentro de una nota, sincronizar su estado de completado en tiempo real y gestionarlos desde una pantalla dedicada de Recordatorios y Tareas con enlaces profundos directos a la nota de origen.
+Este plan detalla la evolución del sistema actual de recordatorios (basado únicamente en alertas dentro de notas) hacia un **Centro Independiente de Recordatorios y Calendario**, inspirado en la arquitectura convergente de iOS 18, iPadOS 18 y macOS Sequoia, con soporte offline-first y sincronización instantánea en tiempo real en la nube.
+
+---
 
 ### User Review & Critical Decisions
 
-> [!IMPORTANT]
-> **Decisiones confirmadas por el usuario en la fase de clarificación:**
-> - **Visualización y gestión centralizada**: Se incorpora una pantalla/pestaña dedicada de **Recordatorios y Tareas** accesible desde la navegación principal.
-> - **Programación intuitiva en notas**: Cada ítem de checklist contará con un icono de reloj accesible para abrir el selector de fecha y hora.
-> - **Sincronización instantánea de estado**: Marcar una tarea como completada en la vista de Recordatorios actualiza de inmediato el checklist dentro de la nota, y viceversa, sin desajustes de estado.
+A partir de tus respuestas, estas son las decisiones clave que guían el diseño:
+
+1. **Entidades Independientes con Vinculación Opcional a Notas:** Los recordatorios y eventos ya no dependerán de crear una nota previa. Serán elementos independientes con su propio ciclo de vida, listas, subtareas y prioridades, pero incluirán un selector opcional para vincular cualquier nota existente y abrirla con un toque.
+2. **Arquitectura Espacial Multi-Escala Completa:** Se implementarán las cuatro vistas temporales integradas: **Día** (bandeja "Todo el día" + línea de tiempo de 24 horas), **Multi-día** (vista táctica de 2 a 3 días en vertical), **Semana** (planificador de 5 a 7 columnas con reprogramación interactiva) y **Mes con Zoom Semántico** (gesto de pellizco vertical y selector rápido con 4 niveles de densidad: *Compacto*, *Apilado*, *Detalles* y *Detalles Expandidos*).
+3. **Sincronización Instantánea en Tiempo Real (Firestore + Local):** Todos los recordatorios y eventos se almacenarán localmente para acceso inmediato sin conexión y se sincronizarán en tiempo real entre dispositivos bajo la cuenta vinculada, programando alarmas exactas del sistema en segundo plano.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **Qué hace**: Convierte los bloques de checklist de Note JS en elementos procesables de primer nivel. Cada ítem puede tener asignada una fecha y hora límite con recordatorio del sistema. Desde un panel centralizado de Recordatorios, el usuario puede filtrar por *Hoy*, *Programados* y *Completados*, marcar ítems y hacer clic en un enlace profundo para abrir la nota original exactamente en su contexto.
-- **Público objetivo**: Usuarios que capturan notas de reuniones, planifican proyectos o administran listas de pendientes y necesitan que sus listas de verificación se conviertan en compromisos con recordatorio sin duplicar información.
-- **Valor diferencial frente a Apple**: A diferencia de Apple Reminders y Notes (donde el enlace no sincroniza el estado de las casillas de verificación en la nota), Note JS mantiene **sincronía bidireccional reactiva**: al completar una tarea desde la notificación o la lista de recordatorios, la nota se actualiza automáticamente en Room y en Firestore.
+El nuevo módulo transforma la pestaña de **Recordatorios** en un espacio de productividad temporal donde conviven dos elementos con semánticas visuales claras y complementarias:
+
+* **Eventos de Calendario (Compromisos de tiempo fijo):** Bloques con hora de inicio y fin definidas (ej. reuniones, clases, bloques de estudio) que ocupan un área proporcional a su duración en la cuadrícula horaria.
+* **Recordatorios Programados (Tareas accionables):** Elementos con un círculo de completado interactivo que representan acciones por realizar en una fecha o minuto específico, con soporte para prioridades (`!`, `!!`, `!!!`), subtareas jerárquicas, recurrencia y listas temáticas.
+
+Ambos elementos coexisten en la misma línea de tiempo para facilitar el **time-blocking** (organizar qué hacer y cuándo hacerlo en una sola pantalla), manteniendo además una vista de **Listas Inteligentes** (Hoy, Programados, Todos, Con prioridad y Completados) para gestionar tareas pendientes o sin fecha asignada.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-- **Flujo 1: Programar recordatorio en un ítem de checklist (Editor de Notas)**
-  1. En `NoteEditorScreen`, cada ítem de checklist muestra un botón sutil con icono de reloj al lado del campo de texto.
-  2. Al pulsar el reloj, se despliega un diálogo M3 (`DatePickerDialog` + `TimePickerDialog`) para seleccionar fecha y hora.
-  3. Al confirmar, el ítem muestra un badge con la fecha y hora programada (`Ej. Hoy 18:00` o `25 Oct 09:30`).
-  4. Si el ítem ya venció, el badge se destaca con color de acento/alerta. Al marcar la casilla `[x]`, el badge se atenúa con tachado suave.
+#### Taxonomía Visual y Diferenciación Semántica
+* **Eventos:** Se muestran como contenedores rectangulares con fondo translúcido y barra lateral sólida del color de su categoría de calendario (Personal, Trabajo, Estudio, etc.). Al tocarlos se despliega su ficha de detalles, ubicación, notas adicionales y nota vinculada.
+* **Recordatorios:** Se distinguen por su **círculo de selección abierto (`○`)** coloreado según su lista de origen y texto directo sin caja envolvente pesada. Tocar el círculo marca la tarea como completada al instante con una animación suave: el círculo se rellena (`●`), el título aplica tachado y el elemento atenúa su opacidad, permaneciendo visible en su franja horaria como registro de logro diario.
 
-- **Flujo 2: Pantalla dedicada de Recordatorios y Tareas (`RemindersScreen`)**
-  1. Nueva pantalla accesible desde el menú inferior / barra de navegación (`Screen.Reminders`).
-  2. Cabecera con selector de filtros rápidos:
-     - ☀️ **Hoy** (tareas con vencimiento en la jornada).
-     - 📅 **Programados** (tareas futuras ordenadas cronológicamente).
-     - ✅ **Completados** (historial de tareas terminadas con opción de desmarcar).
-  3. Tarjeta de tarea con:
-     - Checkbox circular interactivo con animación háptica.
-     - Texto de la tarea (con estilo tachado si está completada).
-     - Indicador temporal y badge de urgencia/prioridad.
-     - **Chip de enlace profundo**: `📄 [Título de la Nota]` con el color temático de la nota. Al pulsarlo, salta directamente a la nota en el editor (`Screen.Editor(noteId)`).
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  TODO EL DÍA                                                         │
+│  ┌─────────────────────────────────┐  ○ Pagar factura de internet    │
+│  │ ▌ Aniversario / Día festivo     │  ○ Enviar informe trimestral !! │
+│  └─────────────────────────────────┘                                 │
+├────────┬─────────────────────────────────────────────────────────────┤
+│ 09:00  │ ┌───────────────────────────────┐  ○ Revisar correo urgente │
+│        │ │ ▌ Reunión de Diseño           │    🔗 Nota: Minuta Q4     │
+│ 10:00  │ │   09:00 - 10:15 • Sala B      │                           │
+│        │ └───────────────────────────────┘                           │
+│ 11:00  │ ● Llamar al proveedor (Completado)                          │
+└────────┴─────────────────────────────────────────────────────────────┘
+```
 
-- **Flujo 3: Notificación del sistema y acción directa**
-  - Al dispararse la alarma cronológica, la notificación de Android incluye botones de acción rápida: *"Completar"* (marca la tarea en la base de datos sin abrir la app) y *"Abrir Nota"* (navega directamente al editor).
+#### Modos de Visualización del Calendario
+1. **Vista Diaria (Micro-gestión y Time-Blocking):**
+   * Cabecera superior fija **"Todo el día"** para eventos de jornada completa y recordatorios con fecha pero sin hora específica.
+   * Cuadrícula vertical de 24 horas con indicador en vivo de la hora actual (línea roja con punto) y resolución automática de colisiones en columnas paralelas cuando un evento y un recordatorio coinciden a la misma hora.
+2. **Vista Multi-Día (2–3 Días) y Vista Semanal:**
+   * En orientación vertical, el modo **Multi-día** presenta una ventana continua de 3 días que conserva legibilidad completa para títulos y casillas de verificación.
+   * El modo **Semana** muestra las columnas de la semana con bloques proporcionales y permite arrastrar o mover rápidamente un recordatorio a otra franja horaria o día.
+3. **Vista Mensual con Zoom de Densidad (Pinch-to-Zoom):**
+   * Mediante el gesto de pellizco vertical (o un control deslizante rápido de densidad), las celdas del mes escalan dinámicamente entre 4 niveles:
+     * **Nivel 1 — Compacto:** Indicadores de puntos de color bajo el número del día.
+     * **Nivel 2 — Apilado (Mapa de calor):** Pequeñas barras horizontales de color proporcionales a la carga del día.
+     * **Nivel 3 — Detalles:** Títulos abreviados de eventos y recordatorios con su círculo `○` visible dentro de cada día.
+     * **Nivel 4 — Detalles Expandidos:** Celdas amplias tipo agenda con horas de inicio, subtareas resumidas y casillas interactivas para completar recordatorios directamente desde la vista mensual.
+
+#### Modal de Creación Híbrida (`+`) y Flujos de Interacción
+* **Selector Dual Superior:** Al pulsar el botón `+` o mantener presionada una franja horaria vacía en la cuadrícula, se abre una hoja inferior con el selector segmentado **[ Evento | Recordatorio ]** y la fecha/hora ya pre-rellenadas según el punto tocado.
+* **Campos de Recordatorio:** Título, notas, fecha, hora opcional (interruptor de "Todo el día" o con hora exacta), repetición (diaria, semanal, mensual, personalizada), prioridad (`Ninguna`, `!`, `!!`, `!!!`), lista asignada (Personal, Trabajo, Compras, etc.), lista de subtareas interactivas y **Nota vinculada opcional**.
+* **Campos de Evento:** Título, categoría/color de calendario, interruptor de todo el día, hora de inicio y fin, ubicación/enlace, alerta previa (a la hora, 10 min antes, 1 hora antes), repetición y **Nota vinculada opcional**.
+* **Filtros de Visibilidad:** Un panel de filtros rápido permite encender o apagar la visibilidad de eventos, recordatorios completados o listas/categorías específicas.
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decisión 1: Estructura de datos de los ítems de checklist**
-  - *Enfoque*: Extender el modelo `ChecklistItem` con campos opcionales serializables:
-    ```kotlin
-    data class ChecklistItem(
-        val id: String = UUID.randomUUID().toString(),
-        val text: String,
-        val isChecked: Boolean = false,
-        val reminderTimestamp: Long? = null,
-        val isReminderDone: Boolean = false,
-        val priority: Int = 0
-    )
-    ```
-  - *Por qué*: Al serializarse como JSON dentro de `note.checklistData`, **no rompe la estructura de la base de datos de Room** ni requiere migraciones destructivas de SQLite, garantizando 100% de compatibilidad hacia atrás con las notas existentes.
-  - *Alternativas descartadas*: Crear una tabla SQLite separada de `reminders` forzaría migraciones complejas y potenciales pérdidas de sincronización entre el texto de la nota y la tabla externa.
-
-- **Decisión 2: Sincronización bidireccional reactiva**
-  - *Enfoque*: `NotesViewModel` expone un `StateFlow<List<UnifiedReminderItem>>` calculado reactivamente combinando todas las notas activas que poseen ítems de checklist con `reminderTimestamp != null` o recordatorios de nota.
-  - *Por qué*: Cualquier cambio en una nota (editar texto, borrar ítem, marcar casilla) se refleja inmediatamente en la lista de recordatorios y en la persistencia local/nube.
+* **Modelo Unificado con Discriminador de Tipo (`REMINDER` vs `EVENT`):** En lugar de mantener motores desconectados, ambos tipos comparten el mismo motor de indexación temporal, recurrencia, sincronización en tiempo real y vinculación de notas, diferenciándose por sus propiedades específicas (hora de fin/duración para eventos vs. estado completado/prioridad/subtareas para recordatorios). Esto garantiza que las vistas de Día, Multi-día, Semana y Mes rendericen ambos elementos sin latencia ni duplicación de consultas.
+* **Transición Limpia desde "Notas con Recordatorio":** Las notas seguirán siendo documentos de texto/dibujo/listas, pero en lugar de depender de la nota para gestionar el calendario, desde el editor de una nota también se podrá crear o ver el recordatorio/evento vinculado en el nuevo Centro de Calendario. Los recordatorios antiguos configurados en notas existentes seguirán mostrándose como elementos vinculados para que no se pierda ningún dato previo.
+* **Zoom Fluido + Selector Accesible:** Además del gesto táctil de pellizco vertical en la vista mensual, se incluirá un botón selector rápido de densidad en la barra superior del calendario para garantizar accesibilidad con una sola mano.
 
 ---
 
 ### 4. Technical Architecture & Data Strategy
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                          Capas del Sistema                             │
-└────────────────────────────────────────────────────────────────────────┘
-
-    ┌────────────────────────┐         ┌────────────────────────┐
-    │    NoteEditorScreen    │         │    RemindersScreen     │
-    │  (ChecklistBlockItem)  │         │  (Hoy / Programados)   │
-    └───────────┬────────────┘         └───────────┬────────────┘
-                │                                  │
-                │ Modifica ChecklistItem           │ Completa / Reagenda /
-                │ con fecha/hora                   │ Deep Link a la nota
-                ▼                                  ▼
-    ┌───────────────────────────────────────────────────────────┐
-    │                      NotesViewModel                       │
-    │  - toggleChecklistItem(noteId, itemId)                    │
-    │  - setItemReminder(noteId, itemId, timestamp)             │
-    │  - unifiedRemindersFlow: StateFlow<List<ReminderItem>>     │
-    └─────────────┬───────────────────────────────┬─────────────┘
-                  │                               │
-                  ▼                               ▼
-    ┌──────────────────────────┐    ┌───────────────────────────┐
-    │    ReminderScheduler     │    │      NoteRepository       │
-    │  (AlarmManager / Work)   │    │     & Room (NoteDao)      │
-    │  - scheduleNotification  │    │  - Actualiza checklistData │
-    │  - cancelNotification    │    │  - Sincroniza Firestore   │
-    └──────────────────────────┘    └───────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    UI Layer (Jetpack Compose)                           │
+│  ┌───────────────────────┐  ┌────────────────────────────────────────┐  │
+│  │  Calendar Spatial Hub │  │  Smart Lists & Hybrid Creation Sheet   │  │
+│  │  • Day / Multi-Day    │  │  • Segmented [Recordatorio | Evento]   │  │
+│  │  • Week Grid          │  │  • Subtasks, Priority & Recurrence     │  │
+│  │  • Month Pinch-Zoom   │  │  • Optional Note Link Picker           │  │
+│  └───────────┬───────────┘  └───────────────────┬────────────────────┘  │
+└──────────────┼──────────────────────────────────┼───────────────────────┘
+               ▼                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                 Domain & State Layer (ViewModel)                        │
+│  • Time-Slot Collision Layout Engine & Multi-Scale Zoom State           │
+│  • Bidirectional Note Linking & Recurrence Expansion                    │
+└──────────────┬──────────────────────────────────┬───────────────────────┘
+               ▼                                  ▼
+┌──────────────────────────────────┐  ┌───────────────────────────────────┐
+│  Local Persistence & Alarms      │  │  Real-Time Cloud Sync (Firestore) │
+│  • Offline-First Calendar/Task   │◄─┼─►• /users/{uid}/reminders/{id}    │
+│    Table (Room Migration)        │  │  • Instant Snapshot Listener      │
+│  • AlarmManager Exact Reminders  │  │  • Conflict-Free Last-Write-Wins  │
+└──────────────────────────────────┘  └───────────────────────────────────┘
 ```
 
-- **Mapeo de eventos e interacción**:
-  1. `setItemReminder(noteId, itemId, timestamp)`: Actualiza el JSON de `checklistData` de la nota correspondiente, programa la alarma mediante `ReminderScheduler` y persiste en Room/Firestore.
-  2. `toggleReminderCompleted(noteId, itemId)`: Invierte `isChecked` y `isReminderDone`. Si se desmarca, reactiva el recordatorio si la fecha es futura.
-  3. `navigateToNote(noteId)`: Cambia `currentScreen` a `Screen.Editor(noteId)`, abriendo la nota de forma instantánea.
+#### Esquema de Datos y Sincronización
+1. **Persistencia Local (Offline-First):**
+   * Nueva entidad dedicada para elementos del calendario y recordatorios con soporte para: identificador único local y remoto (`remoteUuid`), propietario (`userId`), tipo (`REMINDER` | `EVENT`), título, descripción, fecha/hora de inicio (`scheduledAt`), fecha/hora de fin (`endTimeMillis`), indicador de día completo (`isAllDay`), estado de completado (`isCompleted`, `completedAt`), prioridad (`0..3`), color y nombre de lista/categoría, regla de recurrencia, subtareas serializadas, identificador de nota vinculada opcional (`linkedNoteId`), marca de actualización (`updatedAt`) y estado de sincronización (`isSynced`, `isDeleted`).
+   * Migración segura de la base de datos local sin pérdida de notas, carpetas ni firmas existentes.
+2. **Sincronización en Tiempo Real con Cloud Firestore:**
+   * Colección segura `/users/{userId}/reminders/{reminderId}` protegida con reglas de seguridad Zero-Trust (validación de propietario autenticado, tipos de datos y límites de tamaño).
+   * Escucha activa en tiempo real (`SnapshotListener`) integrada en el ciclo de sincronización de la cuenta para que cualquier recordatorio o evento creado, reprogramado o completado en un dispositivo se refleje al instante en los demás dispositivos y reprograme las notificaciones locales automáticamente.

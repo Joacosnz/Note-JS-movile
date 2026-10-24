@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.NoteEntity
 import com.example.ui.components.NoteJsBottomToolbar
+import com.example.ui.components.NoteLockDialog
 import com.example.ui.components.NoteReminderBottomSheet
 import com.example.viewmodel.NavTab
 import com.example.viewmodel.NotesViewModel
@@ -102,6 +103,7 @@ fun FoldersScreen(
 
     var noteForReminder by remember { mutableStateOf<NoteEntity?>(null) }
     var showQuickReminderSheet by remember { mutableStateOf(false) }
+    var showPrivateFolderPinDialog by remember { mutableStateOf(false) }
 
     BackHandler {
         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -358,13 +360,22 @@ fun FoldersScreen(
                                     tint = MaterialTheme.colorScheme.primary,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        BiometricAuthManager.authenticateWithBiometrics(
-                                            context = context,
-                                            onSuccess = {
-                                                viewModel.openPrivateFolder()
-                                            },
-                                            onError = { _ -> }
-                                        )
+                                        if (uiState.isBiometricLockEnabled) {
+                                            BiometricAuthManager.authenticateWithBiometrics(
+                                                context = context,
+                                                title = "Acceso a Carpeta Privada",
+                                                subtitle = "Verifica tu identidad con huella dactilar o reconocimiento facial",
+                                                onSuccess = {
+                                                    viewModel.openPrivateFolder()
+                                                },
+                                                onFallbackToPin = {
+                                                    showPrivateFolderPinDialog = true
+                                                },
+                                                onError = { _ -> }
+                                            )
+                                        } else {
+                                            showPrivateFolderPinDialog = true
+                                        }
                                     },
                                     testTag = "folder_private_notes",
                                     showTrailingIcon = false
@@ -378,7 +389,7 @@ fun FoldersScreen(
 
                                 FolderRowItem(
                                     icon = Icons.Default.Notifications,
-                                    title = "Recordatorios y Tareas",
+                                    title = "Calendario y Recordatorios",
                                     count = uiState.remindersCount,
                                     tint = MaterialTheme.colorScheme.secondary,
                                     onClick = {
@@ -470,7 +481,7 @@ fun FoldersScreen(
                 viewModel.navigateTo(Screen.PdfLibrary)
             },
             onReminder = {
-                showQuickReminderSheet = true
+                viewModel.navigateTo(Screen.Reminders)
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
@@ -797,6 +808,28 @@ fun FoldersScreen(
                 TextButton(onClick = { showNewFolderDialog = false }) {
                     Text("Cancelar")
                 }
+            }
+        )
+    }
+
+    if (showPrivateFolderPinDialog) {
+        NoteLockDialog(
+            isSettingPin = false,
+            expectedPin = uiState.defaultLockPin,
+            title = "Acceso a Carpeta Privada",
+            subtitle = "Usa tu huella dactilar, reconocimiento facial o ingresa tu PIN de seguridad",
+            autoTriggerBiometric = false,
+            isBiometricEnabled = uiState.isBiometricLockEnabled,
+            onConfirm = { _ ->
+                showPrivateFolderPinDialog = false
+                viewModel.openPrivateFolder()
+            },
+            onUnlockSuccess = {
+                showPrivateFolderPinDialog = false
+                viewModel.openPrivateFolder()
+            },
+            onDismiss = {
+                showPrivateFolderPinDialog = false
             }
         )
     }

@@ -6,9 +6,12 @@ import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.R
 import com.example.data.local.entity.NoteEntity
+import com.example.data.local.entity.ReminderEntity
 import com.example.data.remote.mapper.toFirestoreCreateMap
 import com.example.data.remote.mapper.toFirestoreMap
 import com.example.data.remote.mapper.toFirestoreUpdateMap
+import com.example.data.remote.mapper.toNoteEntity
+import com.example.data.remote.mapper.toReminderEntity
 import com.example.model.SyncState
 import com.example.util.FirebaseInitializer
 import com.google.firebase.auth.FirebaseAuth
@@ -24,7 +27,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
-import com.example.data.remote.mapper.toNoteEntity
 import java.io.File
 import java.util.UUID
 
@@ -97,6 +99,7 @@ class FirestoreManager(
     }
 
     private var notesListener: ListenerRegistration? = null
+    private var remindersListener: ListenerRegistration? = null
 
     private val _syncState = MutableStateFlow(SyncState.SYNCED)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -122,6 +125,8 @@ class FirestoreManager(
     fun clearListeners() {
         notesListener?.remove()
         notesListener = null
+        remindersListener?.remove()
+        remindersListener = null
     }
 
     private fun saveLocalCloudMirror(context: Context?, userId: String, note: NoteEntity) {
@@ -169,20 +174,11 @@ class FirestoreManager(
         _syncState.value = SyncState.SYNCING
         return try {
             val normalizedNote = note.copy(userId = userId, remoteUuid = noteId)
-            if (normalizedNote.updatedAtServer > 0L) {
-                try {
-                    docRef.update(normalizedNote.toFirestoreUpdateMap()).await()
-                } catch (updateEx: Exception) {
-                    if (updateEx is CancellationException) throw updateEx
-                    docRef.set(normalizedNote.toFirestoreCreateMap()).await()
-                }
-            } else {
-                try {
-                    docRef.set(normalizedNote.toFirestoreCreateMap()).await()
-                } catch (createEx: Exception) {
-                    if (createEx is CancellationException) throw createEx
-                    docRef.update(normalizedNote.toFirestoreUpdateMap()).await()
-                }
+            try {
+                docRef.update(normalizedNote.toFirestoreUpdateMap()).await()
+            } catch (updateEx: Exception) {
+                if (updateEx is CancellationException) throw updateEx
+                docRef.set(normalizedNote.toFirestoreCreateMap()).await()
             }
             _syncState.value = SyncState.SYNCED
             true
@@ -261,7 +257,12 @@ class FirestoreManager(
 
         _syncState.value = SyncState.SYNCING
         try {
-            docRef.update(normalizedNote.toFirestoreUpdateMap()).await()
+            try {
+                docRef.update(normalizedNote.toFirestoreUpdateMap()).await()
+            } catch (updateEx: Exception) {
+                if (updateEx is CancellationException) throw updateEx
+                docRef.set(normalizedNote.toFirestoreCreateMap()).await()
+            }
             _syncState.value = SyncState.SYNCED
             return normalizedNote
         } catch (e: CancellationException) {
@@ -290,7 +291,8 @@ class FirestoreManager(
             .document(remoteUuid)
         return try {
             val snapshot = docRef.get().await()
-            snapshot.data
+            snapshot.getData(com.google.firebase.firestore.DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                ?: snapshot.data
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -308,7 +310,9 @@ class FirestoreManager(
             val snapshot = collectionRef.get().await()
             _syncState.value = SyncState.SYNCED
             snapshot.documents.mapNotNull { doc ->
-                doc.data?.toMutableMap()?.apply {
+                val rawData = doc.getData(com.google.firebase.firestore.DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    ?: doc.data
+                rawData?.toMutableMap()?.apply {
                     if ((this["remoteUuid"] as? String).isNullOrBlank()) {
                         this["remoteUuid"] = doc.id
                     }
@@ -327,7 +331,8 @@ class FirestoreManager(
             _syncState.value = SyncState.OFFLINE
         }
 
-        clearListeners()
+        notesListener?.remove()
+        notesListener = null
 
         val currentFirestore = firestore
         if (currentFirestore == null) {
@@ -356,7 +361,9 @@ class FirestoreManager(
                         SyncState.SYNCED
                     }
                     val notes = snapshot.documents.mapNotNull { doc ->
-                        doc.data?.toMutableMap()?.apply {
+                        val rawData = doc.getData(com.google.firebase.firestore.DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                            ?: doc.data
+                        rawData?.toMutableMap()?.apply {
                             if ((this["remoteUuid"] as? String).isNullOrBlank()) {
                                 this["remoteUuid"] = doc.id
                             }
@@ -372,6 +379,133 @@ class FirestoreManager(
             subscription.remove()
             if (notesListener == subscription) {
                 notesListener = null
+            }
+        }
+    }
+
+    // --- OPERACIONES EN TIEMPO REAL PARA RECORDATORIOS Y EVENTOS (/users/{userId}/reminders) ---
+
+    suspend fun pushReminder(userId: String, reminder: ReminderEntity, context: Context? = null): Boolean {
+        if (context != null && !checkNetworkAvailable(context)) {
+            _syncState.value = SyncState.OFFLINE
+            return false
+        }
+
+        val currentFirestore = firestore ?: run {
+            _syncState.value = SyncState.OFFLINE
+            return false
+        }
+
+        val reminderId = reminder.remoteUuid.ifBlank { return false }
+        val docRef = currentFirestore.collection("users")
+            .document(userId)
+            .collection("reminders")
+            .document(reminderId)
+
+        _syncState.value = SyncState.SYNCING
+        return try {
+            val normalized = reminder.copy(userId = userId, remoteUuid = reminderId)
+            try {
+                docRef.update(normalized.toFirestoreUpdateMap()).await()
+            } catch (updateEx: Exception) {
+                if (updateEx is CancellationException) throw updateEx
+                docRef.set(normalized.toFirestoreCreateMap()).await()
+            }
+            _syncState.value = SyncState.SYNCED
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            _syncState.value = SyncState.OFFLINE
+            false
+        }
+    }
+
+    suspend fun deleteReminder(userId: String, remoteUuid: String): Boolean {
+        if (remoteUuid.isBlank()) return true
+        val currentFirestore = firestore ?: return false
+        val docRef = currentFirestore.collection("users")
+            .document(userId)
+            .collection("reminders")
+            .document(remoteUuid)
+        return try {
+            docRef.delete().await()
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            false
+        }
+    }
+
+    suspend fun fetchRemindersOnce(userId: String): List<Map<String, Any>> {
+        val currentFirestore = firestore ?: return emptyList()
+        val collectionRef = currentFirestore.collection("users")
+            .document(userId)
+            .collection("reminders")
+        return try {
+            val snapshot = collectionRef.get().await()
+            snapshot.documents.mapNotNull { doc ->
+                val rawData = doc.getData(com.google.firebase.firestore.DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    ?: doc.data
+                rawData?.toMutableMap()?.apply {
+                    if ((this["remoteUuid"] as? String).isNullOrBlank()) {
+                        this["remoteUuid"] = doc.id
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, "users/$userId/reminders")
+            throw e
+        }
+    }
+
+    fun getRemindersFlow(userId: String, context: Context? = null): Flow<List<Map<String, Any>>> = callbackFlow {
+        remindersListener?.remove()
+        remindersListener = null
+
+        val currentFirestore = firestore
+        if (currentFirestore == null) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+
+        val path = "users/$userId/reminders"
+        val subscription = currentFirestore.collection("users")
+            .document(userId)
+            .collection("reminders")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    handleFirestoreError(error, OperationType.LIST, path)
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                if (snapshot != null) {
+                    val reminders = snapshot.documents.mapNotNull { doc ->
+                        val rawData = doc.getData(com.google.firebase.firestore.DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                            ?: doc.data
+                        rawData?.toMutableMap()?.apply {
+                            if ((this["remoteUuid"] as? String).isNullOrBlank()) {
+                                this["remoteUuid"] = doc.id
+                            }
+                        }
+                    }
+                    trySend(reminders)
+                }
+            }
+
+        remindersListener = subscription
+
+        awaitClose {
+            subscription.remove()
+            if (remindersListener == subscription) {
+                remindersListener = null
             }
         }
     }

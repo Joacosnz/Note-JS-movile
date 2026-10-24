@@ -119,6 +119,7 @@ import com.example.ui.components.KeepNotesGrid
 import com.example.ui.components.NoteActionBottomSheet
 import com.example.ui.components.NoteCard
 import com.example.ui.components.NoteContentPreview
+import com.example.ui.components.NoteLockDialog
 import com.example.ui.components.NoteReminderBottomSheet
 import com.example.ui.components.SortBottomSheet
 import com.example.ui.components.TagFilterRow
@@ -166,6 +167,46 @@ fun HomeScreen(
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
     var previewNote by remember { mutableStateOf<NoteEntity?>(null) }
     var scannedPdfUri by remember { mutableStateOf<Uri?>(null) }
+
+    var showPinUnlockDialog by remember { mutableStateOf(false) }
+    var pendingUnlockTitle by remember { mutableStateOf("Desbloquear Notas Privadas") }
+    var pendingUnlockSubtitle by remember { mutableStateOf("Usa tu huella dactilar, reconocimiento facial o PIN") }
+    var pendingUnlockAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    val requestSecurityUnlock: (String, String, () -> Unit) -> Unit = { title, subtitle, onAuthenticated ->
+        pendingUnlockTitle = title
+        pendingUnlockSubtitle = subtitle
+        if (uiState.isBiometricLockEnabled) {
+            BiometricAuthManager.authenticateWithBiometrics(
+                context = context,
+                title = title,
+                subtitle = subtitle,
+                onSuccess = onAuthenticated,
+                onFallbackToPin = {
+                    pendingUnlockAction = onAuthenticated
+                    showPinUnlockDialog = true
+                },
+                onError = { _ -> }
+            )
+        } else {
+            pendingUnlockAction = onAuthenticated
+            showPinUnlockDialog = true
+        }
+    }
+
+    val handleOpenNote: (NoteEntity) -> Unit = { note ->
+        if (note.isLocked && !uiState.unlockedNoteIds.contains(note.id) && !uiState.isViewingPrivateFolder) {
+            requestSecurityUnlock(
+                "Desbloquear Nota Protegida",
+                "Usa tu huella dactilar o reconocimiento facial para abrir esta nota"
+            ) {
+                viewModel.unlockNoteBiometrically(note.id)
+                openNoteOrUnlock(note, viewModel)
+            }
+        } else {
+            openNoteOrUnlock(note, viewModel)
+        }
+    }
 
     val homeScannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -316,11 +357,12 @@ fun HomeScreen(
                                 onFolderSelected = { viewModel.selectFolder(it) },
                                 onTagSelected = { tag ->
                                     if (tag.equals("🔒 Privado", ignoreCase = true) || tag.equals("🔒 Privadas", ignoreCase = true) || tag.equals("Bloqueadas", ignoreCase = true)) {
-                                        BiometricAuthManager.authenticateWithBiometrics(
-                                            context = context,
-                                            onSuccess = { viewModel.openPrivateFolder() },
-                                            onError = { _ -> }
-                                        )
+                                        requestSecurityUnlock(
+                                            "Acceso a Carpeta Privada",
+                                            "Verifica tu identidad con huella dactilar o reconocimiento facial"
+                                        ) {
+                                            viewModel.openPrivateFolder()
+                                        }
                                     } else {
                                         viewModel.selectTag(tag)
                                     }
@@ -397,7 +439,7 @@ fun HomeScreen(
                                     // Google Keep Style Staggered Grid
                                     KeepNotesGrid(
                                         notes = uiState.activeNotes,
-                                        onNoteClick = { note -> openNoteOrUnlock(note, viewModel) },
+                                        onNoteClick = { note -> handleOpenNote(note) },
                                         onNoteLongClick = { note -> previewNote = note },
                                         onTogglePin = { note -> viewModel.togglePin(note) },
                                         unlockedNoteIds = uiState.unlockedNoteIds,
@@ -421,7 +463,7 @@ fun HomeScreen(
                                                     unlockedNoteIds = uiState.unlockedNoteIds,
                                                     selectedNoteIds = uiState.selectedNoteIds,
                                                     isSelectionMode = uiState.isSelectionMode,
-                                                    onNoteClick = { note -> openNoteOrUnlock(note, viewModel) },
+                                                    onNoteClick = { note -> handleOpenNote(note) },
                                                     onNoteLongClick = { note -> previewNote = note },
                                                     onSelectToggle = { noteId -> viewModel.toggleNoteSelection(noteId) },
                                                     onReorder = { reorderedPinned ->
@@ -445,7 +487,7 @@ fun HomeScreen(
                                                     unlockedNoteIds = uiState.unlockedNoteIds,
                                                     selectedNoteIds = uiState.selectedNoteIds,
                                                     isSelectionMode = uiState.isSelectionMode,
-                                                    onNoteClick = { note -> openNoteOrUnlock(note, viewModel) },
+                                                    onNoteClick = { note -> handleOpenNote(note) },
                                                     onNoteLongClick = { note -> previewNote = note },
                                                     onSelectToggle = { noteId -> viewModel.toggleNoteSelection(noteId) },
                                                     onReorder = { reorderedOthers ->
@@ -461,79 +503,12 @@ fun HomeScreen(
                         }
 
                         NavTab.REMINDERS -> {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = amber.copy(alpha = 0.15f),
-                                    border = BorderStroke(1.dp, amber.copy(alpha = 0.35f)),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                                        .clickable { viewModel.navigateTo(Screen.Reminders) }
-                                        .testTag("btn_open_reminders_screen")
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Default.Notifications,
-                                                contentDescription = null,
-                                                tint = amber,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = "Panel de Recordatorios y Tareas",
-                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = amber
-                                            )
-                                        }
-                                        Text(
-                                            text = "Ver todo ➔",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                            color = amber
-                                        )
-                                    }
-                                }
-
-                                if (uiState.remindersNotes.isEmpty()) {
-                                    NoteJsEmptyState("No hay recordatorios pendientes", "Las notas con recordatorios programados aparecerán aquí.")
-                                } else {
-                                    LazyColumn(
-                                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 100.dp),
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                    item {
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color(0xFF1C1C1E),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column {
-                                                uiState.remindersNotes.forEachIndexed { index, note ->
-                                                    NoteJsNoteRow(
-                                                        note = note,
-                                                        isUnlocked = uiState.unlockedNoteIds.contains(note.id),
-                                                        isLastItem = index == uiState.remindersNotes.size - 1,
-                                                        onClick = {
-                                                            openNoteOrUnlock(note, viewModel)
-                                                        },
-                                                        onLongClick = { previewNote = note },
-                                                        isSelectionMode = uiState.isSelectionMode,
-                                                        isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                        onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            RemindersScreen(
+                                viewModel = viewModel,
+                                showBackButton = false,
+                                modifier = Modifier.fillMaxSize()
+                            )
                         }
-                    }
 
                         NavTab.ARCHIVED -> {
                             if (uiState.archivedNotes.isEmpty()) {
@@ -719,7 +694,7 @@ fun HomeScreen(
                         note = currentNote,
                         onClick = {
                             previewNote = null
-                            openNoteOrUnlock(currentNote, viewModel)
+                            handleOpenNote(currentNote)
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -741,8 +716,17 @@ fun HomeScreen(
                             previewNote = null
                         },
                         onLock = {
-                            viewModel.toggleLockNote(currentNote)
                             previewNote = null
+                            if (currentNote.isLocked && !uiState.unlockedNoteIds.contains(currentNote.id)) {
+                                requestSecurityUnlock(
+                                    "Quitar bloqueo de nota",
+                                    "Verifica tu identidad con huella dactilar o reconocimiento facial"
+                                ) {
+                                    viewModel.toggleLockNote(currentNote)
+                                }
+                            } else {
+                                viewModel.toggleLockNote(currentNote)
+                            }
                         },
                         onDelete = { 
                             viewModel.moveToTrash(currentNote)
@@ -771,16 +755,17 @@ fun HomeScreen(
                 showFolderSheet = false
             },
             onSelectNote = { note ->
-                openNoteOrUnlock(note, viewModel)
+                handleOpenNote(note)
                 showFolderSheet = false
             },
             onSelectPrivateFolder = {
                 showFolderSheet = false
-                BiometricAuthManager.authenticateWithBiometrics(
-                    context = context,
-                    onSuccess = { viewModel.openPrivateFolder() },
-                    onError = { _ -> }
-                )
+                requestSecurityUnlock(
+                    "Acceso a Carpeta Privada",
+                    "Verifica tu identidad con huella dactilar o reconocimiento facial"
+                ) {
+                    viewModel.openPrivateFolder()
+                }
             },
             onDismiss = { showFolderSheet = false }
         )
@@ -875,8 +860,17 @@ fun HomeScreen(
                 )
             },
             onLockToggle = {
-                viewModel.toggleLockNote(note)
                 selectedNoteForAction = null
+                if (note.isLocked && !uiState.unlockedNoteIds.contains(note.id)) {
+                    requestSecurityUnlock(
+                        "Quitar de Carpeta Privada",
+                        "Verifica tu identidad con huella dactilar o reconocimiento facial"
+                    ) {
+                        viewModel.toggleLockNote(note)
+                    }
+                } else {
+                    viewModel.toggleLockNote(note)
+                }
             },
             onShare = {
                 val sendIntent = Intent().apply {
@@ -962,6 +956,31 @@ fun HomeScreen(
                 ) {
                     Text("Guardar en dispositivo")
                 }
+            }
+        )
+    }
+
+    if (showPinUnlockDialog) {
+        NoteLockDialog(
+            isSettingPin = false,
+            expectedPin = uiState.defaultLockPin,
+            title = pendingUnlockTitle,
+            subtitle = pendingUnlockSubtitle,
+            autoTriggerBiometric = false,
+            isBiometricEnabled = uiState.isBiometricLockEnabled,
+            onConfirm = { _ ->
+                showPinUnlockDialog = false
+                pendingUnlockAction?.invoke()
+                pendingUnlockAction = null
+            },
+            onUnlockSuccess = {
+                showPinUnlockDialog = false
+                pendingUnlockAction?.invoke()
+                pendingUnlockAction = null
+            },
+            onDismiss = {
+                showPinUnlockDialog = false
+                pendingUnlockAction = null
             }
         )
     }

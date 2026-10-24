@@ -3,24 +3,30 @@ package com.example.data.repository
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.util.Log
 import com.example.data.local.UriConverters
 import com.example.data.local.dao.FolderDao
 import com.example.data.local.dao.NoteDao
+import com.example.data.local.dao.ReminderDao
 import com.example.data.local.dao.SignatureDao
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.MediaType
 import com.example.data.local.entity.NoteEntity
 import com.example.data.local.entity.NoteMediaAttachment
+import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.SignatureEntity
 import com.example.data.remote.FirebaseStorageManager
 import com.example.data.remote.FirestoreManager
+import com.example.data.remote.OfflineSyncWorker
 import com.example.data.remote.mapper.toNoteEntity
+import com.example.data.remote.mapper.toReminderEntity
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
 import com.example.model.SyncState
 import com.example.util.NoteBlockSerializer
+import com.example.util.ReminderScheduler
 import com.example.util.isValidForSync
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -39,8 +45,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.UUID
 
@@ -51,11 +60,19 @@ class NoteRepository(
     private val signatureDao: SignatureDao,
     private val firestoreManager: FirestoreManager,
     private val firebaseStorageManager: FirebaseStorageManager = FirebaseStorageManager(),
-    private val context: Context? = null
+    private val context: Context? = null,
+    private val reminderDao: ReminderDao? = null
 ) {
 
     private val syncScope = CoroutineScope(Dispatchers.IO)
+    private val syncMutex = Mutex()
+    private val remoteProcessMutex = Mutex()
+    private val remoteReminderMutex = Mutex()
+    private val inFlightNoteUuids: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val inFlightReminderUuids: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private var cloudSyncJob: Job? = null
+    private var remindersSyncJob: Job? = null
+    private var listeningUserId: String? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val uriConverters = UriConverters()
 
@@ -92,8 +109,20 @@ class NoteRepository(
         noteDao.getTrashedNotesForUser(uid)
     }
 
+    val reminders: Flow<List<ReminderEntity>> = _activeUserId.flatMapLatest { uid ->
+        reminderDao?.observeRemindersForUser(uid) ?: flowOf(emptyList())
+    }
+
     val pendingSyncCount: Flow<Int> = _activeUserId.flatMapLatest { uid ->
         noteDao.observePendingSyncCount(uid)
+    }
+
+    val anonymousNotesCount: Flow<Int> = noteDao.observeAnonymousNotesCount()
+
+    init {
+        if (context != null) {
+            OfflineSyncWorker.schedulePeriodicSync(context)
+        }
     }
 
     /**
@@ -307,7 +336,9 @@ class NoteRepository(
         val now = System.currentTimeMillis()
         val effectiveUserId = currentUserId ?: _activeUserId.value
         val flattenedText = flattenNoteText(note)
+        val ensuredUuid = note.remoteUuid.ifBlank { UUID.randomUUID().toString() }
         val baseNote = note.copy(
+            remoteUuid = ensuredUuid,
             userId = if (note.userId == NoteEntity.LOCAL_ANONYMOUS_USER_ID || note.userId.isBlank()) effectiveUserId else note.userId,
             searchableText = flattenedText,
             isSynced = false,
@@ -325,6 +356,7 @@ class NoteRepository(
      */
     fun syncPendingNotes(userId: String? = currentUserId, forcePushAll: Boolean = false) {
         val targetUid = userId?.takeIf { it.isNotBlank() } ?: _activeUserId.value
+        OfflineSyncWorker.enqueueWhenConnected(context)
         syncScope.launch {
             syncPendingNotesSuspending(targetUid, forcePushAll = forcePushAll)
         }
@@ -336,43 +368,82 @@ class NoteRepository(
     ) {
         val targetUid = userId?.takeIf { it.isNotBlank() } ?: _activeUserId.value
         if (targetUid.isBlank() || targetUid == NoteEntity.LOCAL_ANONYMOUS_USER_ID) return
-        try {
-            noteDao.claimAnonymousNotes(targetUid)
+        syncMutex.withLock {
+            try {
+                noteDao.claimAnonymousNotes(targetUid)
 
-            // 1. Drenar eliminaciones pendientes (pendingDelete = 1)
-            val pendingDeletes = noteDao.getPendingDeletes(targetUid)
-            for (noteToDelete in pendingDeletes) {
-                if (noteToDelete.remoteUuid.isNotBlank()) {
-                    val deletedRemotely = firestoreManager.deleteNote(targetUid, noteToDelete.remoteUuid, context)
-                    if (deletedRemotely) {
+                // 1. Drenar eliminaciones pendientes (pendingDelete = 1)
+                val pendingDeletes = noteDao.getPendingDeletes(targetUid)
+                for (noteToDelete in pendingDeletes) {
+                    if (noteToDelete.remoteUuid.isNotBlank()) {
+                        val deletedRemotely = firestoreManager.deleteNote(targetUid, noteToDelete.remoteUuid, context)
+                        if (deletedRemotely) {
+                            noteDao.deleteNoteById(noteToDelete.id)
+                        } else {
+                            OfflineSyncWorker.enqueueWhenConnected(context)
+                        }
+                    } else {
                         noteDao.deleteNoteById(noteToDelete.id)
                     }
-                } else {
-                    noteDao.deleteNoteById(noteToDelete.id)
                 }
-            }
 
-            // 2. Drenar creaciones y ediciones locales pendientes (isSynced = 0)
-            val unsyncedNotes = noteDao.getUnsyncedUpserts(targetUid)
-            for (dirtyNote in unsyncedNotes) {
-                pushSingleNoteInternal(targetUid, dirtyNote)
-            }
-
-            // 3. Descargar y reconciliar notas remotas desde Firestore (inserciones, ediciones y eliminaciones remotas)
-            pullRemoteNotesSuspending(targetUid)
-
-            // 4. Si se solicitó forcePushAll (sincronización manual), empujar notas locales válidas restantes
-            if (forcePushAll) {
-                val remainingNotes = noteDao.getAllNotesForUserList(targetUid)
-                    .filter { it.syncEnabled && !it.pendingDelete }
-                for (note in remainingNotes) {
-                    pushSingleNoteInternal(targetUid, note)
+                // 2. Drenar creaciones y ediciones locales pendientes (isSynced = 0)
+                val unsyncedNotes = noteDao.getUnsyncedUpserts(targetUid)
+                for (dirtyNote in unsyncedNotes) {
+                    pushSingleNoteInternal(targetUid, dirtyNote)
                 }
+
+                // 3. Descargar y reconciliar notas remotas desde Firestore (inserciones, ediciones y eliminaciones remotas)
+                pullRemoteNotesSuspending(targetUid)
+
+                // 4. Si se solicitó forcePushAll (sincronización manual), empujar notas locales válidas restantes
+                if (forcePushAll) {
+                    val remainingNotes = noteDao.getAllNotesForUserList(targetUid)
+                        .filter { it.syncEnabled && !it.pendingDelete }
+                    for (note in remainingNotes) {
+                        pushSingleNoteInternal(targetUid, note)
+                    }
+                }
+
+                // 5. Sincronizar Recordatorios y Eventos de Calendario (Offline-First + Firestore)
+                reminderDao?.let { rDao ->
+                    rDao.claimAnonymousReminders(targetUid)
+
+                    val pendingRemDeletes = rDao.getPendingDeleteReminders(targetUid)
+                    for (remToDelete in pendingRemDeletes) {
+                        if (remToDelete.remoteUuid.isNotBlank()) {
+                            val deleted = firestoreManager.deleteReminder(targetUid, remToDelete.remoteUuid)
+                            if (deleted) {
+                                rDao.deleteReminderById(remToDelete.id)
+                            } else {
+                                OfflineSyncWorker.enqueueWhenConnected(context)
+                            }
+                        } else {
+                            rDao.deleteReminderById(remToDelete.id)
+                        }
+                    }
+
+                    val unsyncedReminders = rDao.getUnsyncedReminders(targetUid)
+                    for (dirtyReminder in unsyncedReminders) {
+                        pushSingleReminderInternal(targetUid, dirtyReminder)
+                    }
+
+                    pullRemoteRemindersSuspending(targetUid)
+
+                    if (forcePushAll) {
+                        val allReminders = rDao.getRemindersForUserList(targetUid)
+                            .filter { !it.pendingDelete }
+                        for (rem in allReminders) {
+                            pushSingleReminderInternal(targetUid, rem)
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("NoteRepository", "Error drenando cola offline", e)
+                OfflineSyncWorker.enqueueWhenConnected(context)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e("NoteRepository", "Error drenando cola offline", e)
         }
     }
 
@@ -386,6 +457,140 @@ class NoteRepository(
         } catch (e: Exception) {
             Log.w("NoteRepository", "No se pudieron obtener notas remotas en pull puntual", e)
             0
+        }
+    }
+
+    suspend fun pullRemoteRemindersSuspending(userId: String? = currentUserId): Int {
+        val targetUid = userId?.takeIf { it.isNotBlank() } ?: _activeUserId.value
+        if (targetUid.isBlank() || targetUid == NoteEntity.LOCAL_ANONYMOUS_USER_ID || reminderDao == null) return 0
+        return try {
+            val remoteRemindersMap = firestoreManager.fetchRemindersOnce(targetUid)
+            processRemoteRemindersList(targetUid, remoteRemindersMap)
+            remoteRemindersMap.size
+        } catch (e: Exception) {
+            Log.w("NoteRepository", "No se pudieron obtener recordatorios remotos en pull puntual", e)
+            0
+        }
+    }
+
+    // --- CRUD OFFLINE-FIRST Y SINCRONIZACIÓN DE RECORDATORIOS Y EVENTOS ---
+
+    suspend fun getReminderById(id: Long): ReminderEntity? = reminderDao?.getReminderById(id)
+
+    suspend fun getRemindersByLinkedNoteId(noteId: Long): List<ReminderEntity> =
+        reminderDao?.getRemindersByLinkedNoteId(noteId) ?: emptyList()
+
+    suspend fun insertReminder(reminder: ReminderEntity): Long {
+        val rDao = reminderDao ?: return 0L
+        val now = System.currentTimeMillis()
+        val effectiveUserId = currentUserId ?: _activeUserId.value
+        val ensuredUuid = reminder.remoteUuid.ifBlank { UUID.randomUUID().toString() }
+        val resolvedNoteUuid = if (reminder.linkedNoteUuid.isNotBlank()) {
+            reminder.linkedNoteUuid
+        } else if (reminder.linkedNoteId != null && reminder.linkedNoteId > 0L) {
+            noteDao.getNoteById(reminder.linkedNoteId)?.remoteUuid.orEmpty()
+        } else ""
+
+        val toSave = reminder.copy(
+            remoteUuid = ensuredUuid,
+            userId = if (reminder.userId == NoteEntity.LOCAL_ANONYMOUS_USER_ID || reminder.userId.isBlank()) effectiveUserId else reminder.userId,
+            linkedNoteUuid = resolvedNoteUuid,
+            isSynced = false,
+            pendingDelete = false,
+            createdAt = if (reminder.createdAt > 0L) reminder.createdAt else now,
+            updatedAt = now,
+            lastModifiedLocal = now
+        )
+        val localId = rDao.insertReminder(toSave)
+        val saved = toSave.copy(id = localId)
+        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, saved) }
+        syncReminderToCloud(saved)
+        return localId
+    }
+
+    suspend fun updateReminder(reminder: ReminderEntity) {
+        val rDao = reminderDao ?: return
+        val now = System.currentTimeMillis()
+        val effectiveUserId = currentUserId ?: _activeUserId.value
+        val ensuredUuid = reminder.remoteUuid.ifBlank { UUID.randomUUID().toString() }
+        val resolvedNoteUuid = if (reminder.linkedNoteUuid.isNotBlank()) {
+            reminder.linkedNoteUuid
+        } else if (reminder.linkedNoteId != null && reminder.linkedNoteId > 0L) {
+            noteDao.getNoteById(reminder.linkedNoteId)?.remoteUuid.orEmpty()
+        } else ""
+
+        val toUpdate = reminder.copy(
+            remoteUuid = ensuredUuid,
+            userId = if (reminder.userId == NoteEntity.LOCAL_ANONYMOUS_USER_ID || reminder.userId.isBlank()) effectiveUserId else reminder.userId,
+            linkedNoteUuid = resolvedNoteUuid,
+            isSynced = false,
+            updatedAt = now,
+            lastModifiedLocal = now
+        )
+        rDao.updateReminder(toUpdate)
+        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, toUpdate) }
+        syncReminderToCloud(toUpdate)
+    }
+
+    suspend fun deleteReminder(reminder: ReminderEntity) {
+        val rDao = reminderDao ?: return
+        context?.let { ReminderScheduler.cancelStandaloneReminder(it, reminder.id) }
+        val userId = currentUserId ?: _activeUserId.value
+        if (userId.isNotBlank() && userId != NoteEntity.LOCAL_ANONYMOUS_USER_ID && reminder.remoteUuid.isNotBlank()) {
+            rDao.markReminderPendingDelete(reminder.id)
+            syncPendingNotes(userId)
+        } else {
+            rDao.deleteReminderById(reminder.id)
+        }
+    }
+
+    private fun syncReminderToCloud(reminder: ReminderEntity) {
+        val userId = currentUserId ?: _activeUserId.value
+        if (userId.isBlank() || userId == NoteEntity.LOCAL_ANONYMOUS_USER_ID) return
+        OfflineSyncWorker.enqueueWhenConnected(context)
+        syncScope.launch {
+            pushSingleReminderInternal(userId, reminder)
+        }
+    }
+
+    private suspend fun pushSingleReminderInternal(userId: String, reminder: ReminderEntity) {
+        val rDao = reminderDao ?: return
+        if (context != null && !firestoreManager.checkNetworkAvailable(context)) {
+            firestoreManager.setSyncState(SyncState.OFFLINE)
+            OfflineSyncWorker.enqueueWhenConnected(context)
+            return
+        }
+        val trackingUuid = reminder.remoteUuid.ifBlank { UUID.randomUUID().toString() }
+        inFlightReminderUuids.add(trackingUuid)
+        try {
+            val expectedLocalTs = reminder.lastModifiedLocal
+            val normalized = if (reminder.remoteUuid.isBlank() || reminder.userId != userId) {
+                val updated = reminder.copy(remoteUuid = trackingUuid, userId = userId)
+                rDao.updateReminder(updated)
+                updated
+            } else {
+                reminder
+            }
+            val success = firestoreManager.pushReminder(userId, normalized, context)
+            if (success) {
+                val serverTs = System.currentTimeMillis()
+                if (expectedLocalTs > 0L) {
+                    rDao.markReminderSyncedIfUnchanged(
+                        remoteUuid = normalized.remoteUuid,
+                        expectedLocalTimestamp = expectedLocalTs,
+                        serverTimestamp = serverTs
+                    )
+                } else {
+                    rDao.markReminderSyncedById(normalized.id, serverTs)
+                }
+            } else {
+                OfflineSyncWorker.enqueueWhenConnected(context)
+            }
+        } catch (e: Exception) {
+            Log.e("NoteRepository", "Error pushing reminder to Firestore", e)
+            OfflineSyncWorker.enqueueWhenConnected(context)
+        } finally {
+            inFlightReminderUuids.remove(trackingUuid)
         }
     }
 
@@ -502,6 +707,7 @@ class NoteRepository(
         val userId = currentUserId ?: _activeUserId.value
         if (userId == NoteEntity.LOCAL_ANONYMOUS_USER_ID) return
 
+        OfflineSyncWorker.enqueueWhenConnected(context)
         syncScope.launch {
             pushSingleNoteInternal(userId, note)
         }
@@ -525,6 +731,12 @@ class NoteRepository(
             return
         }
 
+        if (context != null && !firestoreManager.checkNetworkAvailable(context)) {
+            firestoreManager.setSyncState(SyncState.OFFLINE)
+            OfflineSyncWorker.enqueueWhenConnected(context)
+            return
+        }
+
         try {
             val expectedLocalTimestamp = note.lastModifiedLocal
             var updatedNote = if (note.remoteUuid.isEmpty()) {
@@ -540,11 +752,14 @@ class NoteRepository(
                 note
             }
 
+            val trackingUuid = updatedNote.remoteUuid
+            inFlightNoteUuids.add(trackingUuid)
             var isModified = false
+            var hasFailedAttachmentUpload = false
 
             coroutineScope {
-                // 1. Subir archivo PDF principal de NoteEntity si existe pdfPath con remoteUrl vacía
-                val mainPdfDeferred = if (updatedNote.pdfPath.isNotBlank() && updatedNote.remoteUrl.isBlank()) {
+                val needsMainPdfUpload = updatedNote.pdfPath.isNotBlank() && updatedNote.remoteUrl.isBlank()
+                val mainPdfDeferred = if (needsMainPdfUpload) {
                     async {
                         try {
                             firebaseStorageManager.uploadFile(
@@ -559,26 +774,25 @@ class NoteRepository(
                     }
                 } else null
 
-                // 2. Subir imagen principal de NoteEntity si existe imageUri con remoteImageUrl vacía
-                val mainImageDeferred = if (updatedNote.imageUri != null && updatedNote.remoteImageUrl.isBlank()) {
+                val needsMainImageUpload = updatedNote.imageUri != null &&
+                    updatedNote.remoteImageUrl.isBlank() &&
+                    !updatedNote.imageUri.toString().startsWith("http")
+                val mainImageDeferred = if (needsMainImageUpload) {
                     val imgUriStr = updatedNote.imageUri.toString()
-                    if (!imgUriStr.startsWith("http")) {
-                        async {
-                            try {
-                                firebaseStorageManager.uploadFile(
-                                    userId = userId,
-                                    localUriString = imgUriStr,
-                                    fileName = "img_main_${updatedNote.remoteUuid}.jpg"
-                                )
-                            } catch (e: Exception) {
-                                Log.e("NoteRepository", "Error uploading main image to storage", e)
-                                null
-                            }
+                    async {
+                        try {
+                            firebaseStorageManager.uploadFile(
+                                userId = userId,
+                                localUriString = imgUriStr,
+                                fileName = "img_main_${updatedNote.remoteUuid}.jpg"
+                            )
+                        } catch (e: Exception) {
+                            Log.e("NoteRepository", "Error uploading main image to storage", e)
+                            null
                         }
-                    } else null
+                    }
                 } else null
 
-                // 3. Subir archivos adjuntos en los bloques (PDF, Imágenes, Audio) en paralelo
                 val blocks = NoteBlockSerializer.deserialize(updatedNote.content)
                 val blockUploadDeferreds = blocks.map { block ->
                     when (block) {
@@ -595,7 +809,7 @@ class NoteRepository(
                                         Log.e("NoteRepository", "Error uploading block pdf to storage", e)
                                         null
                                     }
-                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else block
+                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else null
                                 }
                             } else null
                         }
@@ -612,7 +826,7 @@ class NoteRepository(
                                         Log.e("NoteRepository", "Error uploading image block to storage", e)
                                         null
                                     }
-                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else block
+                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else null
                                 }
                             } else null
                         }
@@ -629,7 +843,7 @@ class NoteRepository(
                                         Log.e("NoteRepository", "Error uploading image to storage", e)
                                         null
                                     }
-                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else block
+                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else null
                                 }
                             } else null
                         }
@@ -646,7 +860,7 @@ class NoteRepository(
                                         Log.e("NoteRepository", "Error uploading audio to storage", e)
                                         null
                                     }
-                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else block
+                                    if (!url.isNullOrEmpty()) block.copy(remoteUrl = url) else null
                                 }
                             } else null
                         }
@@ -654,26 +868,39 @@ class NoteRepository(
                     }
                 }
 
-                val mainPdfRemoteUrl = mainPdfDeferred?.await()
-                if (!mainPdfRemoteUrl.isNullOrEmpty()) {
-                    updatedNote = updatedNote.copy(remoteUrl = mainPdfRemoteUrl)
-                    isModified = true
+                if (mainPdfDeferred != null) {
+                    val mainPdfRemoteUrl = mainPdfDeferred.await()
+                    if (!mainPdfRemoteUrl.isNullOrEmpty()) {
+                        updatedNote = updatedNote.copy(remoteUrl = mainPdfRemoteUrl)
+                        isModified = true
+                    } else {
+                        hasFailedAttachmentUpload = true
+                    }
                 }
 
-                val mainImageRemoteUrl = mainImageDeferred?.await()
-                if (!mainImageRemoteUrl.isNullOrEmpty()) {
-                    updatedNote = updatedNote.copy(remoteImageUrl = mainImageRemoteUrl)
-                    isModified = true
+                if (mainImageDeferred != null) {
+                    val mainImageRemoteUrl = mainImageDeferred.await()
+                    if (!mainImageRemoteUrl.isNullOrEmpty()) {
+                        updatedNote = updatedNote.copy(remoteImageUrl = mainImageRemoteUrl)
+                        isModified = true
+                    } else {
+                        hasFailedAttachmentUpload = true
+                    }
                 }
 
                 val updatedBlocks = blocks.mapIndexed { index, originalBlock ->
                     val deferred = blockUploadDeferreds[index]
                     if (deferred != null) {
-                        val newBlock = deferred.await()
-                        if (newBlock != originalBlock) {
-                            isModified = true
+                        val uploadedBlock = deferred.await()
+                        if (uploadedBlock != null) {
+                            if (uploadedBlock != originalBlock) {
+                                isModified = true
+                            }
+                            uploadedBlock
+                        } else {
+                            hasFailedAttachmentUpload = true
+                            originalBlock
                         }
-                        newBlock
                     } else {
                         originalBlock
                     }
@@ -692,19 +919,28 @@ class NoteRepository(
             } catch (e: Exception) {
                 Log.e("NoteRepository", "Error pushing note to firestore", e)
                 false
+            } finally {
+                inFlightNoteUuids.remove(trackingUuid)
             }
 
             if (success) {
                 val serverTs = System.currentTimeMillis()
-                noteDao.markNoteSyncedIfUnchanged(
-                    remoteUuid = updatedNote.remoteUuid,
-                    expectedLocalTimestamp = expectedLocalTimestamp,
-                    serverTimestamp = serverTs
-                )
-                noteDao.markNoteSyncedById(updatedNote.id, serverTs)
+                if (expectedLocalTimestamp > 0L) {
+                    noteDao.markNoteSyncedIfUnchanged(
+                        remoteUuid = updatedNote.remoteUuid,
+                        expectedLocalTimestamp = expectedLocalTimestamp,
+                        serverTimestamp = serverTs
+                    )
+                } else {
+                    noteDao.markNoteSyncedById(updatedNote.id, serverTs)
+                }
+            } else {
+                OfflineSyncWorker.enqueueWhenConnected(context)
             }
         } catch (e: Exception) {
+            note.remoteUuid.takeIf { it.isNotBlank() }?.let { inFlightNoteUuids.remove(it) }
             Log.e("NoteRepository", "Error in pushSingleNoteInternal", e)
+            OfflineSyncWorker.enqueueWhenConnected(context)
         }
     }
 
@@ -964,6 +1200,15 @@ class NoteRepository(
                     }
                 }
 
+                override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                    if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                        val activeUid = currentUserId?.takeIf { it.isNotBlank() } ?: userId
+                        if (activeUid.isNotBlank() && activeUid != NoteEntity.LOCAL_ANONYMOUS_USER_ID) {
+                            syncPendingNotes(activeUid, forcePushAll = false)
+                        }
+                    }
+                }
+
                 override fun onLost(network: Network) {
                     if (!firestoreManager.checkNetworkAvailable(appContext)) {
                         firestoreManager.setSyncState(SyncState.OFFLINE)
@@ -990,19 +1235,53 @@ class NoteRepository(
 
     fun startListeningToCloud(userId: String) {
         if (userId.isBlank() || userId == NoteEntity.LOCAL_ANONYMOUS_USER_ID) return
+        this.currentUserId = userId
+        this._activeUserId.value = userId
+
+        if (listeningUserId == userId && cloudSyncJob?.isActive == true) {
+            syncPendingNotes(userId, forcePushAll = false)
+            return
+        }
+
         stopListeningToCloud(resetToAnonymous = false)
         this.currentUserId = userId
         this._activeUserId.value = userId
+        this.listeningUserId = userId
         registerNetworkMonitor(userId)
 
         cloudSyncJob = syncScope.launch {
-            // 1. Migrar notas creadas sin cuenta ('LOCAL_ANONYMOUS') al UID autenticado
+            // 1. Migrar notas y recordatorios creados sin cuenta ('LOCAL_ANONYMOUS') al UID autenticado
             noteDao.claimAnonymousNotes(userId)
+            reminderDao?.claimAnonymousReminders(userId)
 
-            // 2. Empujar cambios locales pendientes (isSynced = 0 / pendingDelete = 1) y reconciliar estado inicial
-            syncPendingNotesSuspending(userId, forcePushAll = false)
+            // 2. Empujar cambios locales pendientes en paralelo sin bloquear el listener en tiempo real
+            syncScope.launch {
+                syncPendingNotesSuspending(userId, forcePushAll = false)
+            }
 
-            // 3. Escuchar cambios en tiempo real desde Firestore y reflejarlos en Room para disponibilidad offline
+            // 3. Conectar inmediatamente el listener de Recordatorios en tiempo real desde Firestore
+            if (reminderDao != null) {
+                remindersSyncJob?.cancel()
+                remindersSyncJob = syncScope.launch {
+                    firestoreManager.getRemindersFlow(userId, context)
+                        .retryWhen { cause, attempt ->
+                            if (cause is CancellationException) {
+                                false
+                            } else {
+                                delay(((attempt + 1).coerceAtMost(5)) * 2000L)
+                                true
+                            }
+                        }
+                        .catch { e ->
+                            Log.w("NoteRepository", "Listener de Recordatorios interrumpido: ${e.localizedMessage}")
+                        }
+                        .collect { remoteRemindersMap ->
+                            processRemoteRemindersList(userId, remoteRemindersMap)
+                        }
+                }
+            }
+
+            // 4. Conectar inmediatamente el listener de Notas en tiempo real desde Firestore
             firestoreManager.getNotesFlow(userId, context)
                 .retryWhen { cause, attempt ->
                     if (cause is CancellationException) {
@@ -1016,9 +1295,104 @@ class NoteRepository(
                 .catch { e ->
                     Log.w("NoteRepository", "Listener de Firestore interrumpido: ${e.localizedMessage}")
                 }
-                .collectLatest { remoteNotesMap ->
+                .collect { remoteNotesMap ->
                     processRemoteNotesList(userId, remoteNotesMap)
                 }
+        }
+    }
+
+    internal suspend fun processRemoteRemindersList(
+        userId: String,
+        remoteRemindersMap: List<Map<String, Any>>
+    ) {
+        val rDao = reminderDao ?: return
+        remoteReminderMutex.withLock {
+            val remoteUuids = mutableSetOf<String>()
+
+            remoteRemindersMap.forEach { map ->
+                val remoteUuid = (map["remoteUuid"] as? String)?.takeIf { it.isNotBlank() } ?: return@forEach
+                remoteUuids.add(remoteUuid)
+
+                if (remoteUuid in inFlightReminderUuids) {
+                    return@forEach
+                }
+
+                val serverTs = (map["updatedAt"] as? Timestamp)?.toDate()?.time
+                    ?: (map["updatedAtServer"] as? Number)?.toLong()
+                    ?: (map["updatedAt"] as? Number)?.toLong()
+                    ?: 0L
+                val remoteLocalTs = (map["lastModifiedLocal"] as? Number)?.toLong() ?: 0L
+                val remoteUpdatedAt = maxOf(serverTs, remoteLocalTs)
+
+                val localRem = rDao.getReminderByRemoteUuidAndUser(remoteUuid, userId)
+                    ?: rDao.getReminderByRemoteUuid(remoteUuid)
+
+                if (localRem != null && localRem.pendingDelete) {
+                    syncScope.launch {
+                        if (firestoreManager.deleteReminder(userId, remoteUuid)) {
+                            rDao.deleteReminderById(localRem.id)
+                        }
+                    }
+                    return@forEach
+                }
+
+                var remoteEntity = map.toReminderEntity(fallbackUserId = userId)
+                // Reconcile linkedNoteId across devices using linkedNoteUuid if available
+                if (remoteEntity.linkedNoteUuid.isNotBlank()) {
+                    val linkedNote = noteDao.getNoteByRemoteUuidAndUser(remoteEntity.linkedNoteUuid, userId)
+                        ?: noteDao.getNoteByRemoteUuid(remoteEntity.linkedNoteUuid)
+                    if (linkedNote != null) {
+                        remoteEntity = remoteEntity.copy(
+                            linkedNoteId = linkedNote.id,
+                            linkedNoteTitle = linkedNote.title.ifBlank { remoteEntity.linkedNoteTitle }
+                        )
+                    }
+                }
+
+                if (localRem != null && !localRem.isSynced) {
+                    if (localRem.lastModifiedLocal > remoteUpdatedAt) {
+                        syncReminderToCloud(localRem)
+                    } else {
+                        val merged = remoteEntity.copy(id = localRem.id, userId = userId, isSynced = true, pendingDelete = false)
+                        rDao.updateReminder(merged)
+                        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, merged) }
+                    }
+                    return@forEach
+                }
+
+                if (localRem == null) {
+                    val newId = rDao.insertReminder(remoteEntity.copy(userId = userId, isSynced = true, pendingDelete = false))
+                    context?.let { ReminderScheduler.scheduleStandaloneReminder(it, remoteEntity.copy(id = newId)) }
+                } else if (remoteUpdatedAt >= localRem.updatedAt ||
+                    localRem.title != remoteEntity.title ||
+                    localRem.scheduledAt != remoteEntity.scheduledAt ||
+                    localRem.endTimeMillis != remoteEntity.endTimeMillis ||
+                    localRem.isCompleted != remoteEntity.isCompleted ||
+                    localRem.isAllDay != remoteEntity.isAllDay ||
+                    localRem.priority != remoteEntity.priority ||
+                    localRem.listName != remoteEntity.listName ||
+                    localRem.subtasksJson != remoteEntity.subtasksJson
+                ) {
+                    val updated = remoteEntity.copy(id = localRem.id, userId = userId, isSynced = true, pendingDelete = false)
+                    rDao.updateReminder(updated)
+                    context?.let { ReminderScheduler.scheduleStandaloneReminder(it, updated) }
+                }
+            }
+
+            // Reconciliar eliminaciones remotas de recordatorios
+            val localUserReminders = rDao.getRemindersForUserList(userId)
+            for (localRem in localUserReminders) {
+                if (localRem.userId == userId &&
+                    localRem.isSynced &&
+                    !localRem.pendingDelete &&
+                    localRem.remoteUuid.isNotBlank() &&
+                    localRem.remoteUuid !in remoteUuids &&
+                    localRem.remoteUuid !in inFlightReminderUuids
+                ) {
+                    context?.let { ReminderScheduler.cancelStandaloneReminder(it, localRem.id) }
+                    rDao.deleteReminderById(localRem.id)
+                }
+            }
         }
     }
 
@@ -1026,101 +1400,118 @@ class NoteRepository(
         userId: String,
         remoteNotesMap: List<Map<String, Any>>
     ) {
-        val existingFolders = try {
-            folderDao.getAllFoldersList().map { it.name.lowercase() }.toMutableSet()
-        } catch (_: Exception) {
-            mutableSetOf()
-        }
-
-        val remoteUuids = mutableSetOf<String>()
-
-        remoteNotesMap.forEach { map ->
-            val remoteUuid = (map["remoteUuid"] as? String)?.takeIf { it.isNotBlank() } ?: return@forEach
-            remoteUuids.add(remoteUuid)
-            val serverTs = (map["updatedAt"] as? Timestamp)?.toDate()?.time
-                ?: (map["updatedAtServer"] as? Number)?.toLong()
-                ?: (map["updatedAt"] as? Number)?.toLong()
-                ?: 0L
-            val remoteLocalTs = (map["lastModifiedLocal"] as? Number)?.toLong() ?: 0L
-            val remoteUpdatedAt = maxOf(serverTs, remoteLocalTs)
-
-            val remoteFolder = (map["folder"] as? String)?.trim().orEmpty()
-            if (remoteFolder.isNotEmpty() &&
-                !remoteFolder.equals("Notas", ignoreCase = true) &&
-                !existingFolders.contains(remoteFolder.lowercase())
-            ) {
-                try {
-                    folderDao.insertFolder(FolderEntity(name = remoteFolder))
-                    existingFolders.add(remoteFolder.lowercase())
-                } catch (_: Exception) {
-                }
+        remoteProcessMutex.withLock {
+            val existingFolders = try {
+                folderDao.getAllFoldersList().map { it.name.lowercase() }.toMutableSet()
+            } catch (_: Exception) {
+                mutableSetOf()
             }
 
-            val localNote = noteDao.getNoteByRemoteUuidAndUser(remoteUuid, userId)
-                ?: noteDao.getNoteByRemoteUuid(remoteUuid)
+            val remoteUuids = mutableSetOf<String>()
 
-            // CASO A: La nota está marcada localmente como pendingDelete -> El borrado local gana
-            if (localNote != null && localNote.pendingDelete) {
-                syncScope.launch {
-                    if (firestoreManager.deleteNote(userId, remoteUuid, context)) {
-                        noteDao.deleteNoteById(localNote.id)
+            remoteNotesMap.forEach { map ->
+                val remoteUuid = (map["remoteUuid"] as? String)?.takeIf { it.isNotBlank() } ?: return@forEach
+                remoteUuids.add(remoteUuid)
+
+                // Si esta nota está siendo subida activamente en este instante desde este dispositivo,
+                // evitamos procesar su eco parcial hasta que termine la subida.
+                if (remoteUuid in inFlightNoteUuids) {
+                    return@forEach
+                }
+
+                val serverTs = (map["updatedAt"] as? Timestamp)?.toDate()?.time
+                    ?: (map["updatedAtServer"] as? Number)?.toLong()
+                    ?: (map["updatedAt"] as? Number)?.toLong()
+                    ?: 0L
+                val remoteLocalTs = (map["lastModifiedLocal"] as? Number)?.toLong() ?: 0L
+                val remoteUpdatedAt = maxOf(serverTs, remoteLocalTs)
+
+                val remoteFolder = (map["folder"] as? String)?.trim().orEmpty()
+                if (remoteFolder.isNotEmpty() &&
+                    !remoteFolder.equals("Notas", ignoreCase = true) &&
+                    !existingFolders.contains(remoteFolder.lowercase())
+                ) {
+                    try {
+                        folderDao.insertFolder(FolderEntity(name = remoteFolder))
+                        existingFolders.add(remoteFolder.lowercase())
+                    } catch (_: Exception) {
                     }
                 }
-                return@forEach
-            }
 
-            val remoteEntity = map.toNoteEntity(fallbackUserId = userId)
+                val localNote = noteDao.getNoteByRemoteUuidAndUser(remoteUuid, userId)
+                    ?: noteDao.getNoteByRemoteUuid(remoteUuid)
 
-            // CASO B: Colisión Offline (La nota local tiene cambios sin subir `isSynced == false`
-            // y el servidor recibió una edición distinta desde otro dispositivo)
-            if (localNote != null && !localNote.isSynced) {
-                val hasDivergentContent = hasNoteContentDiverged(localNote, remoteEntity)
+                // CASO A: La nota está marcada localmente como pendingDelete -> El borrado local gana
+                if (localNote != null && localNote.pendingDelete) {
+                    syncScope.launch {
+                        if (firestoreManager.deleteNote(userId, remoteUuid, context)) {
+                            noteDao.deleteNoteById(localNote.id)
+                        }
+                    }
+                    return@forEach
+                }
 
-                if (localNote.updatedAtServer > 0L &&
-                    remoteUpdatedAt > localNote.updatedAtServer &&
-                    hasDivergentContent
-                ) {
-                    val conflictCopy = localNote.copy(
-                        id = 0,
-                        remoteUuid = UUID.randomUUID().toString(),
-                        userId = userId,
-                        title = "${localNote.title.ifBlank { "Nota" }} (Copia de conflicto)",
-                        isSynced = false,
-                        pendingDelete = false,
-                        updatedAt = System.currentTimeMillis(),
-                        lastModifiedLocal = System.currentTimeMillis()
-                    )
-                    val conflictId = noteDao.insertNote(conflictCopy)
-                    syncToCloud(conflictCopy.copy(id = conflictId))
+                val remoteEntity = map.toNoteEntity(fallbackUserId = userId)
 
-                    applyRemoteNoteToLocal(userId, remoteUuid, remoteEntity, localNote)
-                } else if (localNote.lastModifiedLocal >= remoteUpdatedAt) {
-                    syncToCloud(localNote)
-                } else {
+                // CASO B: La nota local tiene `isSynced == false`
+                if (localNote != null && !localNote.isSynced) {
+                    val hasDivergentContent = hasNoteContentDiverged(localNote, remoteEntity)
+
+                    if (!hasDivergentContent && !hasRemoteNoteChanged(localNote, remoteEntity, localNote.updatedAt)) {
+                        // El servidor ya tiene exactamente nuestros cambios locales: marcar como sincronizada sin re-subir
+                        val resolvedServerTs = if (serverTs > 0L) serverTs else System.currentTimeMillis()
+                        noteDao.markNoteSyncedIfUnchanged(
+                            remoteUuid = remoteUuid,
+                            expectedLocalTimestamp = localNote.lastModifiedLocal,
+                            serverTimestamp = resolvedServerTs
+                        )
+                    } else if (localNote.updatedAtServer > 0L &&
+                        remoteUpdatedAt > localNote.updatedAtServer &&
+                        hasDivergentContent
+                    ) {
+                        val conflictCopy = localNote.copy(
+                            id = 0,
+                            remoteUuid = UUID.randomUUID().toString(),
+                            userId = userId,
+                            title = "${localNote.title.ifBlank { "Nota" }} (Copia de conflicto)",
+                            isSynced = false,
+                            pendingDelete = false,
+                            updatedAt = System.currentTimeMillis(),
+                            lastModifiedLocal = System.currentTimeMillis()
+                        )
+                        val conflictId = noteDao.insertNote(conflictCopy)
+                        syncToCloud(conflictCopy.copy(id = conflictId))
+
+                        applyRemoteNoteToLocal(userId, remoteUuid, remoteEntity, localNote)
+                    } else if (localNote.lastModifiedLocal >= remoteUpdatedAt) {
+                        syncToCloud(localNote)
+                    } else {
+                        applyRemoteNoteToLocal(userId, remoteUuid, remoteEntity, localNote)
+                    }
+                    return@forEach
+                }
+
+                // CASO C: Nota nueva en el dispositivo (`localNote == null`) o nota local sincronizada (`isSynced == true`)
+                // que presenta cambios en Firestore
+                if (localNote == null || hasRemoteNoteChanged(localNote, remoteEntity, remoteUpdatedAt)) {
                     applyRemoteNoteToLocal(userId, remoteUuid, remoteEntity, localNote)
                 }
-                return@forEach
             }
 
-            // CASO C: Nota nueva en el dispositivo (`localNote == null`) o nota local sincronizada (`isSynced == true`)
-            // que presenta cambios en Firestore
-            if (localNote == null || hasRemoteNoteChanged(localNote, remoteEntity, remoteUpdatedAt)) {
-                applyRemoteNoteToLocal(userId, remoteUuid, remoteEntity, localNote)
-            }
-        }
-
-        // CASO D: Reconciliación de eliminaciones remotas (notas previamente sincronizadas localmente
-        // que fueron eliminadas en Firestore desde otro dispositivo)
-        val localUserNotes = noteDao.getAllNotesForUserList(userId)
-        for (localNote in localUserNotes) {
-            if (localNote.userId == userId &&
-                localNote.isSynced &&
-                !localNote.pendingDelete &&
-                localNote.syncEnabled &&
-                localNote.remoteUuid.isNotBlank() &&
-                localNote.remoteUuid !in remoteUuids
-            ) {
-                noteDao.deleteNoteById(localNote.id)
+            // CASO D: Reconciliación de eliminaciones remotas (notas previamente sincronizadas localmente
+            // que fueron eliminadas en Firestore desde otro dispositivo)
+            val localUserNotes = noteDao.getAllNotesForUserList(userId)
+            for (localNote in localUserNotes) {
+                if (localNote.userId == userId &&
+                    localNote.isSynced &&
+                    !localNote.pendingDelete &&
+                    localNote.syncEnabled &&
+                    localNote.remoteUuid.isNotBlank() &&
+                    localNote.remoteUuid !in remoteUuids &&
+                    localNote.remoteUuid !in inFlightNoteUuids
+                ) {
+                    noteDao.deleteNoteById(localNote.id)
+                }
             }
         }
     }
@@ -1335,6 +1726,9 @@ class NoteRepository(
         unregisterNetworkMonitor()
         cloudSyncJob?.cancel()
         cloudSyncJob = null
+        remindersSyncJob?.cancel()
+        remindersSyncJob = null
+        listeningUserId = null
         firestoreManager.clearListeners()
         currentUserId = null
         if (resetToAnonymous) {

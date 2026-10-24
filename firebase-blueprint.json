@@ -144,6 +144,131 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "Reminder": {
+      "title": "Reminder",
+      "description": "A standalone reminder or calendar event synchronized across devices in real time. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "remoteUuid": {
+          "type": "string",
+          "description": "Unique identifier of the reminder/event matching the Firestore document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "itemType": {
+          "type": "string",
+          "description": "Item type: REMINDER or EVENT."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the reminder or calendar event."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes or description."
+        },
+        "location": {
+          "type": "string",
+          "description": "Optional location or meeting link."
+        },
+        "scheduledAt": {
+          "type": "integer",
+          "description": "Start timestamp in epoch milliseconds."
+        },
+        "endTimeMillis": {
+          "type": "integer",
+          "description": "End timestamp in epoch milliseconds for events."
+        },
+        "isAllDay": {
+          "type": "boolean",
+          "description": "Whether the item spans the entire day without a specific hour."
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "Whether the reminder is completed."
+        },
+        "completedAt": {
+          "type": "integer",
+          "description": "Epoch milliseconds when completed, or 0."
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Priority level from 0 (none) to 3 (high)."
+        },
+        "listName": {
+          "type": "string",
+          "description": "Name of the reminder list or calendar category."
+        },
+        "colorHex": {
+          "type": "integer",
+          "description": "ARGB color value for the list or calendar."
+        },
+        "recurrenceRule": {
+          "type": "string",
+          "description": "Recurrence pattern (NONE, DAILY, WEEKDAYS, WEEKLY, MONTHLY, YEARLY)."
+        },
+        "subtasksJson": {
+          "type": "string",
+          "description": "Serialized JSON array of subtasks."
+        },
+        "linkedNoteId": {
+          "type": "integer",
+          "description": "Optional local Note ID linked to this item."
+        },
+        "linkedNoteUuid": {
+          "type": "string",
+          "description": "Optional remoteUuid of the linked Note."
+        },
+        "linkedNoteTitle": {
+          "type": "string",
+          "description": "Cached title of the linked Note."
+        },
+        "alertOffsetMinutes": {
+          "type": "integer",
+          "description": "Minutes before scheduledAt to trigger local alarm."
+        },
+        "lastModifiedLocal": {
+          "type": "integer",
+          "description": "Client-side epoch milliseconds of last local edit."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "remoteUuid",
+        "userId",
+        "itemType",
+        "title",
+        "notes",
+        "location",
+        "scheduledAt",
+        "endTimeMillis",
+        "isAllDay",
+        "isCompleted",
+        "completedAt",
+        "priority",
+        "listName",
+        "colorHex",
+        "recurrenceRule",
+        "subtasksJson",
+        "linkedNoteUuid",
+        "linkedNoteTitle",
+        "alertOffsetMinutes",
+        "lastModifiedLocal",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -152,6 +277,12 @@
         "$ref": "#/entities/Note"
       },
       "description": "User-isolated subcollection storing synchronized notes for each authenticated user."
+    },
+    "/users/{userId}/reminders/{reminderId}": {
+      "schema": {
+        "$ref": "#/entities/Reminder"
+      },
+      "description": "User-isolated subcollection storing synchronized standalone reminders and calendar events for each authenticated user."
     }
   }
 }

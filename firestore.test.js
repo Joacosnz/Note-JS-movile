@@ -170,3 +170,75 @@ test("Immutable fields & value poisoning: rejects tampering with userId, remoteU
     })
   );
 });
+
+const REMINDER_ID = "rem_xyz_789";
+
+function buildValidReminderPayload(userId = ALICE_UID, reminderId = REMINDER_ID, overrides = {}) {
+  const now = new Date(Date.now() - 1000);
+  return {
+    remoteUuid: reminderId,
+    userId: userId,
+    title: "Revisión de proyecto",
+    notes: "Preparar presentación",
+    location: "Sala A",
+    itemType: "REMINDER",
+    scheduledAt: 1700050000000,
+    endTimeMillis: 1700053600000,
+    isAllDay: false,
+    isCompleted: false,
+    completedAt: 0,
+    priority: 2,
+    listName: "Trabajo",
+    colorHex: 0xFF007AFF,
+    recurrenceRule: "WEEKLY",
+    subtasksJson: "[]",
+    linkedNoteId: 12,
+    linkedNoteUuid: NOTE_ID,
+    linkedNoteTitle: "Nota de prueba",
+    alertOffsetMinutes: 15,
+    lastModifiedLocal: 1700000000000,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+test("Reminders: Authenticated owner can create, get, list, update, and delete their own reminder", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const remRef = aliceDb.collection("users").doc(ALICE_UID).collection("reminders").doc(REMINDER_ID);
+
+  await assertSucceeds(remRef.set(buildValidReminderPayload(ALICE_UID, REMINDER_ID)));
+  await assertSucceeds(remRef.get());
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("reminders").get());
+
+  await assertSucceeds(
+    remRef.update({
+      title: "Revisión completada",
+      isCompleted: true,
+      completedAt: 1700060000000,
+      lastModifiedLocal: 1700060000000,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  await assertSucceeds(remRef.delete());
+});
+
+test("Reminders: Cross-user isolation and invalid itemType rejection", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const remRef = aliceDb.collection("users").doc(ALICE_UID).collection("reminders").doc(REMINDER_ID);
+  await assertSucceeds(remRef.set(buildValidReminderPayload(ALICE_UID, REMINDER_ID)));
+
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const aliceRemFromBob = bobDb.collection("users").doc(ALICE_UID).collection("reminders").doc(REMINDER_ID);
+  await assertFails(aliceRemFromBob.get());
+  await assertFails(aliceRemFromBob.delete());
+
+  await assertFails(
+    remRef.update({
+      itemType: "INVALID_TYPE",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+});
+

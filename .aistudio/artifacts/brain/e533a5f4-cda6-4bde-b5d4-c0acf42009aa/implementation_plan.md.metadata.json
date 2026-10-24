@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan de implementación para la integración bidireccional de Recordatorios y Checklists con enlaces profundos a notas en Note JS. Incluye la arquitectura de datos para tareas con fecha y hora, sincronización instantánea de estados entre checklists y tareas globales, pantalla dedicada de Recordatorios con deep links a las notas de origen y programación de notificaciones nativas con AlarmManager/ReminderScheduler.",
-  "updatedAt":  "2026-10-23T22:54:36.653579858Z",
+  "summary":  "Plan de implementación para transformar los recordatorios en un centro independiente de Recordatorios y Calendario con vistas Día, Multi-día, Semana y Mes con zoom, creación híbrida (Recordatorio/Evento), vinculación opcional de notas y sincronización en tiempo real con Firestore y almacenamiento local.",
+  "updatedAt":  "2026-10-24T21:46:34.246737737Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

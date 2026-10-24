@@ -18,20 +18,50 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.components.NoteLockDialog
 import com.example.ui.screens.DrawingScreen
 import com.example.ui.screens.FoldersScreen
 import com.example.ui.screens.HomeScreen
@@ -41,6 +71,9 @@ import com.example.ui.screens.PdfViewerScreen
 import com.example.ui.screens.RemindersScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.NoteJsAmber
+import com.example.ui.theme.NoteJsAmberDark
+import com.example.ui.utils.BiometricAuthManager
 import com.example.util.LauncherIconManager
 import com.example.util.ThemeMode
 import com.example.viewmodel.NotesViewModel
@@ -55,6 +88,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private var openNoteIdState by mutableLongStateOf(0L)
+    private var openReminderIdState by mutableLongStateOf(0L)
     private var createNewNoteState by mutableStateOf(false)
     private var openVoiceDictationState by mutableStateOf(false)
     private var openDocumentScannerState by mutableStateOf(false)
@@ -69,6 +103,7 @@ class MainActivity : FragmentActivity() {
         setContent {
             NotesApp(
                 initialOpenNoteId = openNoteIdState,
+                initialOpenReminderId = openReminderIdState,
                 initialCreateNewNote = createNewNoteState,
                 initialOpenVoiceDictation = openVoiceDictationState,
                 initialOpenDocumentScanner = openDocumentScannerState,
@@ -77,6 +112,7 @@ class MainActivity : FragmentActivity() {
                 initialSharedTitle = sharedTitleState,
                 onNoteOpened = {
                     openNoteIdState = 0L
+                    openReminderIdState = 0L
                     createNewNoteState = false
                     openVoiceDictationState = false
                     openDocumentScannerState = false
@@ -118,6 +154,7 @@ class MainActivity : FragmentActivity() {
         if (intent == null) return
         
         val newNoteId = intent.getLongExtra("EXTRA_OPEN_NOTE_ID", 0L)
+        val reminderId = intent.getLongExtra("EXTRA_OPEN_REMINDER_ID", 0L)
         val createNew = intent.getBooleanExtra("EXTRA_CREATE_NEW_NOTE", false)
         val action = intent.action
         val type = intent.type
@@ -127,6 +164,7 @@ class MainActivity : FragmentActivity() {
             if (data != null && (type == "application/pdf" || data.toString().lowercase().endsWith(".pdf") || intent.scheme == "content" || intent.scheme == "file")) {
                 openPdfUriState = data.toString()
                 openNoteIdState = 0L
+                openReminderIdState = 0L
                 createNewNoteState = false
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -143,6 +181,7 @@ class MainActivity : FragmentActivity() {
                 ?.toString()?.trim()
             if (!selectedText.isNullOrEmpty()) {
                 openNoteIdState = 0L
+                openReminderIdState = 0L
                 createNewNoteState = true
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -167,6 +206,7 @@ class MainActivity : FragmentActivity() {
             }
             if (!fullContent.isNullOrEmpty()) {
                 openNoteIdState = 0L
+                openReminderIdState = 0L
                 createNewNoteState = true
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -181,6 +221,17 @@ class MainActivity : FragmentActivity() {
         when {
             newNoteId > 0L -> {
                 openNoteIdState = newNoteId
+                openReminderIdState = 0L
+                createNewNoteState = false
+                openVoiceDictationState = false
+                openDocumentScannerState = false
+                openPdfUriState = null
+                sharedTextState = null
+                sharedTitleState = null
+            }
+            reminderId > 0L -> {
+                openReminderIdState = reminderId
+                openNoteIdState = 0L
                 createNewNoteState = false
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -190,6 +241,7 @@ class MainActivity : FragmentActivity() {
             }
             createNew || action == ACTION_QUICK_NOTE || action == "com.example.ACTION_NEW_NOTE" -> {
                 openNoteIdState = 0L
+                openReminderIdState = 0L
                 createNewNoteState = true
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -199,6 +251,7 @@ class MainActivity : FragmentActivity() {
             }
             action == ACTION_QUICK_VOICE || action == "com.example.ACTION_VOICE_NOTE" -> {
                 openNoteIdState = 0L
+                openReminderIdState = 0L
                 createNewNoteState = true
                 openVoiceDictationState = true
                 openDocumentScannerState = false
@@ -208,6 +261,7 @@ class MainActivity : FragmentActivity() {
             }
             action == ACTION_QUICK_SCAN || action == "com.example.ACTION_SCAN_DOCUMENT" -> {
                 openNoteIdState = 0L
+                openReminderIdState = 0L
                 createNewNoteState = true
                 openDocumentScannerState = true
                 openVoiceDictationState = false
@@ -226,6 +280,7 @@ class MainActivity : FragmentActivity() {
 @Composable
 fun NotesApp(
     initialOpenNoteId: Long = 0L,
+    initialOpenReminderId: Long = 0L,
     initialCreateNewNote: Boolean = false,
     initialOpenVoiceDictation: Boolean = false,
     initialOpenDocumentScanner: Boolean = false,
@@ -241,6 +296,7 @@ fun NotesApp(
     val canNavigateBack by viewModel.canNavigateBack.collectAsStateWithLifecycle()
     val isNavigatingBack by viewModel.isNavigatingBack.collectAsStateWithLifecycle()
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
+    var isSessionBiometricallyUnlocked by rememberSaveable { mutableStateOf(false) }
 
     val isSystemDark = isSystemInDarkTheme()
     LaunchedEffect(isSystemDark) {
@@ -287,8 +343,23 @@ fun NotesApp(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
+            if (uiState.isAppBiometricLockEnabled && !isSessionBiometricallyUnlocked) {
+                BiometricAppLockScreen(
+                    isDark = isDarkTheme,
+                    expectedPin = uiState.defaultLockPin,
+                    isBiometricEnabled = uiState.isBiometricLockEnabled,
+                    onUnlocked = {
+                        isSessionBiometricallyUnlocked = true
+                    }
+                )
+                return@Surface
+            }
+
+            var pendingOpenReminderId by rememberSaveable { mutableLongStateOf(0L) }
+
             LaunchedEffect(
                 initialOpenNoteId,
+                initialOpenReminderId,
                 initialCreateNewNote,
                 initialOpenVoiceDictation,
                 initialOpenDocumentScanner,
@@ -301,6 +372,10 @@ fun NotesApp(
                     onNoteOpened()
                 } else if (initialOpenNoteId > 0L) {
                     viewModel.navigateTo(Screen.Editor(noteId = initialOpenNoteId))
+                    onNoteOpened()
+                } else if (initialOpenReminderId > 0L) {
+                    pendingOpenReminderId = initialOpenReminderId
+                    viewModel.navigateTo(Screen.Reminders)
                     onNoteOpened()
                 } else if (initialCreateNewNote || initialOpenVoiceDictation || initialOpenDocumentScanner || !initialSharedText.isNullOrEmpty() || !initialSharedTitle.isNullOrEmpty()) {
                     viewModel.navigateTo(
@@ -371,11 +446,170 @@ fun NotesApp(
                         SettingsScreen(viewModel = viewModel)
                     }
                     is Screen.Reminders -> {
-                        RemindersScreen(viewModel = viewModel)
+                        RemindersScreen(
+                            viewModel = viewModel,
+                            initialOpenReminderId = pendingOpenReminderId
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BiometricAppLockScreen(
+    isDark: Boolean,
+    expectedPin: String,
+    isBiometricEnabled: Boolean,
+    onUnlocked: () -> Unit
+) {
+    val context = LocalContext.current
+    val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
+    var showPinDialog by remember { mutableStateOf(false) }
+
+    val triggerBiometricPrompt = {
+        if (isBiometricEnabled) {
+            BiometricAuthManager.authenticateWithBiometrics(
+                context = context,
+                title = "Desbloquear Note JS",
+                subtitle = "Usa tu huella dactilar o reconocimiento facial para acceder a tus notas",
+                onSuccess = onUnlocked,
+                onFallbackToPin = {
+                    showPinDialog = true
+                },
+                onError = { _ -> }
+            )
+        } else {
+            showPinDialog = true
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        triggerBiometricPrompt()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(24.dp)
+            .testTag("biometric_app_lock_screen"),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(88.dp)
+                    .clip(CircleShape)
+                    .background(amber.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Fingerprint,
+                    contentDescription = "Protección Biométrica",
+                    tint = amber,
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Note JS Protegido",
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Tus notas están aseguradas. Verifica tu identidad con huella dactilar, desbloqueo facial o tu PIN de respaldo.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Button(
+                onClick = { triggerBiometricPrompt() },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = amber,
+                    contentColor = Color.Black
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .testTag("btn_app_lock_biometric")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Fingerprint,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Desbloquear con Huella o Rostro",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedButton(
+                onClick = { showPinDialog = true },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .testTag("btn_app_lock_pin")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Key,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Ingresar PIN de Respaldo",
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+
+    if (showPinDialog) {
+        NoteLockDialog(
+            isSettingPin = false,
+            expectedPin = expectedPin,
+            title = "Desbloquear Note JS",
+            subtitle = "Ingresa tu PIN de seguridad o toca el ícono de huella/rostro",
+            autoTriggerBiometric = false,
+            isBiometricEnabled = isBiometricEnabled,
+            onConfirm = { _ ->
+                showPinDialog = false
+                onUnlocked()
+            },
+            onUnlockSuccess = {
+                showPinDialog = false
+                onUnlocked()
+            },
+            onDismiss = {
+                showPinDialog = false
+            }
+        )
     }
 }
 
