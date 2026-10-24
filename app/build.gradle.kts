@@ -8,7 +8,6 @@ plugins {
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -16,7 +15,7 @@ android {
   compileSdk = 35
 
   defaultConfig {
-    val appId = "com.aistudio.NotasJS.kxmpzq"
+    val appId = "com.aistudio.notasjs.vqrmpx"
     applicationId = appId
     minSdk = 24
     targetSdk = 35
@@ -139,9 +138,6 @@ android {
       )
     }
   }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files

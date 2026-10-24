@@ -57,21 +57,12 @@ class AuthManager(private val context: Context) {
      * Este valor proviene directamente de `google-services.json` (oauth_client tipo 3).
      */
     fun getWebClientId(): String {
-        val fromRes = try {
-            val resId = appContext.resources.getIdentifier("default_web_client_id", "string", appContext.packageName)
-            if (resId != 0) {
-                appContext.getString(resId)
-            } else {
-                appContext.getString(R.string.default_web_client_id)
-            }
+        return try {
+            appContext.getString(R.string.default_web_client_id)
         } catch (e: Exception) {
             Log.w(TAG, "No se pudo resolver default_web_client_id desde recursos: ${e.message}")
             ""
         }
-        if (fromRes.isNotBlank()) {
-            return fromRes
-        }
-        return "318447528237-ktfp85ramrfbq9fldrk5hbmhca2e9j4b.apps.googleusercontent.com"
     }
 
     /**
