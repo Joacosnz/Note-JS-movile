@@ -235,7 +235,8 @@ class ReminderViewModel @JvmOverloads constructor(
             // Si tiene regla de recurrencia y se marcó como completado, generar la siguiente ocurrencia
             val entityView = reminder.toReminderEntity()
             if (newCompleted && RecurrenceRule.fromCode(reminder.recurrenceRule) != RecurrenceRule.NONE) {
-                val nextStart = entityView.computeNextOccurrenceMillis()
+                val workdays = com.example.util.WorkdayPreferences.getWorkdays(getApplication())
+                val nextStart = entityView.computeNextOccurrenceMillis(workdays)
                 if (nextStart != null) {
                     val resetSubtasks = entityView.subtasks.map { it.copy(isCompleted = false) }
                     val nextReminder = reminder.copy(

@@ -472,7 +472,7 @@ object DriveSyncManager {
                     }
                     is AudioBlock -> {
                         sb.append("🎙️ **Audio adjunto:** ").append(block.filePath).append("\n")
-                        if (block.transcription.isNotBlank()) {
+                        if (!block.transcription.isNullOrBlank()) {
                             sb.append("*Transcripción:* ").append(block.transcription).append("\n\n")
                         }
                     }

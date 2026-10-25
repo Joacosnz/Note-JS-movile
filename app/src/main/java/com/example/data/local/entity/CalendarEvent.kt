@@ -50,6 +50,8 @@ data class CalendarEvent(
     val userId: String = NoteEntity.LOCAL_ANONYMOUS_USER_ID,
     @ColumnInfo(defaultValue = "'Personal'")
     val listName: String = "Personal",
+    @ColumnInfo(defaultValue = "'[]'")
+    val tags: List<String> = emptyList(),
     @ColumnInfo(defaultValue = "4278221567")
     val colorHex: Long = 0xFF007AFFL,
     @ColumnInfo(defaultValue = "'NONE'")
@@ -87,6 +89,7 @@ data class CalendarEvent(
             completedAt = if (isCompleted) updatedAt else 0L,
             priority = 0,
             listName = listName,
+            tags = tags,
             colorHex = colorHex,
             recurrenceRule = recurrenceRule,
             subtasksJson = "[]",
@@ -118,6 +121,7 @@ data class CalendarEvent(
                 remoteUuid = entity.remoteUuid,
                 userId = entity.userId,
                 listName = entity.listName,
+                tags = entity.tags,
                 colorHex = entity.colorHex,
                 recurrenceRule = entity.recurrenceRule,
                 linkedNoteUuid = entity.linkedNoteUuid,

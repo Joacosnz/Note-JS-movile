@@ -22,7 +22,7 @@ data class ChecklistItem(
     val isChecked: Boolean = false,
     val reminderTimestamp: Long? = null,
     val isReminderDone: Boolean = false,
-    val priority: Int = 0 // 0=Normal, 1=Baja, 2=Media, 3=Alta/Urgente
+    val priority: Int = 0 // 0=Ninguna, 1=Baja, 2=Media, 3=Urgente
 )
 
 /**

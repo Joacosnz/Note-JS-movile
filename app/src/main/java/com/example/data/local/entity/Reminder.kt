@@ -46,6 +46,8 @@ data class Reminder(
     val priority: Int = 0,
     @ColumnInfo(defaultValue = "'Personal'")
     val listName: String = "Personal",
+    @ColumnInfo(defaultValue = "'[]'")
+    val tags: List<String> = emptyList(),
     @ColumnInfo(defaultValue = "4278221567")
     val colorHex: Long = 0xFF007AFFL,
     @ColumnInfo(defaultValue = "'NONE'")
@@ -87,6 +89,7 @@ data class Reminder(
             completedAt = completedAt,
             priority = priority,
             listName = listName,
+            tags = tags,
             colorHex = colorHex,
             recurrenceRule = recurrenceRule,
             subtasksJson = subtasksJson,
@@ -116,6 +119,7 @@ data class Reminder(
                 userId = entity.userId,
                 priority = entity.priority,
                 listName = entity.listName,
+                tags = entity.tags,
                 colorHex = entity.colorHex,
                 recurrenceRule = entity.recurrenceRule,
                 subtasksJson = entity.subtasksJson,

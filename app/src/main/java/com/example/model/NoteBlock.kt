@@ -31,19 +31,20 @@ data class SignatureStamp(
 
 typealias PdfBlock = NoteBlock.Pdf
 typealias ImageBlock = NoteBlock.ImageBlock
-
-data class AudioBlock(
-    override val id: String = UUID.randomUUID().toString(),
-    val filePath: String,                   // Ruta absoluta local en filesDir
-    var remoteUrl: String = "",             // URL de descarga de Firebase Cloud Storage
-    val durationMs: Long,                   // Duración total en milisegundos
-    var transcription: String = "",         // Texto transcrito
-    var isTranscribing: Boolean = false,    // true mientras se procesa el audio
-    var isTranscriptionVisible: Boolean = false // Controla si se muestra u oculta el texto
-) : NoteBlock
+typealias AudioBlock = NoteBlock.Audio
 
 sealed interface NoteBlock {
     val id: String
+
+    data class Audio(
+        override val id: String = UUID.randomUUID().toString(),
+        val filePath: String,                   // Ruta absoluta local en filesDir
+        var remoteUrl: String = "",             // URL de descarga de Firebase Cloud Storage
+        val durationMs: Long = 0L,              // Duración total en milisegundos
+        var transcription: String? = "",        // Texto transcrito
+        var isTranscribing: Boolean = false,    // true mientras se procesa el audio
+        var isTranscriptionVisible: Boolean = false // Controla si se muestra u oculta el texto
+    ) : NoteBlock
 
     data class Pdf(
         override val id: String = UUID.randomUUID().toString(),

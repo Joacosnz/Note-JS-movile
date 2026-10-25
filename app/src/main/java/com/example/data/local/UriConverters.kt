@@ -67,6 +67,26 @@ class UriConverters {
             emptyList()
         }
     }
+
+    @TypeConverter
+    fun fromStringList(value: List<String>): String {
+        return JSONArray(value).toString()
+    }
+
+    @TypeConverter
+    fun toStringList(value: String): List<String> {
+        if (value.isBlank()) return emptyList()
+        return try {
+            val arr = JSONArray(value)
+            val list = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                list.add(arr.getString(i))
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
 }
 
 

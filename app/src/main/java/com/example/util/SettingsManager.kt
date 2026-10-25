@@ -49,6 +49,9 @@ class SettingsManager(context: Context) {
     private val _isAppBiometricLockEnabled = MutableStateFlow(isAppBiometricLockEnabled())
     val isAppBiometricLockEnabled: StateFlow<Boolean> = _isAppBiometricLockEnabled.asStateFlow()
 
+    private val _workdays = MutableStateFlow(getWorkdays())
+    val workdays: StateFlow<Set<Int>> = _workdays.asStateFlow()
+
     fun getThemeMode(): ThemeMode {
         val name = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
         return try {
@@ -155,6 +158,20 @@ class SettingsManager(context: Context) {
         prefs.edit().putString(KEY_MANUAL_NOTE_ORDER, order.joinToString(",")).apply()
     }
 
+    fun getWorkdays(): Set<Int> {
+        val raw = prefs.getStringSet(KEY_WORKDAYS, null)
+        if (raw == null) {
+            // Default to Monday to Friday (java.time.DayOfWeek: 1..5)
+            return setOf(1, 2, 3, 4, 5)
+        }
+        return raw.mapNotNull { it.toIntOrNull() }.toSet()
+    }
+
+    fun setWorkdays(days: Set<Int>) {
+        prefs.edit().putStringSet(KEY_WORKDAYS, days.map { it.toString() }.toSet()).apply()
+        _workdays.value = days
+    }
+
     companion object {
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_PAPER_THEME_MODE = "key_paper_theme_mode"
@@ -166,5 +183,6 @@ class SettingsManager(context: Context) {
         private const val KEY_BIOMETRIC_LOCK_ENABLED = "key_biometric_lock_enabled"
         private const val KEY_APP_BIOMETRIC_LOCK_ENABLED = "key_app_biometric_lock_enabled"
         private const val KEY_MANUAL_NOTE_ORDER = "key_manual_note_order"
+        private const val KEY_WORKDAYS = "key_workdays"
     }
 }

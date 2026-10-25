@@ -313,7 +313,7 @@ fun ChecklistItemReminderDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         val priorities = listOf(
-                            0 to "Normal",
+                            0 to "Ninguna",
                             1 to "Baja",
                             2 to "Media",
                             3 to "Urgente"

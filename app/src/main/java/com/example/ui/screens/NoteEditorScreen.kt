@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableLongStateOf
+import kotlinx.coroutines.isActive
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -10,10 +13,19 @@ import android.content.pm.PackageManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.widget.Toast
+import java.io.FileOutputStream
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import kotlinx.coroutines.Job
 import com.example.util.getKeyboardLanguage
 import com.example.util.MathEvaluator
+import com.example.util.AudioRecorderHelper
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.AnimatedVisibility
@@ -104,6 +116,13 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
+import androidx.core.content.ContextCompat
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -159,7 +178,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -868,90 +889,250 @@ fun NoteEditorScreen(
         }
     }
 
-    val voiceRecognitionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val data = result.data
-            val matches = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val text = matches?.firstOrNull() ?: ""
-            
-            @Suppress("DEPRECATION")
-            val audioUri: Uri? = data?.data ?: data?.getParcelableExtra("android.speech.extra.AUDIO_URI")
-            
-            if (text.isNotBlank()) {
-                coroutineScope.launch(Dispatchers.IO) {
-                    var localPath = ""
-                    var durationMs = 0L
-                    
-                    if (audioUri != null) {
-                        try {
-                            val inputStream = context.contentResolver.openInputStream(audioUri)
-                            val audioDir = File(context.filesDir, "audio")
-                            if (!audioDir.exists()) audioDir.mkdirs()
-                            val destFile = File(audioDir, "audio_${UUID.randomUUID()}.amr")
-                            inputStream?.use { input ->
-                                destFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                            localPath = destFile.absolutePath
-                            
-                            val retriever = MediaMetadataRetriever()
-                            try {
-                                retriever.setDataSource(localPath)
-                                durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            } finally {
-                                retriever.release()
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
+    var recordingPath by remember { mutableStateOf<String?>(null) }
+    var nativeSpeechRecognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
+    var activeAudioRecord by remember { mutableStateOf<AudioRecord?>(null) }
+    var audioRecordJob by remember { mutableStateOf<Job?>(null) }
+    var isAudioRecordingActive by remember { mutableStateOf(false) }
 
-                    withContext(Dispatchers.Main) {
-                        saveSnapshot()
-                        val newId = UUID.randomUUID().toString()
-                        
-                        val newBlock = if (localPath.isNotBlank()) {
-                            AudioBlock(
-                                id = newId,
-                                filePath = localPath,
-                                durationMs = durationMs,
-                                transcription = text,
-                                isTranscribing = false,
-                                isTranscriptionVisible = true
-                            )
-                        } else {
-                            NoteBlock.Text(id = newId, content = text)
-                        }
-                        
-                        val targetIndex = if (focusedBlockId != null) {
-                            blocks.indexOfFirst { it.id == focusedBlockId }
-                        } else -1
+    fun writeWavHeaderFile(file: File, totalAudioLen: Long, sampleRate: Int = 16000, channels: Int = 1) {
+        val totalDataLen = totalAudioLen + 36
+        val byteRate = sampleRate * channels * 2
+        val header = ByteArray(44)
+        header[0] = 'R'.code.toByte()
+        header[1] = 'I'.code.toByte()
+        header[2] = 'F'.code.toByte()
+        header[3] = 'F'.code.toByte()
+        header[4] = (totalDataLen and 0xff).toByte()
+        header[5] = (totalDataLen shr 8 and 0xff).toByte()
+        header[6] = (totalDataLen shr 16 and 0xff).toByte()
+        header[7] = (totalDataLen shr 24 and 0xff).toByte()
+        header[8] = 'W'.code.toByte()
+        header[9] = 'A'.code.toByte()
+        header[10] = 'V'.code.toByte()
+        header[11] = 'E'.code.toByte()
+        header[12] = 'f'.code.toByte()
+        header[13] = 'm'.code.toByte()
+        header[14] = 't'.code.toByte()
+        header[15] = ' '.code.toByte()
+        header[16] = 16
+        header[17] = 0
+        header[18] = 0
+        header[19] = 0
+        header[20] = 1 // PCM
+        header[21] = 0
+        header[22] = channels.toByte()
+        header[23] = 0
+        header[24] = (sampleRate and 0xff).toByte()
+        header[25] = (sampleRate shr 8 and 0xff).toByte()
+        header[26] = (sampleRate shr 16 and 0xff).toByte()
+        header[27] = (sampleRate shr 24 and 0xff).toByte()
+        header[28] = (byteRate and 0xff).toByte()
+        header[29] = (byteRate shr 8 and 0xff).toByte()
+        header[30] = (byteRate shr 16 and 0xff).toByte()
+        header[31] = (byteRate shr 24 and 0xff).toByte()
+        header[32] = (channels * 16 / 8).toByte()
+        header[33] = 0
+        header[34] = 16
+        header[35] = 0
+        header[36] = 'd'.code.toByte()
+        header[37] = 'a'.code.toByte()
+        header[38] = 't'.code.toByte()
+        header[39] = 'a'.code.toByte()
+        header[40] = (totalAudioLen and 0xff).toByte()
+        header[41] = (totalAudioLen shr 8 and 0xff).toByte()
+        header[42] = (totalAudioLen shr 16 and 0xff).toByte()
+        header[43] = (totalAudioLen shr 24 and 0xff).toByte()
 
-                        if (targetIndex != -1) {
-                            val currentBlock = blocks[targetIndex]
-                            val isEmptyText = currentBlock is NoteBlock.Text && currentBlock.content.isEmpty()
-                            if (isEmptyText) {
-                                blocks[targetIndex] = newBlock
-                            } else {
-                                blocks.add(targetIndex + 1, newBlock)
-                            }
-                        } else {
-                            blocks.add(newBlock)
+        try {
+            java.io.RandomAccessFile(file, "rw").use { raf ->
+                raf.seek(0)
+                raf.write(header, 0, 44)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun stopAudioPcmRecord(): File? {
+        isAudioRecordingActive = false
+        try {
+            activeAudioRecord?.stop()
+            activeAudioRecord?.release()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        activeAudioRecord = null
+        audioRecordJob?.cancel()
+        audioRecordJob = null
+
+        val path = recordingPath
+        recordingPath = null
+        return if (!path.isNullOrBlank()) File(path) else null
+    }
+
+    fun finishVoiceDictationSession(transcriptionText: String = "") {
+        coroutineScope.launch {
+            val file = stopAudioPcmRecord()
+
+            try {
+                nativeSpeechRecognizer?.stopListening()
+                nativeSpeechRecognizer?.destroy()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            nativeSpeechRecognizer = null
+
+            var audioPathToUse = ""
+            var durationMs = 0L
+            var finalTranscription = transcriptionText.trim()
+
+            if (file != null && file.exists() && file.length() > 44) {
+                audioPathToUse = file.absolutePath
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(file.absolutePath)
+                    durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    retriever.release()
+                }
+
+                if (finalTranscription.isBlank()) {
+                    try {
+                        val result = GeminiAudioTranscriber.transcribeAudio(file = file, context = context)
+                        if (result.isNotBlank()) {
+                            finalTranscription = result
                         }
-                        targetFocusBlockId = newId
-                        focusedBlockId = newId
-                        // The note logic handles saveAndExit inside NoteEditorScreen down below.
-                        // We will need to launch a ViewModel method if saveAndExit is out of scope here.
-                        // Actually, let's just trigger a re-render. Since we updated `blocks`, 
-                        // the BackHandler/Save logic will pick it up, or we can just leave it to auto-save.
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
             }
+
+            if (audioPathToUse.isNotBlank() || finalTranscription.isNotBlank()) {
+                saveSnapshot()
+                val newId = UUID.randomUUID().toString()
+                val audioBlock = NoteBlock.Audio(
+                    id = newId,
+                    filePath = audioPathToUse,
+                    durationMs = durationMs,
+                    transcription = finalTranscription,
+                    isTranscriptionVisible = true
+                )
+
+                val targetId = focusedBlockId
+                if (targetId != null) {
+                    val realIdx = blocks.indexOfFirst { it.id == targetId }
+                    if (realIdx != -1) {
+                        blocks.add(realIdx + 1, audioBlock)
+                    } else {
+                        blocks.add(audioBlock)
+                    }
+                } else {
+                    blocks.add(audioBlock)
+                }
+                focusedBlockId = newId
+                targetFocusBlockId = newId
+            }
+        }
+    }
+
+    fun launchVoiceRecognition() {
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            Toast.makeText(context, "El dictado por voz nativo no está disponible", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sampleRate = 16000
+        val channelConfig = AudioFormat.CHANNEL_IN_MONO
+        val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+        val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+        val bufferSize = Math.max(minBufferSize, 2048)
+
+        var record: AudioRecord? = null
+        try {
+            record = AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            )
+            record.startRecording()
+            activeAudioRecord = record
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        val audioDir = File(context.filesDir, "audio").apply { if (!exists()) mkdirs() }
+        val wavFile = File(audioDir, "audio_${UUID.randomUUID()}.wav")
+        recordingPath = wavFile.absolutePath
+        isAudioRecordingActive = true
+
+        if (record != null) {
+            audioRecordJob = coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    FileOutputStream(wavFile).use { fos ->
+                        fos.write(ByteArray(44))
+                        val buffer = ByteArray(bufferSize)
+                        var totalBytesWritten = 0L
+
+                        while (isActive && isAudioRecordingActive) {
+                            val readBytes = record.read(buffer, 0, buffer.size)
+                            if (readBytes > 0) {
+                                fos.write(buffer, 0, readBytes)
+                                totalBytesWritten += readBytes
+                            }
+                        }
+                        fos.flush()
+                        writeWavHeaderFile(wavFile, totalBytesWritten, sampleRate, 1)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        try {
+            nativeSpeechRecognizer?.destroy()
+            val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+            nativeSpeechRecognizer = recognizer
+
+            recognizer.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {}
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+
+                override fun onError(error: Int) {
+                    finishVoiceDictationSession()
+                }
+
+                override fun onResults(results: Bundle?) {
+                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    val spokenText = matches?.firstOrNull() ?: ""
+                    finishVoiceDictationSession(spokenText)
+                }
+
+                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            }
+            recognizer.startListening(intent)
+            Toast.makeText(context, "Dictado nativo activado... Habla ahora", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            finishVoiceDictationSession()
         }
     }
 
@@ -960,20 +1141,7 @@ fun NoteEditorScreen(
     LaunchedEffect(triggerVoiceDictation) {
         if (triggerVoiceDictation) {
             triggerVoiceDictation = false
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                val lang = getKeyboardLanguage(context)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra("android.speech.extra.GET_AUDIO_FORMAT", "audio/AMR")
-                putExtra("android.speech.extra.GET_AUDIO", true)
-            }
-            try {
-                voiceRecognitionLauncher.launch(intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "El reconocimiento de voz no está disponible en este dispositivo.", Toast.LENGTH_SHORT).show()
-            }
+            launchVoiceRecognition()
         }
     }
 
@@ -1677,21 +1845,8 @@ fun NoteEditorScreen(
                                 )
                             },
                             onStartAudioDictation = {
-                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                val lang = getKeyboardLanguage(context)
-                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
-                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
-                                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                                putExtra("android.speech.extra.GET_AUDIO_FORMAT", "audio/AMR")
-                                putExtra("android.speech.extra.GET_AUDIO", true)
-                            }
-                            try {
-                                voiceRecognitionLauncher.launch(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "El reconocimiento de voz no está disponible en este dispositivo.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
+                                launchVoiceRecognition()
+                            },
                         onToggleBold = { isBoldActive = !isBoldActive },
                         onToggleItalic = { isItalicActive = !isItalicActive },
                         onToggleHighlight = {
@@ -1741,6 +1896,8 @@ fun NoteEditorScreen(
             }
         }
     }
+
+
 
     EditorDialogs(
         showFontSizeCarouselSheet = showFontSizeCarouselSheet,

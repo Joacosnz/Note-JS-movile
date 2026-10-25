@@ -154,7 +154,7 @@ object NoteBlockSerializer {
                     obj.put("filePath", block.filePath)
                     obj.put("remoteUrl", block.remoteUrl)
                     obj.put("durationMs", block.durationMs)
-                    obj.put("transcription", block.transcription)
+                    obj.put("transcription", block.transcription ?: "")
                     obj.put("isTranscribing", block.isTranscribing)
                     obj.put("isTranscriptionVisible", block.isTranscriptionVisible)
                 }

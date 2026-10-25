@@ -148,7 +148,7 @@ fun RemindersScreen(
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
 
-    var viewMode by rememberSaveable { mutableStateOf(CalendarViewMode.MONTH) }
+    var viewMode by rememberSaveable { mutableStateOf(CalendarViewMode.DAY) }
     var selectedSmartTab by rememberSaveable { mutableStateOf(SmartListTab.HOY) }
     var selectedDateMillis by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -479,28 +479,7 @@ fun RemindersScreen(
                         }
                     )
                 }
-                items(CalendarCategoryPresets.defaults) { preset ->
-                    val selected = selectedCategory.equals(preset.name, ignoreCase = true)
-                    FilterChip(
-                        selected = selected,
-                        onClick = {
-                            selectedCategory = if (selected) null else preset.name
-                        },
-                        label = { Text(preset.name, fontSize = 11.sp) },
-                        leadingIcon = {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(preset.colorHex))
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(preset.colorHex).copy(alpha = 0.22f),
-                            selectedLabelColor = Color(preset.colorHex)
-                        )
-                    )
-                }
+
             }
 
             HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
@@ -727,6 +706,10 @@ fun RemindersScreen(
         }
     }
 
+    val allTags = remember(calendarReminders) {
+        calendarReminders.flatMap { it.tags }.toSet().toList().sorted()
+    }
+
     // Modal Híbrido de Creación / Edición ([ Recordatorio | Evento ])
     if (showHybridModal) {
         HybridCalendarItemSheet(
@@ -735,6 +718,7 @@ fun RemindersScreen(
             initialIsAllDay = modalInitialIsAllDay,
             initialItemType = modalInitialType,
             availableNotes = uiState.activeNotes,
+            allTags = allTags,
             amber = amber,
             onDismiss = {
                 showHybridModal = false

@@ -273,7 +273,7 @@ class NoteRepository(
                     if (block.fileName.isNotBlank()) textParts.add(block.fileName)
                 }
                 is AudioBlock -> {
-                    if (block.transcription.isNotBlank()) textParts.add(block.transcription)
+                    block.transcription?.takeIf { it.isNotBlank() }?.let { textParts.add(it) }
                 }
                 is NoteBlock.ImageBlock -> {}
                 is NoteBlock.Image -> {

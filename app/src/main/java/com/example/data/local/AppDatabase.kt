@@ -1,5 +1,6 @@
 package com.example.data.local
 
+import android.content.ContentValues
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
@@ -22,6 +23,8 @@ import com.example.data.local.entity.ReminderEntity
 import com.example.data.local.entity.SignatureEntity
 import com.example.data.local.entity.WebLinkCacheEntity
 
+import java.util.UUID
+
 @Database(
     entities = [
         NoteEntity::class,
@@ -33,11 +36,12 @@ import com.example.data.local.entity.WebLinkCacheEntity
         Reminder::class,
         CalendarEvent::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = false,
 )
 @TypeConverters(UriConverters::class)
 abstract class AppDatabase : RoomDatabase() {
+
 
     abstract fun noteDao(): NoteDao
     abstract fun folderDao(): FolderDao
@@ -340,6 +344,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reminders ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE reminder_items ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE calendar_events ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -358,8 +370,62 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_13_14,
                         MIGRATION_14_15,
                         MIGRATION_15_16,
-                        MIGRATION_16_17
+                        MIGRATION_16_17,
+                        MIGRATION_17_18
                     )
+                    .addCallback(object : RoomDatabase.Callback() {
+                        override fun onCreate(db: SupportSQLiteDatabase) {
+                            super.onCreate(db)
+                            val now = System.currentTimeMillis()
+                            val uuid = UUID.randomUUID().toString()
+                            val welcomeTitle = "¡Bienvenido a Note JS \ud83d\ude80!"
+                            val welcomeContent = """[
+                                {"type": "text", "id": "t1", "content": "¡Bienvenido a Note JS \ud83d\ude80!", "style": "H1", "isCollapsed": false, "isIndented": true},
+                                {"type": "text", "id": "t2", "content": "Recordatorios", "style": "H2", "isCollapsed": false, "isIndented": true},
+                                {"type": "checklist", "id": "c1", "content": "Crea y organiza tus recordatorios.", "isChecked": false},
+                                {"type": "checklist", "id": "c2", "content": "Recibe notificaciones a tiempo.", "isChecked": false},
+                                {"type": "text", "id": "t3", "content": "Grabadora de Voz", "style": "H2", "isCollapsed": false, "isIndented": true},
+                                {"type": "checklist", "id": "c3", "content": "Graba tus ideas rápidamente.", "isChecked": false},
+                                {"type": "text", "id": "t4", "content": "Las matemáticas en línea se ven así: ${'$'}x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}${'$'} directo en el texto.", "style": "BODY", "isCollapsed": false, "isIndented": true},
+                                {"type": "math", "id": "m1", "latexCode": "\\int_a^b x^2 dx = \\frac{b^3 - a^3}{3}"}
+                            ]""".trimIndent()
+                            
+                            val values = ContentValues().apply {
+                                put("remoteUuid", uuid)
+                                put("userId", NoteEntity.LOCAL_ANONYMOUS_USER_ID)
+                                put("title", welcomeTitle)
+                                put("content", welcomeContent)
+                                put("isPinned", 1)
+                                put("createdAt", now)
+                                put("updatedAt", now)
+                                put("isSynced", 0)
+                                put("pendingDelete", 0)
+                                put("lastModifiedLocal", now)
+                                put("updatedAtServer", 0)
+                                put("noteType", "TEXT")
+                                put("colorIndex", 0)
+                                put("paperStyle", "BLANK")
+                                put("isArchived", 0)
+                                put("isTrashed", 0)
+                                put("isLocked", 0)
+                                put("lockPin", "")
+                                put("tags", "")
+                                put("folder", "Notas")
+                                put("checklistData", "")
+                                put("drawingData", "")
+                                put("mathEvaluations", "")
+                                put("pdfPath", "")
+                                put("pdfAnnotationData", "")
+                                put("isReminderDone", 0)
+                                put("remoteImageUrl", "")
+                                put("remoteUrl", "")
+                                put("attachmentsJson", "[]")
+                                put("searchableText", "")
+                                put("syncEnabled", 1)
+                            }
+                            db.insert("notes", android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, values)
+                        }
+                    })
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                 INSTANCE = instance

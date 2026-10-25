@@ -639,7 +639,7 @@ fun EditorBlockList(
                         )
                     }
 
-                    is AudioBlock -> {
+                    is NoteBlock.Audio -> {
                         AudioBlockItem(
                             block = block,
                             onToggleTranscription = {

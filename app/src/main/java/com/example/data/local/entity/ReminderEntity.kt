@@ -80,24 +80,18 @@ object ReminderSubtaskSerializer {
     }
 }
 
-data class CalendarCategoryPreset(
-    val name: String,
-    val colorHex: Long
-)
-
 object CalendarCategoryPresets {
-    val defaults = listOf(
-        CalendarCategoryPreset("Personal", 0xFF007AFFL),
-        CalendarCategoryPreset("Trabajo", 0xFFFF9500L),
-        CalendarCategoryPreset("Estudio", 0xFFAF52DEL),
-        CalendarCategoryPreset("Compras", 0xFF34C759L),
-        CalendarCategoryPreset("Salud", 0xFFFF2D55L),
-        CalendarCategoryPreset("Finanzas", 0xFF5AC8FAL),
-        CalendarCategoryPreset("Proyectos", 0xFF5856D6L)
-    )
-
     fun colorForList(name: String, fallback: Long = 0xFF007AFFL): Long {
-        return defaults.firstOrNull { it.name.equals(name, ignoreCase = true) }?.colorHex ?: fallback
+        val hash = name.hashCode()
+        // Generate a pseudo-random color based on the name hash
+        val r = (hash and 0xFF0000) shr 16
+        val g = (hash and 0x00FF00) shr 8
+        val b = hash and 0x0000FF
+        // Make it somewhat bright
+        val brightR = (r + 128).coerceAtMost(255)
+        val brightG = (g + 128).coerceAtMost(255)
+        val brightB = (b + 128).coerceAtMost(255)
+        return 0xFF000000L or (brightR.toLong() shl 16) or (brightG.toLong() shl 8) or brightB.toLong()
     }
 }
 
@@ -133,9 +127,11 @@ data class ReminderEntity(
     @ColumnInfo(defaultValue = "0")
     val completedAt: Long = 0L,
     @ColumnInfo(defaultValue = "0")
-    val priority: Int = 0, // 0=Ninguna, 1=Baja (!), 2=Media (!!), 3=Alta (!!!)
+    val priority: Int = 0, // 0=Ninguna, 1=Baja, 2=Media, 3=Urgente
     @ColumnInfo(defaultValue = "'Personal'")
     val listName: String = "Personal",
+    @ColumnInfo(defaultValue = "'[]'")
+    val tags: List<String> = emptyList(),
     @ColumnInfo(defaultValue = "4278221567")
     val colorHex: Long = 0xFF007AFFL,
     @ColumnInfo(defaultValue = "'NONE'")
@@ -186,17 +182,18 @@ data class ReminderEntity(
     val subtasks: List<ReminderSubtask>
         get() = ReminderSubtaskSerializer.deserialize(subtasksJson)
 
-    fun computeNextOccurrenceMillis(): Long? {
+    fun computeNextOccurrenceMillis(workdays: Set<Int> = setOf(1, 2, 3, 4, 5)): Long? {
         val rule = RecurrenceRule.fromCode(recurrenceRule)
         if (rule == RecurrenceRule.NONE) return null
         val cal = Calendar.getInstance().apply { timeInMillis = scheduledAt }
+        val effectiveWorkdays = if (workdays.isEmpty()) setOf(1, 2, 3, 4, 5) else workdays
         when (rule) {
             RecurrenceRule.DAILY -> cal.add(Calendar.DAY_OF_YEAR, 1)
             RecurrenceRule.WEEKDAYS -> {
                 do {
                     cal.add(Calendar.DAY_OF_YEAR, 1)
-                    val dow = cal.get(Calendar.DAY_OF_WEEK)
-                } while (dow == Calendar.SATURDAY || dow == Calendar.SUNDAY)
+                    val dow = calendarDayToIsoDayOfWeek(cal)
+                } while (!effectiveWorkdays.contains(dow))
             }
             RecurrenceRule.WEEKLY -> cal.add(Calendar.WEEK_OF_YEAR, 1)
             RecurrenceRule.MONTHLY -> cal.add(Calendar.MONTH, 1)
@@ -210,7 +207,11 @@ data class ReminderEntity(
      * Checks if this item (or its recurrence projection) falls on the given calendar day [dayStartMillis, dayEndMillis].
      * If it is a recurring item, returns a projected copy with `scheduledAt` shifted to that day's hour/minute.
      */
-    fun projectOntoDay(dayStartMillis: Long, dayEndMillis: Long): ReminderEntity? {
+    fun projectOntoDay(
+        dayStartMillis: Long,
+        dayEndMillis: Long,
+        workdays: Set<Int> = setOf(1, 2, 3, 4, 5)
+    ): ReminderEntity? {
         if (scheduledAt in dayStartMillis..dayEndMillis) {
             return this
         }
@@ -234,11 +235,12 @@ data class ReminderEntity(
             set(Calendar.MILLISECOND, 0)
         }
 
+        val effectiveWorkdays = if (workdays.isEmpty()) setOf(1, 2, 3, 4, 5) else workdays
         val matches = when (rule) {
             RecurrenceRule.DAILY -> true
             RecurrenceRule.WEEKDAYS -> {
-                val dow = targetCal.get(Calendar.DAY_OF_WEEK)
-                dow != Calendar.SATURDAY && dow != Calendar.SUNDAY
+                val dow = calendarDayToIsoDayOfWeek(targetCal)
+                effectiveWorkdays.contains(dow)
             }
             RecurrenceRule.WEEKLY -> {
                 targetCal.get(Calendar.DAY_OF_WEEK) == sourceCal.get(Calendar.DAY_OF_WEEK)
@@ -260,6 +262,19 @@ data class ReminderEntity(
             scheduledAt = newStart,
             endTimeMillis = if (duration > 0L) newStart + duration else 0L
         )
+    }
+
+    private fun calendarDayToIsoDayOfWeek(cal: Calendar): Int {
+        return when (cal.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> 1
+            Calendar.TUESDAY -> 2
+            Calendar.WEDNESDAY -> 3
+            Calendar.THURSDAY -> 4
+            Calendar.FRIDAY -> 5
+            Calendar.SATURDAY -> 6
+            Calendar.SUNDAY -> 7
+            else -> 1
+        }
     }
 
     companion object {

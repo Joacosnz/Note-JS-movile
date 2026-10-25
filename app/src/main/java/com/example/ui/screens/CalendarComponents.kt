@@ -1234,7 +1234,7 @@ fun CalendarItemTaxonomyCard(
                             color = itemColor.copy(alpha = 0.25f)
                         ) {
                             Text(
-                                text = item.listName,
+                                text = if (item.tags.isNotEmpty()) item.tags.joinToString(" ") else item.listName,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = itemColor,
@@ -1364,15 +1364,32 @@ fun CalendarItemTaxonomyCard(
                         horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         if (item.priority > 0) {
-                            Text(
-                                text = "!".repeat(item.priority),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            val prioLabel = when (item.priority) {
+                                1 -> "Baja"
+                                2 -> "Media"
+                                3 -> "Urgente"
+                                else -> ""
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
                                 color = when (item.priority) {
-                                    3 -> Color(0xFFFF3B30)
-                                    2 -> Color(0xFFFF9500)
-                                    else -> itemColor
+                                    3 -> Color(0xFFFF3B30).copy(alpha = 0.2f)
+                                    2 -> Color(0xFFFF9500).copy(alpha = 0.2f)
+                                    else -> Color(0xFF34C759).copy(alpha = 0.2f)
                                 }
-                            )
+                            ) {
+                                Text(
+                                    text = prioLabel,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when (item.priority) {
+                                        3 -> Color(0xFFFF3B30)
+                                        2 -> Color(0xFFFF9500)
+                                        else -> Color(0xFF34C759)
+                                    },
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                         Text(
                             text = item.title,
@@ -1398,9 +1415,11 @@ fun CalendarItemTaxonomyCard(
                         )
 
                         Text(
-                            text = "• ${item.listName}",
+                            text = if (item.tags.isNotEmpty()) "• ${item.tags.joinToString(" ")}" else "• ${item.listName}",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = itemColor
+                            color = itemColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
 
                         if (subtasks.isNotEmpty()) {
@@ -1464,6 +1483,7 @@ fun HybridCalendarItemSheet(
     initialIsAllDay: Boolean,
     initialItemType: CalendarItemType = CalendarItemType.REMINDER,
     availableNotes: List<NoteEntity>,
+    allTags: List<String> = emptyList(),
     amber: Color,
     onDismiss: () -> Unit,
     onSave: (ReminderEntity) -> Unit,
@@ -1496,6 +1516,9 @@ fun HybridCalendarItemSheet(
     var priority by remember(existingItem) { mutableIntStateOf(existingItem?.priority ?: 0) }
     var listName by remember(existingItem) {
         mutableStateOf(existingItem?.listName ?: "Personal")
+    }
+    var tags by remember(existingItem) {
+        mutableStateOf(existingItem?.tags ?: emptyList())
     }
     var colorHex by remember(existingItem) {
         mutableLongStateOf(existingItem?.colorHex ?: CalendarCategoryPresets.colorForList("Personal"))
@@ -1782,37 +1805,103 @@ fun HybridCalendarItemSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Categoría / Lista con colores estilo Apple Reminders
+            // Etiquetas (Hashtags)
             Text(
-                text = "LISTA / CATEGORÍA",
+                text = "ETIQUETAS",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(6.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(CalendarCategoryPresets.defaults) { preset ->
-                    val selected = listName.equals(preset.name, ignoreCase = true)
+
+            var showAddTagDialog by remember { mutableStateOf(false) }
+            var newTagText by remember { mutableStateOf("") }
+            
+            // Unificamos las etiquetas disponibles globalmente con las seleccionadas localmente (por si el usuario acaba de agregar una nueva)
+            val displayedTags = remember(allTags, tags) {
+                (allTags + tags).distinct().sorted()
+            }
+
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                displayedTags.forEach { tag ->
+                    val isSelected = tags.contains(tag)
                     FilterChip(
-                        selected = selected,
+                        selected = isSelected,
                         onClick = {
-                            listName = preset.name
-                            colorHex = preset.colorHex
+                            tags = if (isSelected) tags - tag else tags + tag
+                            if (colorHex == 0xFF007AFFL && tags.isNotEmpty()) {
+                                colorHex = CalendarCategoryPresets.colorForList(tags.first())
+                            }
                         },
-                        label = { Text(preset.name, fontSize = 12.sp) },
-                        leadingIcon = {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(preset.colorHex))
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(preset.colorHex).copy(alpha = 0.22f),
-                            selectedLabelColor = Color(preset.colorHex)
-                        )
+                        label = { Text(tag, fontSize = 12.sp) }
                     )
                 }
+                
+                // Botón + para agregar nueva etiqueta
+                FilterChip(
+                    selected = false,
+                    onClick = { showAddTagDialog = true },
+                    label = { 
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Añadir", fontSize = 12.sp)
+                        }
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                )
+            }
+
+            if (showAddTagDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { 
+                        showAddTagDialog = false
+                        newTagText = "" 
+                    },
+                    title = { Text("Nueva etiqueta") },
+                    text = {
+                        OutlinedTextField(
+                            value = newTagText,
+                            onValueChange = { newTagText = it },
+                            placeholder = { Text("ej. video para YouTube") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val trimmed = newTagText.trim()
+                                if (trimmed.isNotEmpty()) {
+                                    val finalTag = if (trimmed.startsWith("#")) trimmed else "#$trimmed"
+                                    if (!tags.contains(finalTag)) {
+                                        tags = tags + finalTag
+                                    }
+                                    if (colorHex == 0xFF007AFFL) {
+                                        colorHex = CalendarCategoryPresets.colorForList(finalTag)
+                                    }
+                                }
+                                showAddTagDialog = false
+                                newTagText = ""
+                            }
+                        ) {
+                            Text("Añadir")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { 
+                            showAddTagDialog = false
+                            newTagText = "" 
+                        }) {
+                            Text("Cancelar")
+                        }
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1830,9 +1919,9 @@ fun HybridCalendarItemSheet(
             ) {
                 listOf(
                     0 to "Ninguna",
-                    1 to "! Baja",
-                    2 to "!! Media",
-                    3 to "!!! Urgente"
+                    1 to "Baja",
+                    2 to "Media",
+                    3 to "Urgente"
                 ).forEach { (prioVal, prioLabel) ->
                     val active = priority == prioVal
                     FilterChip(
@@ -2097,6 +2186,7 @@ fun HybridCalendarItemSheet(
                             isAllDay = isAllDay,
                             priority = priority,
                             listName = listName,
+                            tags = tags,
                             colorHex = colorHex,
                             recurrenceRule = recurrenceRule.code,
                             subtasksJson = ReminderSubtaskSerializer.serialize(finalSubtasks),

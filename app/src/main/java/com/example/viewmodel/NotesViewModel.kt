@@ -142,6 +142,7 @@ data class NotesUiState(
     val defaultLockPin: String = "1234",
     val isBiometricLockEnabled: Boolean = true,
     val isAppBiometricLockEnabled: Boolean = false,
+    val workdays: Set<Int> = setOf(1, 2, 3, 4, 5),
     val isViewingPrivateFolder: Boolean = false,
     val isPrivateUnlocked: Boolean = isViewingPrivateFolder
 )
@@ -182,7 +183,8 @@ private data class SettingsState(
     val geminiApiKey: String,
     val defaultLockPin: String,
     val isBiometricLockEnabled: Boolean,
-    val isAppBiometricLockEnabled: Boolean
+    val isAppBiometricLockEnabled: Boolean,
+    val workdays: Set<Int>
 )
 
 class NotesViewModel @JvmOverloads constructor(
@@ -445,17 +447,23 @@ class NotesViewModel @JvmOverloads constructor(
         ) { mode, paperTheme, paperStyle, apiKey, pin ->
             listOf(mode, paperTheme, paperStyle, apiKey, pin)
         },
-        settingsManager.isBiometricLockEnabled,
-        settingsManager.isAppBiometricLockEnabled
-    ) { base, bioLock, appBioLock ->
+        combine(
+            settingsManager.isBiometricLockEnabled,
+            settingsManager.isAppBiometricLockEnabled,
+            settingsManager.workdays
+        ) { bioLock, appBioLock, workdays ->
+            Triple(bioLock, appBioLock, workdays)
+        }
+    ) { base, extra ->
         SettingsState(
             themeMode = base[0] as ThemeMode,
             paperThemeMode = base[1] as PaperThemeMode,
             defaultPaperStyle = base[2] as String,
             geminiApiKey = base[3] as String,
             defaultLockPin = base[4] as String,
-            isBiometricLockEnabled = bioLock,
-            isAppBiometricLockEnabled = appBioLock
+            isBiometricLockEnabled = extra.first,
+            isAppBiometricLockEnabled = extra.second,
+            workdays = extra.third
         )
     }
 
@@ -587,6 +595,7 @@ class NotesViewModel @JvmOverloads constructor(
             defaultLockPin = settings.defaultLockPin,
             isBiometricLockEnabled = settings.isBiometricLockEnabled,
             isAppBiometricLockEnabled = settings.isAppBiometricLockEnabled,
+            workdays = settings.workdays,
             isViewingPrivateFolder = filter.isViewingPrivateFolder,
             isPrivateUnlocked = filter.isViewingPrivateFolder
         )
@@ -965,6 +974,13 @@ class NotesViewModel @JvmOverloads constructor(
     fun setGeminiApiKey(key: String) {
         settingsManager.setGeminiApiKey(key)
         _snackbarMessage.value = "Clave API de Gemini guardada"
+    }
+
+    fun setWorkdays(days: Set<Int>) {
+        settingsManager.setWorkdays(days)
+        viewModelScope.launch {
+            com.example.util.WorkdayPreferences.setWorkdays(getApplication(), days)
+        }
     }
 
     fun setDefaultLockPin(pin: String) {
@@ -1481,7 +1497,8 @@ class NotesViewModel @JvmOverloads constructor(
 
             // Si tiene recurrencia activa y se acaba de completar, programar la siguiente ocurrencia automáticamente
             if (newCompleted && RecurrenceRule.fromCode(reminder.recurrenceRule) != RecurrenceRule.NONE) {
-                val nextStart = reminder.computeNextOccurrenceMillis()
+                val workdays = com.example.util.WorkdayPreferences.getWorkdays(context)
+                val nextStart = reminder.computeNextOccurrenceMillis(workdays)
                 if (nextStart != null) {
                     val duration = (reminder.endTimeMillis - reminder.scheduledAt).coerceAtLeast(0L)
                     val resetSubtasks = reminder.subtasks.map { it.copy(isCompleted = false) }
@@ -2596,7 +2613,7 @@ private fun extractNotePlainText(title: String, content: String): String {
                         append(block.fileName).append(" ")
                     }
                     is AudioBlock -> {
-                        if (block.transcription.isNotBlank()) {
+                        if (!block.transcription.isNullOrBlank()) {
                             append(block.transcription).append(" ")
                         }
                     }

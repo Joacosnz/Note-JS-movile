@@ -41,7 +41,8 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.GridView
@@ -681,6 +682,87 @@ fun SettingsScreen(
                 }
             }
 
+            // SECCIÓN: RECORDATORIOS Y CALENDARIO
+            item {
+                SettingsSectionHeader("RECORDATORIOS Y CALENDARIO")
+                SettingsGroupCard {
+                    var showWorkdaysDialog by remember { mutableStateOf(false) }
+                    
+                    val workdaysLabel = remember(uiState.workdays) {
+                        if (uiState.workdays.isEmpty()) "Ninguno"
+                        else if (uiState.workdays == setOf(1, 2, 3, 4, 5)) "Lunes a Viernes"
+                        else if (uiState.workdays == setOf(1, 2, 3, 4, 5, 6)) "Lunes a Sábado"
+                        else if (uiState.workdays == setOf(6, 7)) "Fines de semana"
+                        else if (uiState.workdays.size == 7) "Todos los días"
+                        else "${uiState.workdays.size} días"
+                    }
+
+                    SettingsRow(
+                        icon = Icons.Default.CalendarMonth,
+                        badgeColor = Color(0xFF007AFF),
+                        title = "Días laborales",
+                        subtitle = "Usados para repetición de recordatorios",
+                        valueText = workdaysLabel,
+                        onClick = { showWorkdaysDialog = true },
+                        testTag = "settings_row_workdays"
+                    )
+
+                    if (showWorkdaysDialog) {
+                        var tempWorkdays by remember { mutableStateOf(uiState.workdays) }
+                        val daysMap = listOf(
+                            1 to "Lunes", 2 to "Martes", 3 to "Miércoles", 
+                            4 to "Jueves", 5 to "Viernes", 6 to "Sábado", 7 to "Domingo"
+                        )
+                        
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { showWorkdaysDialog = false },
+                            title = { Text("Días laborales") },
+                            text = {
+                                Column {
+                                    daysMap.forEach { (dayInt, dayName) ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    tempWorkdays = if (tempWorkdays.contains(dayInt)) {
+                                                        tempWorkdays - dayInt
+                                                    } else {
+                                                        tempWorkdays + dayInt
+                                                    }
+                                                }
+                                                .padding(vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            androidx.compose.material3.Checkbox(
+                                                checked = tempWorkdays.contains(dayInt),
+                                                onCheckedChange = null
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(dayName)
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.setWorkdays(tempWorkdays)
+                                        showWorkdaysDialog = false
+                                    }
+                                ) {
+                                    Text("Guardar")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showWorkdaysDialog = false }) {
+                                    Text("Cancelar")
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
             // SECCIÓN: SEGURIDAD Y PRIVACIDAD
             item {
                 val biometricStatusLabel = remember(context) {
@@ -811,7 +893,7 @@ fun SettingsScreen(
                     )
 
                     SettingsRow(
-                        icon = Icons.Default.DeleteSweep,
+                        icon = Icons.Default.Delete,
                         badgeColor = Color(0xFFFF3B30),
                         title = "Vaciar papelera de reciclaje",
                         subtitle = "${uiState.trashedCount} notas eliminadas",

@@ -68,7 +68,7 @@ object ReminderScheduler {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            scheduleAlarm(alarmManager, triggerTime, pendingIntent)
+            scheduleAlarm(context, alarmManager, triggerTime, pendingIntent, requestCode)
         }
     }
 
@@ -120,43 +120,75 @@ object ReminderScheduler {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
-                scheduleAlarm(alarmManager, triggerTime, pendingIntent)
+                scheduleAlarm(context, alarmManager, triggerTime, pendingIntent, requestCode)
             }
         }
     }
 
     private fun scheduleAlarm(
+        context: Context,
         alarmManager: AlarmManager,
         triggerTime: Long,
-        pendingIntent: PendingIntent
+        pendingIntent: PendingIntent,
+        requestCode: Int = 0
     ) {
+        val showIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            Intent(context, com.example.MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerTime, showIntent)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                } catch (e: SecurityException) {
+                    try {
+                        alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+                    } catch (_: Exception) {
+                        alarmManager.setAndAllowWhileIdle(
+                            AlarmManager.RTC_WAKEUP,
+                            triggerTime,
+                            pendingIntent
+                        )
+                    }
+                }
             } else {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
+                try {
+                    alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+                } catch (_: Exception) {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                }
             }
         } else {
             try {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
-            } catch (e: SecurityException) {
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
+                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+            } catch (_: Exception) {
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                } catch (_: Exception) {
+                    alarmManager.set(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                }
             }
         }
     }
@@ -208,7 +240,7 @@ object ReminderScheduler {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            scheduleAlarm(alarmManager, timestamp, pendingIntent)
+            scheduleAlarm(context, alarmManager, timestamp, pendingIntent, requestCode)
         }
     }
 
@@ -223,5 +255,13 @@ object ReminderScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.cancel(pendingIntent)
+    }
+
+    suspend fun computeNextOccurrenceMillis(
+        context: Context,
+        reminder: ReminderEntity
+    ): Long? {
+        val workdays = WorkdayPreferences.getWorkdays(context)
+        return reminder.computeNextOccurrenceMillis(workdays)
     }
 }
