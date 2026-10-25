@@ -60,6 +60,18 @@ class BootReceiver : BroadcastReceiver() {
                             } catch (_: Exception) {}
                         }
                     }
+
+                    // 3. Recordatorios y eventos de calendario independientes (tabla reminders)
+                    val uid = try {
+                        com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                    } catch (_: Exception) { null } ?: com.example.data.local.entity.NoteEntity.LOCAL_ANONYMOUS_USER_ID
+
+                    val standaloneReminders = db.reminderDao().getRemindersForUserList(uid)
+                    for (reminder in standaloneReminders) {
+                        if (!reminder.isCompleted && !reminder.pendingDelete && reminder.scheduledAt > now) {
+                            ReminderScheduler.scheduleStandaloneReminder(context, reminder)
+                        }
+                    }
                 } finally {
                     pendingResult.finish()
                 }

@@ -155,6 +155,7 @@ class MainActivity : FragmentActivity() {
         
         val newNoteId = intent.getLongExtra("EXTRA_OPEN_NOTE_ID", 0L)
         val reminderId = intent.getLongExtra("EXTRA_OPEN_REMINDER_ID", 0L)
+        val openCalendar = intent.getBooleanExtra("EXTRA_OPEN_CALENDAR", false)
         val createNew = intent.getBooleanExtra("EXTRA_CREATE_NEW_NOTE", false)
         val action = intent.action
         val type = intent.type
@@ -229,8 +230,8 @@ class MainActivity : FragmentActivity() {
                 sharedTextState = null
                 sharedTitleState = null
             }
-            reminderId > 0L -> {
-                openReminderIdState = reminderId
+            reminderId != 0L || openCalendar -> {
+                openReminderIdState = if (reminderId > 0L) reminderId else -1L
                 openNoteIdState = 0L
                 createNewNoteState = false
                 openVoiceDictationState = false
@@ -373,8 +374,10 @@ fun NotesApp(
                 } else if (initialOpenNoteId > 0L) {
                     viewModel.navigateTo(Screen.Editor(noteId = initialOpenNoteId))
                     onNoteOpened()
-                } else if (initialOpenReminderId > 0L) {
-                    pendingOpenReminderId = initialOpenReminderId
+                } else if (initialOpenReminderId != 0L) {
+                    if (initialOpenReminderId > 0L) {
+                        pendingOpenReminderId = initialOpenReminderId
+                    }
                     viewModel.navigateTo(Screen.Reminders)
                     onNoteOpened()
                 } else if (initialCreateNewNote || initialOpenVoiceDictation || initialOpenDocumentScanner || !initialSharedText.isNullOrEmpty() || !initialSharedTitle.isNullOrEmpty()) {

@@ -172,6 +172,14 @@ class SettingsManager(context: Context) {
         _workdays.value = days
     }
 
+    fun isFirstRunNoteGenerated(): Boolean {
+        return prefs.getBoolean(KEY_FIRST_RUN_NOTE_GENERATED, false)
+    }
+
+    fun setFirstRunNoteGenerated(generated: Boolean) {
+        prefs.edit().putBoolean(KEY_FIRST_RUN_NOTE_GENERATED, generated).apply()
+    }
+
     companion object {
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_PAPER_THEME_MODE = "key_paper_theme_mode"
@@ -184,5 +192,6 @@ class SettingsManager(context: Context) {
         private const val KEY_APP_BIOMETRIC_LOCK_ENABLED = "key_app_biometric_lock_enabled"
         private const val KEY_MANUAL_NOTE_ORDER = "key_manual_note_order"
         private const val KEY_WORKDAYS = "key_workdays"
+        private const val KEY_FIRST_RUN_NOTE_GENERATED = "key_first_run_note_generated"
     }
 }

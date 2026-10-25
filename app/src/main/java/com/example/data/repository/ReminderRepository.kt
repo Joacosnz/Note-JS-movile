@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.content.Context
 import android.util.Log
+import androidx.glance.appwidget.updateAll
 import com.example.data.local.dao.CalendarEventDao
 import com.example.data.local.dao.NoteDao
 import com.example.data.local.dao.ReminderDao
@@ -61,6 +62,16 @@ class ReminderRepository(
     val activeUserId: StateFlow<String> = _activeUserId.asStateFlow()
 
     val syncState: StateFlow<SyncState> = firestoreManager.syncState
+
+    private fun notifyWidgetsUpdate() {
+        context?.let { ctx ->
+            syncScope.launch {
+                try {
+                    com.example.widget.CalendarRemindersWidget().updateAll(ctx)
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     /**
      * Flujo reactivo de recordatorios (`Reminder`) desde Room para el usuario activo.
@@ -205,6 +216,7 @@ class ReminderRepository(
         context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
 
         syncItemToFirestoreAsync(scheduledEntity)
+        notifyWidgetsUpdate()
         return itemId
     }
 
@@ -257,6 +269,7 @@ class ReminderRepository(
         val scheduledEntity = unifiedEntity.copy(id = unifiedId)
         context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
         syncItemToFirestoreAsync(scheduledEntity)
+        notifyWidgetsUpdate()
     }
 
     suspend fun toggleReminderCompleted(reminder: Reminder) {
@@ -298,6 +311,7 @@ class ReminderRepository(
             }
             existingUnified?.let { reminderDao.deleteReminderById(it.id) }
         }
+        notifyWidgetsUpdate()
     }
 
     suspend fun deleteReminderById(id: Long) {
@@ -353,6 +367,7 @@ class ReminderRepository(
         context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
 
         syncItemToFirestoreAsync(scheduledEntity)
+        notifyWidgetsUpdate()
         return eventId
     }
 
@@ -406,6 +421,7 @@ class ReminderRepository(
         val scheduledEntity = unifiedEntity.copy(id = unifiedId)
         context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
         syncItemToFirestoreAsync(scheduledEntity)
+        notifyWidgetsUpdate()
     }
 
     suspend fun toggleCalendarEventCompleted(event: CalendarEvent) {
@@ -445,6 +461,7 @@ class ReminderRepository(
             }
             existingUnified?.let { reminderDao.deleteReminderById(it.id) }
         }
+        notifyWidgetsUpdate()
     }
 
     suspend fun deleteCalendarEventById(id: Long) {

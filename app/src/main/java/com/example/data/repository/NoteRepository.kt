@@ -955,6 +955,16 @@ class NoteRepository(
         }
     }
 
+    suspend fun deleteOldGithubWelcomeNote() {
+        try {
+            val allNotes = noteDao.getAllNotesList()
+            allNotes.filter { it.title.contains("¡Bienvenido a Note JS") && !it.title.contains("Dossier") && !it.title.contains("Guía Maestra") }
+                .forEach { deletePermanently(it) }
+        } catch (e: Exception) {
+            Log.e("NoteRepository", "Error cleaning old welcome note", e)
+        }
+    }
+
     suspend fun emptyTrash(trashedNotes: List<NoteEntity> = emptyList()) {
         val userId = currentUserId
         if (!userId.isNullOrEmpty() && userId != NoteEntity.LOCAL_ANONYMOUS_USER_ID) {

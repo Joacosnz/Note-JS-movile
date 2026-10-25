@@ -8,4 +8,8 @@
     <string name="shortcut_scan_document_short">Escanear Documento</string>
     <string name="shortcut_scan_document_long">Escanear un documento</string>
     <string name="process_text_create_note">Crear nota</string>
+    <string name="widget_calendar_reminders_label">Note JS - Recordatorios y Eventos</string>
+    <string name="widget_calendar_reminders_description">Próximos eventos y recordatorios interactivos con check directo</string>
+    <string name="widget_calendar_reminders_empty">Sin eventos ni recordatorios próximos</string>
+    <string name="widget_calendar_add_button">+ Añadir</string>
 </resources>

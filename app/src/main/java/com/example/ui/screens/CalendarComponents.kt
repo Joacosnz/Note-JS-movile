@@ -42,8 +42,10 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -193,7 +195,8 @@ fun DayTimelineView(
 ) {
     val allDayItems = remember(items) { items.filter { it.isAllDay } }
     val timedItems = remember(items) { items.filter { !it.isAllDay } }
-    val hourHeight = 68.dp
+    var hourHeightDp by remember { mutableFloatStateOf(68f) }
+    val hourHeight = hourHeightDp.dp
     val scrollState = rememberScrollState()
 
     LaunchedEffect(selectedDateMillis) {
@@ -257,12 +260,90 @@ fun DayTimelineView(
             }
         }
 
+        // Barra de control de Zoom en Vista Diaria
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.ZoomIn,
+                    contentDescription = null,
+                    tint = amber,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Línea horaria diaria",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                IconButton(
+                    onClick = { hourHeightDp = (hourHeightDp - 14f).coerceAtLeast(42f) },
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("btn_day_zoom_out")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Reducir zoom",
+                        modifier = Modifier.size(16.dp),
+                        tint = amber
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = amber.copy(alpha = 0.16f),
+                    modifier = Modifier
+                        .clickable { hourHeightDp = 68f }
+                        .testTag("btn_day_zoom_reset")
+                ) {
+                    Text(
+                        text = "${(hourHeightDp / 68f * 100).toInt()}%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = amber,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { hourHeightDp = (hourHeightDp + 14f).coerceAtMost(140f) },
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("btn_day_zoom_in")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Aumentar zoom",
+                        modifier = Modifier.size(16.dp),
+                        tint = amber
+                    )
+                }
+            }
+        }
+
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
 
-        // Cuadrícula horaria vertical (00:00 - 23:00)
+        // Cuadrícula horaria vertical (00:00 - 23:00) con soporte de pinch-to-zoom
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (zoom != 1f) {
+                            hourHeightDp = (hourHeightDp * zoom).coerceIn(42f, 140f)
+                        }
+                    }
+                }
                 .verticalScroll(scrollState)
                 .padding(bottom = 88.dp)
         ) {
@@ -461,7 +542,9 @@ fun MultiDayTimelineView(
 
     val dayNameFormat = remember { SimpleDateFormat("EEE", Locale("es", "ES")) }
     val dayNumFormat = remember { SimpleDateFormat("d", Locale("es", "ES")) }
-    val hourHeight = 58.dp
+    var hourHeightDp by remember(daysCount) { mutableFloatStateOf(if (daysCount == 7) 54f else 62f) }
+    val hourHeight = hourHeightDp.dp
+    val defaultBase = remember(daysCount) { if (daysCount == 7) 54f else 62f }
     val scrollState = rememberScrollState()
 
     LaunchedEffect(startDateMillis, daysCount) {
@@ -563,12 +646,90 @@ fun MultiDayTimelineView(
             }
         }
 
+        // Barra de control de Zoom en Multi-Día / Semana
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.ZoomIn,
+                    contentDescription = null,
+                    tint = amber,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (daysCount == 7) "Semana" else "3 Días",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                IconButton(
+                    onClick = { hourHeightDp = (hourHeightDp - 12f).coerceAtLeast(38f) },
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("btn_multiday_zoom_out")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Reducir zoom",
+                        modifier = Modifier.size(16.dp),
+                        tint = amber
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = amber.copy(alpha = 0.16f),
+                    modifier = Modifier
+                        .clickable { hourHeightDp = defaultBase }
+                        .testTag("btn_multiday_zoom_reset")
+                ) {
+                    Text(
+                        text = "${(hourHeightDp / defaultBase * 100).toInt()}%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = amber,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { hourHeightDp = (hourHeightDp + 12f).coerceAtMost(120f) },
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("btn_multiday_zoom_in")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Aumentar zoom",
+                        modifier = Modifier.size(16.dp),
+                        tint = amber
+                    )
+                }
+            }
+        }
+
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
 
-        // Cuadrícula horaria sincronizada multi-día
+        // Cuadrícula horaria sincronizada multi-día con soporte de pinch-to-zoom
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(daysCount) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (zoom != 1f) {
+                            hourHeightDp = (hourHeightDp * zoom).coerceIn(38f, 120f)
+                        }
+                    }
+                }
                 .verticalScroll(scrollState)
                 .padding(bottom = 88.dp)
         ) {
@@ -827,18 +988,62 @@ fun MonthPinchZoomView(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = {
+                        val prevIdx = (currentZoomLevel.ordinal - 1).coerceAtLeast(0)
+                        val prevLevel = MonthZoomLevel.entries[prevIdx]
+                        zoomScale = when (prevLevel) {
+                            MonthZoomLevel.COMPACTO -> 1.0f
+                            MonthZoomLevel.APILADO -> 1.5f
+                            MonthZoomLevel.DETALLES -> 2.1f
+                            MonthZoomLevel.EXPANDIDO -> 2.9f
+                        }
+                    },
+                    modifier = Modifier
+                        .size(26.dp)
+                        .testTag("btn_month_zoom_out")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "Reducir zoom",
+                        modifier = Modifier.size(15.dp),
+                        tint = amber
+                    )
+                }
                 Icon(
                     imageVector = Icons.Default.ZoomIn,
                     contentDescription = null,
                     tint = amber,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(15.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(2.dp))
                 Text(
-                    text = "Zoom: ${currentZoomLevel.label}",
+                    text = currentZoomLevel.label,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                IconButton(
+                    onClick = {
+                        val nextIdx = (currentZoomLevel.ordinal + 1).coerceAtMost(MonthZoomLevel.entries.size - 1)
+                        val nextLevel = MonthZoomLevel.entries[nextIdx]
+                        zoomScale = when (nextLevel) {
+                            MonthZoomLevel.COMPACTO -> 1.0f
+                            MonthZoomLevel.APILADO -> 1.5f
+                            MonthZoomLevel.DETALLES -> 2.1f
+                            MonthZoomLevel.EXPANDIDO -> 2.9f
+                        }
+                    },
+                    modifier = Modifier
+                        .size(26.dp)
+                        .testTag("btn_month_zoom_in")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Aumentar zoom",
+                        modifier = Modifier.size(15.dp),
+                        tint = amber
+                    )
+                }
             }
 
             Row(

@@ -46,6 +46,7 @@ import com.example.model.SyncState
 import com.example.util.FileManager
 import com.example.util.MathEvaluator
 import com.example.util.NoteBlockSerializer
+import com.example.util.OnboardingNoteHelper
 import com.example.util.PdfModifierUtil
 import com.example.util.PdfRenderUtil
 import com.example.util.PdfTextExtractor
@@ -365,6 +366,23 @@ class NotesViewModel @JvmOverloads constructor(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
             )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.deleteOldGithubWelcomeNote()
+            } catch (e: Exception) {
+                android.util.Log.e("NotesViewModel", "Failed to clean old welcome note", e)
+            }
+            if (!settingsManager.isFirstRunNoteGenerated()) {
+                try {
+                    val onboardingNote = OnboardingNoteHelper.createWelcomeNote()
+                    repository.insert(onboardingNote)
+                    settingsManager.setFirstRunNoteGenerated(true)
+                } catch (e: Exception) {
+                    android.util.Log.e("NotesViewModel", "Failed to generate onboarding note", e)
+                }
+            }
+        }
     }
 
     private val rawNotesFlow = combine(

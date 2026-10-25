@@ -889,261 +889,7 @@ fun NoteEditorScreen(
         }
     }
 
-    var recordingPath by remember { mutableStateOf<String?>(null) }
-    var nativeSpeechRecognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
-    var activeAudioRecord by remember { mutableStateOf<AudioRecord?>(null) }
-    var audioRecordJob by remember { mutableStateOf<Job?>(null) }
-    var isAudioRecordingActive by remember { mutableStateOf(false) }
-
-    fun writeWavHeaderFile(file: File, totalAudioLen: Long, sampleRate: Int = 16000, channels: Int = 1) {
-        val totalDataLen = totalAudioLen + 36
-        val byteRate = sampleRate * channels * 2
-        val header = ByteArray(44)
-        header[0] = 'R'.code.toByte()
-        header[1] = 'I'.code.toByte()
-        header[2] = 'F'.code.toByte()
-        header[3] = 'F'.code.toByte()
-        header[4] = (totalDataLen and 0xff).toByte()
-        header[5] = (totalDataLen shr 8 and 0xff).toByte()
-        header[6] = (totalDataLen shr 16 and 0xff).toByte()
-        header[7] = (totalDataLen shr 24 and 0xff).toByte()
-        header[8] = 'W'.code.toByte()
-        header[9] = 'A'.code.toByte()
-        header[10] = 'V'.code.toByte()
-        header[11] = 'E'.code.toByte()
-        header[12] = 'f'.code.toByte()
-        header[13] = 'm'.code.toByte()
-        header[14] = 't'.code.toByte()
-        header[15] = ' '.code.toByte()
-        header[16] = 16
-        header[17] = 0
-        header[18] = 0
-        header[19] = 0
-        header[20] = 1 // PCM
-        header[21] = 0
-        header[22] = channels.toByte()
-        header[23] = 0
-        header[24] = (sampleRate and 0xff).toByte()
-        header[25] = (sampleRate shr 8 and 0xff).toByte()
-        header[26] = (sampleRate shr 16 and 0xff).toByte()
-        header[27] = (sampleRate shr 24 and 0xff).toByte()
-        header[28] = (byteRate and 0xff).toByte()
-        header[29] = (byteRate shr 8 and 0xff).toByte()
-        header[30] = (byteRate shr 16 and 0xff).toByte()
-        header[31] = (byteRate shr 24 and 0xff).toByte()
-        header[32] = (channels * 16 / 8).toByte()
-        header[33] = 0
-        header[34] = 16
-        header[35] = 0
-        header[36] = 'd'.code.toByte()
-        header[37] = 'a'.code.toByte()
-        header[38] = 't'.code.toByte()
-        header[39] = 'a'.code.toByte()
-        header[40] = (totalAudioLen and 0xff).toByte()
-        header[41] = (totalAudioLen shr 8 and 0xff).toByte()
-        header[42] = (totalAudioLen shr 16 and 0xff).toByte()
-        header[43] = (totalAudioLen shr 24 and 0xff).toByte()
-
-        try {
-            java.io.RandomAccessFile(file, "rw").use { raf ->
-                raf.seek(0)
-                raf.write(header, 0, 44)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun stopAudioPcmRecord(): File? {
-        isAudioRecordingActive = false
-        try {
-            activeAudioRecord?.stop()
-            activeAudioRecord?.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        activeAudioRecord = null
-        audioRecordJob?.cancel()
-        audioRecordJob = null
-
-        val path = recordingPath
-        recordingPath = null
-        return if (!path.isNullOrBlank()) File(path) else null
-    }
-
-    fun finishVoiceDictationSession(transcriptionText: String = "") {
-        coroutineScope.launch {
-            val file = stopAudioPcmRecord()
-
-            try {
-                nativeSpeechRecognizer?.stopListening()
-                nativeSpeechRecognizer?.destroy()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            nativeSpeechRecognizer = null
-
-            var audioPathToUse = ""
-            var durationMs = 0L
-            var finalTranscription = transcriptionText.trim()
-
-            if (file != null && file.exists() && file.length() > 44) {
-                audioPathToUse = file.absolutePath
-                val retriever = MediaMetadataRetriever()
-                try {
-                    retriever.setDataSource(file.absolutePath)
-                    durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                } finally {
-                    retriever.release()
-                }
-
-                if (finalTranscription.isBlank()) {
-                    try {
-                        val result = GeminiAudioTranscriber.transcribeAudio(file = file, context = context)
-                        if (result.isNotBlank()) {
-                            finalTranscription = result
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-
-            if (audioPathToUse.isNotBlank() || finalTranscription.isNotBlank()) {
-                saveSnapshot()
-                val newId = UUID.randomUUID().toString()
-                val audioBlock = NoteBlock.Audio(
-                    id = newId,
-                    filePath = audioPathToUse,
-                    durationMs = durationMs,
-                    transcription = finalTranscription,
-                    isTranscriptionVisible = true
-                )
-
-                val targetId = focusedBlockId
-                if (targetId != null) {
-                    val realIdx = blocks.indexOfFirst { it.id == targetId }
-                    if (realIdx != -1) {
-                        blocks.add(realIdx + 1, audioBlock)
-                    } else {
-                        blocks.add(audioBlock)
-                    }
-                } else {
-                    blocks.add(audioBlock)
-                }
-                focusedBlockId = newId
-                targetFocusBlockId = newId
-            }
-        }
-    }
-
-    fun launchVoiceRecognition() {
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            Toast.makeText(context, "El dictado por voz nativo no está disponible", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val sampleRate = 16000
-        val channelConfig = AudioFormat.CHANNEL_IN_MONO
-        val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-        val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-        val bufferSize = Math.max(minBufferSize, 2048)
-
-        var record: AudioRecord? = null
-        try {
-            record = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                bufferSize
-            )
-            record.startRecording()
-            activeAudioRecord = record
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        val audioDir = File(context.filesDir, "audio").apply { if (!exists()) mkdirs() }
-        val wavFile = File(audioDir, "audio_${UUID.randomUUID()}.wav")
-        recordingPath = wavFile.absolutePath
-        isAudioRecordingActive = true
-
-        if (record != null) {
-            audioRecordJob = coroutineScope.launch(Dispatchers.IO) {
-                try {
-                    FileOutputStream(wavFile).use { fos ->
-                        fos.write(ByteArray(44))
-                        val buffer = ByteArray(bufferSize)
-                        var totalBytesWritten = 0L
-
-                        while (isActive && isAudioRecordingActive) {
-                            val readBytes = record.read(buffer, 0, buffer.size)
-                            if (readBytes > 0) {
-                                fos.write(buffer, 0, readBytes)
-                                totalBytesWritten += readBytes
-                            }
-                        }
-                        fos.flush()
-                        writeWavHeaderFile(wavFile, totalBytesWritten, sampleRate, 1)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-
-        try {
-            nativeSpeechRecognizer?.destroy()
-            val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-            nativeSpeechRecognizer = recognizer
-
-            recognizer.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
-
-                override fun onError(error: Int) {
-                    finishVoiceDictationSession()
-                }
-
-                override fun onResults(results: Bundle?) {
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val spokenText = matches?.firstOrNull() ?: ""
-                    finishVoiceDictationSession(spokenText)
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            }
-            recognizer.startListening(intent)
-            Toast.makeText(context, "Dictado nativo activado... Habla ahora", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            finishVoiceDictationSession()
-        }
-    }
-
-    var triggerVoiceDictation by remember { mutableStateOf(initialOpenVoiceDictation) }
-    
-    LaunchedEffect(triggerVoiceDictation) {
-        if (triggerVoiceDictation) {
-            triggerVoiceDictation = false
-            launchVoiceRecognition()
-        }
-    }
+    var showVoiceDictationSheet by rememberSaveable { mutableStateOf(initialOpenVoiceDictation) }
 
     var pendingScannedPdfUriString by rememberSaveable { mutableStateOf<String?>(null) }
     val pendingScannedPdfUri = pendingScannedPdfUriString?.let { Uri.parse(it) }
@@ -1845,7 +1591,7 @@ fun NoteEditorScreen(
                                 )
                             },
                             onStartAudioDictation = {
-                                launchVoiceRecognition()
+                                showVoiceDictationSheet = true
                             },
                         onToggleBold = { isBoldActive = !isBoldActive },
                         onToggleItalic = { isItalicActive = !isItalicActive },
@@ -2181,6 +1927,67 @@ fun NoteEditorScreen(
         isPaperDark = isPaperDark,
         amber = amber
     )
+
+    if (showVoiceDictationSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showVoiceDictationSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            NoteTranscriptionScreen(
+                onTranscriptionFinished = { transcribedText ->
+                    val textToInsert = transcribedText.trim()
+                    if (textToInsert.isNotBlank()) {
+                        saveSnapshot()
+                        val targetId = focusedBlockId
+                        if (targetId == "TITLE") {
+                            val current = titleTextFieldValue.text
+                            val updated = if (current.isBlank()) textToInsert else "$current $textToInsert"
+                            titleTextFieldValue = TextFieldValue(updated, TextRange(updated.length))
+                            title = updated
+                        } else if (targetId != null) {
+                            val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                            val currentText = currentTfv.text
+                            val updated = if (currentText.isBlank()) textToInsert else "$currentText $textToInsert"
+                            blockTextFieldValues[targetId] = TextFieldValue(updated, TextRange(updated.length))
+                            val idx = blocks.indexOfFirst { it.id == targetId }
+                            if (idx != -1) {
+                                when (val b = blocks[idx]) {
+                                    is NoteBlock.Text -> blocks[idx] = b.copy(content = updated)
+                                    is NoteBlock.Checklist -> blocks[idx] = b.copy(content = updated)
+                                    is NoteBlock.SimpleList -> blocks[idx] = b.copy(content = updated)
+                                    is NoteBlock.CalloutBox -> blocks[idx] = b.copy(content = updated)
+                                    else -> {}
+                                }
+                            }
+                        } else {
+                            if (blocks.size == 1 && blocks[0] is NoteBlock.Text && (blocks[0] as NoteBlock.Text).content.isBlank()) {
+                                val id = blocks[0].id
+                                blocks[0] = NoteBlock.Text(id = id, content = textToInsert)
+                                blockTextFieldValues[id] = TextFieldValue(textToInsert, TextRange(textToInsert.length))
+                                focusedBlockId = id
+                                targetFocusBlockId = id
+                            } else {
+                                val newId = UUID.randomUUID().toString()
+                                blocks.add(NoteBlock.Text(id = newId, content = textToInsert))
+                                blockTextFieldValues[newId] = TextFieldValue(textToInsert, TextRange(textToInsert.length))
+                                focusedBlockId = newId
+                                targetFocusBlockId = newId
+                            }
+                        }
+                        if (title.isBlank()) {
+                            title = "Nota de voz"
+                            titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
+                        }
+                    }
+                    showVoiceDictationSheet = false
+                },
+                onDismiss = {
+                    showVoiceDictationSheet = false
+                }
+            )
+        }
+    }
 }
 
 private fun Context.findActivity(): Activity? = when (this) {
