@@ -481,7 +481,12 @@ fun FoldersScreen(
                 viewModel.navigateTo(Screen.PdfLibrary)
             },
             onReminder = {
-                viewModel.navigateTo(Screen.Reminders(initialCreateNewReminder = true))
+                viewModel.navigateTo(
+                    Screen.Reminders(
+                        initialCreateNewReminder = true,
+                        triggerTimestamp = System.currentTimeMillis()
+                    )
+                )
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )

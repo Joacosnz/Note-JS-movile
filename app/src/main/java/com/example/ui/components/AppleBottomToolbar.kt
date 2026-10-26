@@ -190,10 +190,10 @@ fun NoteJsBottomToolbar(
                                 .padding(top = 6.dp, bottom = 4.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            // Opción 0: Recordatorio
+                            // Opción 0: Recordatorio / Evento
                             QuickActionMenuItem(
                                 icon = Icons.Default.Notifications,
-                                label = "Recordatorio",
+                                label = "Recordatorios",
                                 accentColor = activeColor,
                                 textColor = if (isDark) Color.White else Color(0xFF1C1C1E),
                                 onClick = {

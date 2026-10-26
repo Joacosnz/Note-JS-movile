@@ -109,7 +109,8 @@ sealed class Screen {
     data object Settings : Screen()
     data class Reminders(
         val initialCreateNewReminder: Boolean = false,
-        val initialOpenReminderId: Long = 0L
+        val initialOpenReminderId: Long = 0L,
+        val triggerTimestamp: Long = 0L
     ) : Screen()
 }
 

@@ -509,6 +509,7 @@ fun HomeScreen(
                                 viewModel = viewModel,
                                 initialCreateNewReminder = remScreen?.initialCreateNewReminder ?: false,
                                 initialOpenReminderId = remScreen?.initialOpenReminderId ?: 0L,
+                                creationTriggerTimestamp = remScreen?.triggerTimestamp ?: 0L,
                                 showBackButton = false,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -661,7 +662,12 @@ fun HomeScreen(
                             }
                         },
                         onReminder = {
-                            viewModel.navigateTo(Screen.Reminders(initialCreateNewReminder = true))
+                            viewModel.navigateTo(
+                                Screen.Reminders(
+                                    initialCreateNewReminder = true,
+                                    triggerTimestamp = System.currentTimeMillis()
+                                )
+                            )
                         },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )

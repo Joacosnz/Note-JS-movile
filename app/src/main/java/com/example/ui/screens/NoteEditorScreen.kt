@@ -889,116 +889,84 @@ fun NoteEditorScreen(
         }
     }
 
-    var isRecordingAndListening by remember { mutableStateOf(false) }
-    var currentPartialTranscription by remember { mutableStateOf("") }
-    var speechRecognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
+    val speechRecognizerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = matches?.firstOrNull()?.trim()
 
-    fun startRecordingAndDictation() {
-        try {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) {}
-                    override fun onBeginningOfSpeech() {}
-                    override fun onRmsChanged(rmsdB: Float) {}
-                    override fun onBufferReceived(buffer: ByteArray?) {}
-                    override fun onEndOfSpeech() {}
-                    
-                    override fun onError(error: Int) {
-                        isRecordingAndListening = false
-                        Toast.makeText(context, "Error en reconocimiento: $error", Toast.LENGTH_SHORT).show()
-                    }
-                    
-                    override fun onResults(results: Bundle?) {
-                        isRecordingAndListening = false
-                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        val transcribedText = matches?.firstOrNull()?.trim() ?: ""
-                                
-                        if (transcribedText.isNotBlank()) {
-                            saveSnapshot()
-                            val targetId = focusedBlockId
-                            if (targetId == "TITLE") {
-                                val current = titleTextFieldValue.text
-                                val updated = if (current.isBlank()) transcribedText else "$current $transcribedText"
-                                titleTextFieldValue = TextFieldValue(updated, TextRange(updated.length))
-                                title = updated
-                            } else if (targetId != null) {
-                                val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
-                                val currentText = currentTfv.text
-                                val updated = if (currentText.isBlank()) transcribedText else "$currentText $transcribedText"
-                                blockTextFieldValues[targetId] = TextFieldValue(updated, TextRange(updated.length))
-                                val idx = blocks.indexOfFirst { it.id == targetId }
-                                if (idx != -1) {
-                                    when (val b = blocks[idx]) {
-                                        is NoteBlock.Text -> blocks[idx] = b.copy(content = updated)
-                                        is NoteBlock.Checklist -> blocks[idx] = b.copy(content = updated)
-                                        is NoteBlock.SimpleList -> blocks[idx] = b.copy(content = updated)
-                                        is NoteBlock.CalloutBox -> blocks[idx] = b.copy(content = updated)
-                                        else -> {}
-                                    }
-                                }
-                            } else {
-                                val newId = UUID.randomUUID().toString()
-                                blocks.add(NoteBlock.Text(id = newId, content = transcribedText))
-                                blockTextFieldValues[newId] = TextFieldValue(transcribedText, TextRange(transcribedText.length))
-                                focusedBlockId = newId
-                            }
-                            if (title.isBlank()) {
-                                title = "Nota de dictado"
-                                titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
-                            }
+            if (!spokenText.isNullOrBlank()) {
+                saveSnapshot()
+                val targetId = focusedBlockId
+                if (targetId == "TITLE") {
+                    val current = titleTextFieldValue.text
+                    val updated = if (current.isBlank()) spokenText else "$current $spokenText"
+                    titleTextFieldValue = TextFieldValue(updated, TextRange(updated.length))
+                    title = updated
+                } else if (targetId != null) {
+                    val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                    val currentText = currentTfv.text
+                    val updated = if (currentText.isBlank()) spokenText else "$currentText $spokenText"
+                    blockTextFieldValues[targetId] = TextFieldValue(updated, TextRange(updated.length))
+                    val idx = blocks.indexOfFirst { it.id == targetId }
+                    if (idx != -1) {
+                        when (val b = blocks[idx]) {
+                            is NoteBlock.Text -> blocks[idx] = b.copy(content = updated)
+                            is NoteBlock.Checklist -> blocks[idx] = b.copy(content = updated)
+                            is NoteBlock.SimpleList -> blocks[idx] = b.copy(content = updated)
+                            is NoteBlock.CalloutBox -> blocks[idx] = b.copy(content = updated)
+                            else -> {}
                         }
-                        speechRecognizer?.destroy()
-                        speechRecognizer = null
                     }
-                            
-                            override fun onPartialResults(partialResults: Bundle?) {
-                                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                                currentPartialTranscription = matches?.firstOrNull() ?: ""
-                            }
-                            override fun onEvent(eventType: Int, params: Bundle?) {}
-                        })
-                    }
-                    
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                } else {
+                    val newId = UUID.randomUUID().toString()
+                    blocks.add(NoteBlock.Text(id = newId, content = spokenText))
+                    blockTextFieldValues[newId] = TextFieldValue(spokenText, TextRange(spokenText.length))
+                    focusedBlockId = newId
+                }
+                if (title.isBlank()) {
+                    title = "Nota de dictado"
+                    titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
+                }
             }
-            isRecordingAndListening = true
-            currentPartialTranscription = ""
-            speechRecognizer?.startListening(intent)
+        }
+    }
+
+    fun launchAndroidVoiceDictation() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Habla ahora para dictar tu nota...")
+        }
+        try {
+            speechRecognizerLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(context, "El dictado por voz de Android no está disponible en este dispositivo", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            isRecordingAndListening = false
-            Toast.makeText(context, "No se pudo iniciar el dictado por voz.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Error al iniciar el dictado por voz", Toast.LENGTH_SHORT).show()
         }
     }
 
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            startRecordingAndDictation()
-        } else {
-            Toast.makeText(context, "Se requiere permiso de micrófono para grabar audio y dictar", Toast.LENGTH_SHORT).show()
-        }
+    ) { _ ->
+        launchAndroidVoiceDictation()
     }
 
-    fun launchGoogleDictation() {
-        val hasPermission = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (hasPermission) {
-            startRecordingAndDictation()
+    fun startVoiceDictationWithPermission() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            launchAndroidVoiceDictation()
         } else {
             recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
+    var hasHandledInitialVoiceDictation by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(initialOpenVoiceDictation) {
-        if (initialOpenVoiceDictation) {
-            launchGoogleDictation()
+        if (initialOpenVoiceDictation && !hasHandledInitialVoiceDictation) {
+            hasHandledInitialVoiceDictation = true
+            startVoiceDictationWithPermission()
         }
     }
 
@@ -1397,28 +1365,7 @@ fun NoteEditorScreen(
                 onToggleArchive = { isArchived = !isArchived }
             )
         },
-        floatingActionButton = {
-            if (isRecordingAndListening) {
-                androidx.compose.material3.ExtendedFloatingActionButton(
-                    onClick = {
-                        speechRecognizer?.stopListening()
-                    },
-                    containerColor = androidx.compose.ui.graphics.Color.Red,
-                    contentColor = androidx.compose.ui.graphics.Color.White,
-                    icon = {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.Default.Stop,
-                            contentDescription = "Detener grabación"
-                        )
-                    },
-                    text = {
-                        androidx.compose.material3.Text(
-                            text = if (currentPartialTranscription.isNotBlank()) currentPartialTranscription else "Grabando y escuchando..."
-                        )
-                    }
-                )
-            }
-        },
+        floatingActionButton = {},
         containerColor = editorBgColor
     ) { innerPadding ->
         Box(
@@ -1728,7 +1675,7 @@ fun NoteEditorScreen(
                                 )
                             },
                             onStartAudioDictation = {
-                                launchGoogleDictation()
+                                startVoiceDictationWithPermission()
                             },
                         onToggleBold = { isBoldActive = !isBoldActive },
                         onToggleItalic = { isItalicActive = !isItalicActive },

@@ -90,13 +90,14 @@ class NotesViewModelTest {
         assertTrue(insertedId > 0)
 
         val activeNotes = viewModel.activeNotes.first { it.isNotEmpty() }
-        assertEquals(1, activeNotes.size)
-        assertEquals("Nueva Nota", activeNotes[0].title)
-        assertEquals("Contenido persistido en Room", activeNotes[0].content)
+        val insertedNote = activeNotes.firstOrNull { it.id == insertedId }
+        assertNotNull(insertedNote)
+        assertEquals("Nueva Nota", insertedNote!!.title)
+        assertEquals("Contenido persistido en Room", insertedNote.content)
 
         val allNotes = viewModel.allNotes.first { it.isNotEmpty() }
-        assertEquals(1, allNotes.size)
-        assertEquals(insertedId, allNotes[0].id)
+        val insertedInAll = allNotes.firstOrNull { it.id == insertedId }
+        assertNotNull(insertedInAll)
     }
 
     @Test

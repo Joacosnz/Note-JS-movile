@@ -1817,7 +1817,7 @@ fun HybridCalendarItemSheet(
                         val label = if (type == CalendarItemType.REMINDER) "○ Recordatorio" else "🗓️ Evento"
                         Surface(
                             shape = RoundedCornerShape(9.dp),
-                            color = if (active) Color(colorHex) else Color.Transparent,
+                            color = if (active) amber else Color.Transparent,
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable { itemType = type }
@@ -1828,7 +1828,7 @@ fun HybridCalendarItemSheet(
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                                 ),
-                                color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (active) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
@@ -2410,8 +2410,8 @@ fun HybridCalendarItemSheet(
                         onSave(entityToSave)
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(colorHex),
-                        contentColor = Color.White
+                        containerColor = amber,
+                        contentColor = Color.Black
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier

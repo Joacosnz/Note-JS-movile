@@ -121,6 +121,7 @@ fun RemindersScreen(
     reminderViewModel: ReminderViewModel = viewModel(),
     initialOpenReminderId: Long = 0L,
     initialCreateNewReminder: Boolean = false,
+    creationTriggerTimestamp: Long = 0L,
     showBackButton: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -153,7 +154,7 @@ fun RemindersScreen(
     var selectedSmartTab by rememberSaveable { mutableStateOf(SmartListTab.HOY) }
     var selectedDateMillis by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
 
-    var showCompleted by rememberSaveable { mutableStateOf(true) }
+    var showCompleted by rememberSaveable { mutableStateOf(false) }
     var showEvents by rememberSaveable { mutableStateOf(true) }
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
     var isSearchVisible by rememberSaveable { mutableStateOf(false) }
@@ -167,15 +168,45 @@ fun RemindersScreen(
 
     var itemForEditChecklistReminder by remember { mutableStateOf<UnifiedReminderItem?>(null) }
 
-    LaunchedEffect(initialCreateNewReminder, initialOpenReminderId, calendarReminders) {
-        if (initialCreateNewReminder || initialOpenReminderId == -2L) {
+    var lastHandledTriggerTimestamp by rememberSaveable { mutableLongStateOf(0L) }
+    var hasConsumedInitialCreate by rememberSaveable { mutableStateOf(false) }
+    var lastHandledOpenId by rememberSaveable { mutableLongStateOf(0L) }
+
+    LaunchedEffect(initialCreateNewReminder, creationTriggerTimestamp) {
+        val shouldTrigger = (initialCreateNewReminder && !hasConsumedInitialCreate) ||
+            (creationTriggerTimestamp > 0L && creationTriggerTimestamp > lastHandledTriggerTimestamp)
+
+        if (shouldTrigger) {
+            hasConsumedInitialCreate = true
+            if (creationTriggerTimestamp > 0L) {
+                lastHandledTriggerTimestamp = creationTriggerTimestamp
+            }
+            editingItem = null
+            val baseCal = Calendar.getInstance().apply {
+                timeInMillis = selectedDateMillis
+                val nowCal = Calendar.getInstance()
+                set(Calendar.HOUR_OF_DAY, (nowCal.get(Calendar.HOUR_OF_DAY) + 1).coerceAtMost(23))
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+            }
+            modalInitialScheduledAt = baseCal.timeInMillis
+            modalInitialIsAllDay = false
+            modalInitialType = CalendarItemType.REMINDER
+            showHybridModal = true
+        }
+    }
+
+    LaunchedEffect(initialOpenReminderId, calendarReminders) {
+        if (initialOpenReminderId == -2L && !hasConsumedInitialCreate) {
+            hasConsumedInitialCreate = true
             editingItem = null
             modalInitialScheduledAt = System.currentTimeMillis() + 3600_000L
             modalInitialType = CalendarItemType.REMINDER
             showHybridModal = true
-        } else if (initialOpenReminderId > 0L && calendarReminders.isNotEmpty()) {
+        } else if (initialOpenReminderId > 0L && initialOpenReminderId != lastHandledOpenId && calendarReminders.isNotEmpty()) {
             val target = calendarReminders.firstOrNull { it.id == initialOpenReminderId }
             if (target != null) {
+                lastHandledOpenId = initialOpenReminderId
                 selectedDateMillis = target.scheduledAt
                 editingItem = target
                 showHybridModal = true

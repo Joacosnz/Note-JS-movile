@@ -478,7 +478,8 @@ fun NotesApp(
                         RemindersScreen(
                             viewModel = viewModel,
                             initialOpenReminderId = if (screen.initialOpenReminderId != 0L) screen.initialOpenReminderId else pendingOpenReminderId,
-                            initialCreateNewReminder = screen.initialCreateNewReminder || (pendingOpenReminderId == -2L)
+                            initialCreateNewReminder = screen.initialCreateNewReminder || (pendingOpenReminderId == -2L),
+                            creationTriggerTimestamp = screen.triggerTimestamp
                         )
                     }
                 }
