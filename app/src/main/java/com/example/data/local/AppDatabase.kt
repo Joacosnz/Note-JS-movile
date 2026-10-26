@@ -36,7 +36,7 @@ import java.util.UUID
         Reminder::class,
         CalendarEvent::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = false,
 )
 @TypeConverters(UriConverters::class)
@@ -352,6 +352,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notes ADD COLUMN icon TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -371,7 +377,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_14_15,
                         MIGRATION_15_16,
                         MIGRATION_16_17,
-                        MIGRATION_17_18
+                        MIGRATION_17_18,
+                        MIGRATION_18_19
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

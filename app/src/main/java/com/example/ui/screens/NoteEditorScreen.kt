@@ -25,7 +25,6 @@ import android.media.MediaRecorder
 import kotlinx.coroutines.Job
 import com.example.util.getKeyboardLanguage
 import com.example.util.MathEvaluator
-import com.example.util.AudioRecorderHelper
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.AnimatedVisibility
@@ -315,6 +314,7 @@ fun NoteEditorScreen(
     val paperHintColor = if (isPaperDark) Color.LightGray else Color.DarkGray
 
     var title by remember { mutableStateOf("") }
+    var noteIcon by remember { mutableStateOf<String?>(null) }
     var titleTextFieldValue by remember { mutableStateOf(TextFieldValue(title)) }
     val blocks = remember { mutableStateListOf<NoteBlock>() }
     val undoHistory = remember { mutableStateListOf<List<NoteBlock>>() }
@@ -889,7 +889,118 @@ fun NoteEditorScreen(
         }
     }
 
-    var showVoiceDictationSheet by rememberSaveable { mutableStateOf(initialOpenVoiceDictation) }
+    var isRecordingAndListening by remember { mutableStateOf(false) }
+    var currentPartialTranscription by remember { mutableStateOf("") }
+    var speechRecognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
+
+    fun startRecordingAndDictation() {
+        try {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {}
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    
+                    override fun onError(error: Int) {
+                        isRecordingAndListening = false
+                        Toast.makeText(context, "Error en reconocimiento: $error", Toast.LENGTH_SHORT).show()
+                    }
+                    
+                    override fun onResults(results: Bundle?) {
+                        isRecordingAndListening = false
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val transcribedText = matches?.firstOrNull()?.trim() ?: ""
+                                
+                        if (transcribedText.isNotBlank()) {
+                            saveSnapshot()
+                            val targetId = focusedBlockId
+                            if (targetId == "TITLE") {
+                                val current = titleTextFieldValue.text
+                                val updated = if (current.isBlank()) transcribedText else "$current $transcribedText"
+                                titleTextFieldValue = TextFieldValue(updated, TextRange(updated.length))
+                                title = updated
+                            } else if (targetId != null) {
+                                val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
+                                val currentText = currentTfv.text
+                                val updated = if (currentText.isBlank()) transcribedText else "$currentText $transcribedText"
+                                blockTextFieldValues[targetId] = TextFieldValue(updated, TextRange(updated.length))
+                                val idx = blocks.indexOfFirst { it.id == targetId }
+                                if (idx != -1) {
+                                    when (val b = blocks[idx]) {
+                                        is NoteBlock.Text -> blocks[idx] = b.copy(content = updated)
+                                        is NoteBlock.Checklist -> blocks[idx] = b.copy(content = updated)
+                                        is NoteBlock.SimpleList -> blocks[idx] = b.copy(content = updated)
+                                        is NoteBlock.CalloutBox -> blocks[idx] = b.copy(content = updated)
+                                        else -> {}
+                                    }
+                                }
+                            } else {
+                                val newId = UUID.randomUUID().toString()
+                                blocks.add(NoteBlock.Text(id = newId, content = transcribedText))
+                                blockTextFieldValues[newId] = TextFieldValue(transcribedText, TextRange(transcribedText.length))
+                                focusedBlockId = newId
+                            }
+                            if (title.isBlank()) {
+                                title = "Nota de dictado"
+                                titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
+                            }
+                        }
+                        speechRecognizer?.destroy()
+                        speechRecognizer = null
+                    }
+                            
+                            override fun onPartialResults(partialResults: Bundle?) {
+                                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                                currentPartialTranscription = matches?.firstOrNull() ?: ""
+                            }
+                            override fun onEvent(eventType: Int, params: Bundle?) {}
+                        })
+                    }
+                    
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            }
+            isRecordingAndListening = true
+            currentPartialTranscription = ""
+            speechRecognizer?.startListening(intent)
+        } catch (e: Exception) {
+            isRecordingAndListening = false
+            Toast.makeText(context, "No se pudo iniciar el dictado por voz.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            startRecordingAndDictation()
+        } else {
+            Toast.makeText(context, "Se requiere permiso de micrófono para grabar audio y dictar", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun launchGoogleDictation() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            startRecordingAndDictation()
+        } else {
+            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    LaunchedEffect(initialOpenVoiceDictation) {
+        if (initialOpenVoiceDictation) {
+            launchGoogleDictation()
+        }
+    }
 
     var pendingScannedPdfUriString by rememberSaveable { mutableStateOf<String?>(null) }
     val pendingScannedPdfUri = pendingScannedPdfUriString?.let { Uri.parse(it) }
@@ -1037,6 +1148,7 @@ fun NoteEditorScreen(
             val entity = viewModel.getNote(noteId)
             entity?.let {
                 title = it.title
+                noteIcon = it.icon
                 titleTextFieldValue = TextFieldValue(it.title, TextRange(it.title.length))
                 noteType = runCatching { NoteType.valueOf(it.noteType) }.getOrDefault(NoteType.TEXT)
                 colorIndex = it.colorIndex
@@ -1120,6 +1232,7 @@ fun NoteEditorScreen(
             reminderTimestamp = reminderTimestamp,
             imageUri = attachedImageUri,
             syncEnabled = syncEnabled,
+            icon = noteIcon,
             onSaved = { savedId ->
                 if (reminderTimestamp != null) {
                     viewModel.setReminder(context, savedId, reminderTimestamp!!, finalTitle, serializedContent)
@@ -1284,6 +1397,28 @@ fun NoteEditorScreen(
                 onToggleArchive = { isArchived = !isArchived }
             )
         },
+        floatingActionButton = {
+            if (isRecordingAndListening) {
+                androidx.compose.material3.ExtendedFloatingActionButton(
+                    onClick = {
+                        speechRecognizer?.stopListening()
+                    },
+                    containerColor = androidx.compose.ui.graphics.Color.Red,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                    icon = {
+                        androidx.compose.material3.Icon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = "Detener grabación"
+                        )
+                    },
+                    text = {
+                        androidx.compose.material3.Text(
+                            text = if (currentPartialTranscription.isNotBlank()) currentPartialTranscription else "Grabando y escuchando..."
+                        )
+                    }
+                )
+            }
+        },
         containerColor = editorBgColor
     ) { innerPadding ->
         Box(
@@ -1337,12 +1472,14 @@ fun NoteEditorScreen(
                         viewModel.cancelReminder(context, noteId)
                     }
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                },
-                titleTextFieldValue = titleTextFieldValue,
-                onTitleValueChange = { newValue ->
-                    titleTextFieldValue = newValue
-                    title = newValue.text
-                },
+        },
+        noteIcon = noteIcon,
+        onNoteIconChange = { noteIcon = it },
+        titleTextFieldValue = titleTextFieldValue,
+        onTitleValueChange = { newValue ->
+            titleTextFieldValue = newValue
+            title = newValue.text
+        },
                 onTitleNext = {
                     if (blocks.isEmpty()) {
                         ensureTextNoteExists()
@@ -1591,7 +1728,7 @@ fun NoteEditorScreen(
                                 )
                             },
                             onStartAudioDictation = {
-                                showVoiceDictationSheet = true
+                                launchGoogleDictation()
                             },
                         onToggleBold = { isBoldActive = !isBoldActive },
                         onToggleItalic = { isItalicActive = !isItalicActive },
@@ -1928,66 +2065,7 @@ fun NoteEditorScreen(
         amber = amber
     )
 
-    if (showVoiceDictationSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showVoiceDictationSheet = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-        ) {
-            NoteTranscriptionScreen(
-                onTranscriptionFinished = { transcribedText ->
-                    val textToInsert = transcribedText.trim()
-                    if (textToInsert.isNotBlank()) {
-                        saveSnapshot()
-                        val targetId = focusedBlockId
-                        if (targetId == "TITLE") {
-                            val current = titleTextFieldValue.text
-                            val updated = if (current.isBlank()) textToInsert else "$current $textToInsert"
-                            titleTextFieldValue = TextFieldValue(updated, TextRange(updated.length))
-                            title = updated
-                        } else if (targetId != null) {
-                            val currentTfv = blockTextFieldValues[targetId] ?: TextFieldValue("")
-                            val currentText = currentTfv.text
-                            val updated = if (currentText.isBlank()) textToInsert else "$currentText $textToInsert"
-                            blockTextFieldValues[targetId] = TextFieldValue(updated, TextRange(updated.length))
-                            val idx = blocks.indexOfFirst { it.id == targetId }
-                            if (idx != -1) {
-                                when (val b = blocks[idx]) {
-                                    is NoteBlock.Text -> blocks[idx] = b.copy(content = updated)
-                                    is NoteBlock.Checklist -> blocks[idx] = b.copy(content = updated)
-                                    is NoteBlock.SimpleList -> blocks[idx] = b.copy(content = updated)
-                                    is NoteBlock.CalloutBox -> blocks[idx] = b.copy(content = updated)
-                                    else -> {}
-                                }
-                            }
-                        } else {
-                            if (blocks.size == 1 && blocks[0] is NoteBlock.Text && (blocks[0] as NoteBlock.Text).content.isBlank()) {
-                                val id = blocks[0].id
-                                blocks[0] = NoteBlock.Text(id = id, content = textToInsert)
-                                blockTextFieldValues[id] = TextFieldValue(textToInsert, TextRange(textToInsert.length))
-                                focusedBlockId = id
-                                targetFocusBlockId = id
-                            } else {
-                                val newId = UUID.randomUUID().toString()
-                                blocks.add(NoteBlock.Text(id = newId, content = textToInsert))
-                                blockTextFieldValues[newId] = TextFieldValue(textToInsert, TextRange(textToInsert.length))
-                                focusedBlockId = newId
-                                targetFocusBlockId = newId
-                            }
-                        }
-                        if (title.isBlank()) {
-                            title = "Nota de voz"
-                            titleTextFieldValue = TextFieldValue(title, TextRange(title.length))
-                        }
-                    }
-                    showVoiceDictationSheet = false
-                },
-                onDismiss = {
-                    showVoiceDictationSheet = false
-                }
-            )
-        }
-    }
+
 }
 
 private fun Context.findActivity(): Activity? = when (this) {

@@ -85,10 +85,12 @@ class MainActivity : FragmentActivity() {
         const val ACTION_QUICK_NOTE = "com.example.ACTION_QUICK_NOTE"
         const val ACTION_QUICK_VOICE = "com.example.ACTION_QUICK_VOICE"
         const val ACTION_QUICK_SCAN = "com.example.ACTION_QUICK_SCAN"
+        const val ACTION_CREATE_REMINDER = "com.example.notejs.CREATE_REMINDER"
     }
 
     private var openNoteIdState by mutableLongStateOf(0L)
     private var openReminderIdState by mutableLongStateOf(0L)
+    private var createNewReminderState by mutableStateOf(false)
     private var createNewNoteState by mutableStateOf(false)
     private var openVoiceDictationState by mutableStateOf(false)
     private var openDocumentScannerState by mutableStateOf(false)
@@ -104,6 +106,7 @@ class MainActivity : FragmentActivity() {
             NotesApp(
                 initialOpenNoteId = openNoteIdState,
                 initialOpenReminderId = openReminderIdState,
+                initialCreateNewReminder = createNewReminderState,
                 initialCreateNewNote = createNewNoteState,
                 initialOpenVoiceDictation = openVoiceDictationState,
                 initialOpenDocumentScanner = openDocumentScannerState,
@@ -113,6 +116,7 @@ class MainActivity : FragmentActivity() {
                 onNoteOpened = {
                     openNoteIdState = 0L
                     openReminderIdState = 0L
+                    createNewReminderState = false
                     createNewNoteState = false
                     openVoiceDictationState = false
                     openDocumentScannerState = false
@@ -223,6 +227,18 @@ class MainActivity : FragmentActivity() {
             newNoteId > 0L -> {
                 openNoteIdState = newNoteId
                 openReminderIdState = 0L
+                createNewReminderState = false
+                createNewNoteState = false
+                openVoiceDictationState = false
+                openDocumentScannerState = false
+                openPdfUriState = null
+                sharedTextState = null
+                sharedTitleState = null
+            }
+            action == ACTION_CREATE_REMINDER || action == "com.example.ACTION_CREATE_REMINDER" || action == "com.example.CREATE_REMINDER" -> {
+                openNoteIdState = 0L
+                openReminderIdState = -2L
+                createNewReminderState = true
                 createNewNoteState = false
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -233,6 +249,7 @@ class MainActivity : FragmentActivity() {
             reminderId != 0L || openCalendar -> {
                 openReminderIdState = if (reminderId > 0L) reminderId else -1L
                 openNoteIdState = 0L
+                createNewReminderState = false
                 createNewNoteState = false
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -243,6 +260,7 @@ class MainActivity : FragmentActivity() {
             createNew || action == ACTION_QUICK_NOTE || action == "com.example.ACTION_NEW_NOTE" -> {
                 openNoteIdState = 0L
                 openReminderIdState = 0L
+                createNewReminderState = false
                 createNewNoteState = true
                 openVoiceDictationState = false
                 openDocumentScannerState = false
@@ -253,6 +271,7 @@ class MainActivity : FragmentActivity() {
             action == ACTION_QUICK_VOICE || action == "com.example.ACTION_VOICE_NOTE" -> {
                 openNoteIdState = 0L
                 openReminderIdState = 0L
+                createNewReminderState = false
                 createNewNoteState = true
                 openVoiceDictationState = true
                 openDocumentScannerState = false
@@ -263,6 +282,7 @@ class MainActivity : FragmentActivity() {
             action == ACTION_QUICK_SCAN || action == "com.example.ACTION_SCAN_DOCUMENT" -> {
                 openNoteIdState = 0L
                 openReminderIdState = 0L
+                createNewReminderState = false
                 createNewNoteState = true
                 openDocumentScannerState = true
                 openVoiceDictationState = false
@@ -272,7 +292,7 @@ class MainActivity : FragmentActivity() {
             }
         }
         
-        if (action == ACTION_QUICK_NOTE || action == ACTION_QUICK_VOICE || action == ACTION_QUICK_SCAN || action == "com.example.ACTION_NEW_NOTE" || action == "com.example.ACTION_VOICE_NOTE" || action == "com.example.ACTION_SCAN_DOCUMENT") {
+        if (action == ACTION_QUICK_NOTE || action == ACTION_QUICK_VOICE || action == ACTION_QUICK_SCAN || action == ACTION_CREATE_REMINDER || action == "com.example.ACTION_NEW_NOTE" || action == "com.example.ACTION_VOICE_NOTE" || action == "com.example.ACTION_SCAN_DOCUMENT" || action == "com.example.CREATE_REMINDER" || action == "com.example.ACTION_CREATE_REMINDER") {
             intent.action = null
         }
     }
@@ -282,6 +302,7 @@ class MainActivity : FragmentActivity() {
 fun NotesApp(
     initialOpenNoteId: Long = 0L,
     initialOpenReminderId: Long = 0L,
+    initialCreateNewReminder: Boolean = false,
     initialCreateNewNote: Boolean = false,
     initialOpenVoiceDictation: Boolean = false,
     initialOpenDocumentScanner: Boolean = false,
@@ -361,6 +382,7 @@ fun NotesApp(
             LaunchedEffect(
                 initialOpenNoteId,
                 initialOpenReminderId,
+                initialCreateNewReminder,
                 initialCreateNewNote,
                 initialOpenVoiceDictation,
                 initialOpenDocumentScanner,
@@ -374,11 +396,15 @@ fun NotesApp(
                 } else if (initialOpenNoteId > 0L) {
                     viewModel.navigateTo(Screen.Editor(noteId = initialOpenNoteId))
                     onNoteOpened()
+                } else if (initialCreateNewReminder || initialOpenReminderId == -2L) {
+                    pendingOpenReminderId = -2L
+                    viewModel.navigateTo(Screen.Reminders(initialCreateNewReminder = true))
+                    onNoteOpened()
                 } else if (initialOpenReminderId != 0L) {
                     if (initialOpenReminderId > 0L) {
                         pendingOpenReminderId = initialOpenReminderId
                     }
-                    viewModel.navigateTo(Screen.Reminders)
+                    viewModel.navigateTo(Screen.Reminders(initialOpenReminderId = pendingOpenReminderId))
                     onNoteOpened()
                 } else if (initialCreateNewNote || initialOpenVoiceDictation || initialOpenDocumentScanner || !initialSharedText.isNullOrEmpty() || !initialSharedTitle.isNullOrEmpty()) {
                     viewModel.navigateTo(
@@ -451,7 +477,8 @@ fun NotesApp(
                     is Screen.Reminders -> {
                         RemindersScreen(
                             viewModel = viewModel,
-                            initialOpenReminderId = pendingOpenReminderId
+                            initialOpenReminderId = if (screen.initialOpenReminderId != 0L) screen.initialOpenReminderId else pendingOpenReminderId,
+                            initialCreateNewReminder = screen.initialCreateNewReminder || (pendingOpenReminderId == -2L)
                         )
                     }
                 }

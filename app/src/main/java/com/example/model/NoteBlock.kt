@@ -39,9 +39,9 @@ sealed interface NoteBlock {
     data class Audio(
         override val id: String = UUID.randomUUID().toString(),
         val filePath: String,                   // Ruta absoluta local en filesDir
+        var transcription: String? = "",        // Texto transcrito
         var remoteUrl: String = "",             // URL de descarga de Firebase Cloud Storage
         val durationMs: Long = 0L,              // Duración total en milisegundos
-        var transcription: String? = "",        // Texto transcrito
         var isTranscribing: Boolean = false,    // true mientras se procesa el audio
         var isTranscriptionVisible: Boolean = false // Controla si se muestra u oculta el texto
     ) : NoteBlock
@@ -100,7 +100,9 @@ sealed interface NoteBlock {
     data class CalloutBox(
         override val id: String = UUID.randomUUID().toString(),
         var content: String = "",
-        var backgroundColorHex: String? = null
+        var backgroundColorHex: String? = null,
+        var fontType: String = "Estándar",
+        var emoji: String? = "💡"
     ) : NoteBlock
 
     data class Drawing(

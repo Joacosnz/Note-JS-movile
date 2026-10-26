@@ -394,7 +394,7 @@ fun FoldersScreen(
                                     tint = MaterialTheme.colorScheme.secondary,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.navigateTo(Screen.Reminders)
+                                        viewModel.navigateTo(Screen.Reminders())
                                     },
                                     testTag = "folder_reminders",
                                     showTrailingIcon = true
@@ -481,7 +481,7 @@ fun FoldersScreen(
                 viewModel.navigateTo(Screen.PdfLibrary)
             },
             onReminder = {
-                viewModel.navigateTo(Screen.Reminders)
+                viewModel.navigateTo(Screen.Reminders(initialCreateNewReminder = true))
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )

@@ -120,6 +120,7 @@ fun RemindersScreen(
     viewModel: NotesViewModel,
     reminderViewModel: ReminderViewModel = viewModel(),
     initialOpenReminderId: Long = 0L,
+    initialCreateNewReminder: Boolean = false,
     showBackButton: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -166,8 +167,13 @@ fun RemindersScreen(
 
     var itemForEditChecklistReminder by remember { mutableStateOf<UnifiedReminderItem?>(null) }
 
-    LaunchedEffect(initialOpenReminderId, calendarReminders) {
-        if (initialOpenReminderId > 0L && calendarReminders.isNotEmpty()) {
+    LaunchedEffect(initialCreateNewReminder, initialOpenReminderId, calendarReminders) {
+        if (initialCreateNewReminder || initialOpenReminderId == -2L) {
+            editingItem = null
+            modalInitialScheduledAt = System.currentTimeMillis() + 3600_000L
+            modalInitialType = CalendarItemType.REMINDER
+            showHybridModal = true
+        } else if (initialOpenReminderId > 0L && calendarReminders.isNotEmpty()) {
             val target = calendarReminders.firstOrNull { it.id == initialOpenReminderId }
             if (target != null) {
                 selectedDateMillis = target.scheduledAt

@@ -107,7 +107,10 @@ sealed class Screen {
     data class PdfViewer(val noteId: Long = 0, val pdfPath: String = "") : Screen()
     data object PdfLibrary : Screen()
     data object Settings : Screen()
-    data object Reminders : Screen()
+    data class Reminders(
+        val initialCreateNewReminder: Boolean = false,
+        val initialOpenReminderId: Long = 0L
+    ) : Screen()
 }
 
 data class NotesUiState(
@@ -373,11 +376,11 @@ class NotesViewModel @JvmOverloads constructor(
             } catch (e: Exception) {
                 android.util.Log.e("NotesViewModel", "Failed to clean old welcome note", e)
             }
-            if (!settingsManager.isFirstRunNoteGenerated()) {
+            if (com.example.util.AppPreferences.getIsFirstLaunch(application)) {
                 try {
                     val onboardingNote = OnboardingNoteHelper.createWelcomeNote()
                     repository.insert(onboardingNote)
-                    settingsManager.setFirstRunNoteGenerated(true)
+                    com.example.util.AppPreferences.setFirstLaunchCompleted(application)
                 } catch (e: Exception) {
                     android.util.Log.e("NotesViewModel", "Failed to generate onboarding note", e)
                 }
@@ -718,7 +721,12 @@ class NotesViewModel @JvmOverloads constructor(
 
     fun navigateTo(screen: Screen) {
         val current = currentNavigationSnapshot()
-        transitionToSnapshot(current.copy(screen = screen))
+        val targetTab = when (screen) {
+            is Screen.Reminders -> NavTab.REMINDERS
+            is Screen.Home -> NavTab.NOTES
+            else -> current.activeTab
+        }
+        transitionToSnapshot(current.copy(screen = screen, activeTab = targetTab))
     }
 
     fun navigateBack(): Boolean {
@@ -1892,6 +1900,7 @@ class NotesViewModel @JvmOverloads constructor(
         reminderTimestamp: Long? = keepReminderTimestamp,
         imageUri: Uri? = keepImageUri,
         syncEnabled: Boolean? = null,
+        icon: String? = null,
         onSaved: (Long) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -2087,7 +2096,8 @@ class NotesViewModel @JvmOverloads constructor(
                     updatedAt = now,
                     imageUri = finalImageUri,
                     pdfExtractedText = extractedPdfText,
-                    syncEnabled = finalSyncEnabled
+                    syncEnabled = finalSyncEnabled,
+                    icon = icon
                 )
             } else {
                 NoteEntity(
@@ -2111,7 +2121,8 @@ class NotesViewModel @JvmOverloads constructor(
                     updatedAt = now,
                     imageUri = finalImageUri,
                     pdfExtractedText = extractedPdfText,
-                    syncEnabled = finalSyncEnabled
+                    syncEnabled = finalSyncEnabled,
+                    icon = icon
                 )
             }
 

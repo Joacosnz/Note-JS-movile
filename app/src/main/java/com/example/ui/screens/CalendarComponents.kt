@@ -1521,17 +1521,23 @@ fun CalendarItemTaxonomyCard(
             label = "reminder_circle_bg"
         )
 
+        val cardBgColor = if (item.isCompleted) {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        } else {
+            MaterialTheme.colorScheme.surface
+        }
+
         Surface(
             shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = cardBgColor,
             border = BorderStroke(
                 width = 0.8.dp,
                 color = if (isOverdue) Color(0xFFEF4444).copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (item.isCompleted) 0.3f else 0.55f)
             ),
             modifier = modifier
                 .fillMaxWidth()
-                .alpha(if (item.isCompleted) 0.58f else 1f)
+                .alpha(if (item.isCompleted) 0.6f else 1f)
                 .clickable { onItemClick() }
                 .testTag("calendar_reminder_card_${item.id}")
         ) {

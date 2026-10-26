@@ -7,6 +7,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,13 +16,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -43,7 +51,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
@@ -60,18 +70,23 @@ import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.border
 import androidx.compose.ui.text.TextRange
 import com.example.ui.components.RichLinkPreviewList
 import com.example.ui.components.RichLinkQuickPreviewDialog
 import com.example.ui.components.onWebLinkClick
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalloutBlockItem(
     block: NoteBlock.CalloutBox,
     index: Int,
     tfv: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
-    onColorChanged: (String?) -> Unit,
+    onBlockUpdated: (NoteBlock.CalloutBox) -> Unit,
     onDelete: () -> Unit,
     onNoteLinkClick: (Long) -> Unit,
     onInlineMathClick: (code: String, start: Int, end: Int) -> Unit,
@@ -88,8 +103,7 @@ fun CalloutBlockItem(
     val haptics = LocalHapticFeedback.current
     val bringIntoViewRequester = remember(block.id) { BringIntoViewRequester() }
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var showCalloutMenu by remember { mutableStateOf(value = false) }
-    var showCalloutColorPicker by remember { mutableStateOf(value = false) }
+    var showCalloutMenu by remember { mutableStateOf(false) }
     var previewingWebUrl by remember { mutableStateOf<String?>(null) }
     var linkModeRefreshTrigger by remember { mutableIntStateOf(0) }
 
@@ -99,6 +113,13 @@ fun CalloutBlockItem(
         )
     } else {
         if (isPaperDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+    }
+
+    val calloutFontFamily = when (block.fontType) {
+        "Serif" -> FontFamily.Serif
+        "Mono" -> FontFamily.Monospace
+        "Cursiva" -> FontFamily.Cursive
+        else -> FontFamily.Default
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -115,20 +136,32 @@ fun CalloutBlockItem(
                     }
                 ),
             shape = RoundedCornerShape(12.dp),
-            color = calloutBg,
-            border = BorderStroke(1.dp, amber.copy(alpha = 0.3f))
+            color = calloutBg.copy(alpha = 0.15f), // Soft background tint
+            border = BorderStroke(1.dp, calloutBg.copy(alpha = 0.4f)) // Subtle border
         ) {
             Row(
                 modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
+                // Left Border/Bar
                 Box(
                     modifier = Modifier
                         .width(4.dp)
-                        .height(36.dp)
-                        .background(amber, RoundedCornerShape(2.dp))
+                        .height(24.dp) // Minimum height
+                        .background(calloutBg, RoundedCornerShape(2.dp))
                 )
                 Spacer(modifier = Modifier.width(12.dp))
+                
+                // Emoji (if present)
+                if (block.emoji != null) {
+                    Text(
+                        text = block.emoji!!,
+                        fontSize = 24.sp,
+                        modifier = Modifier.padding(top = 2.dp, end = 12.dp)
+                    )
+                }
+
+                // Text
                 BasicTextField(
                     value = tfv,
                     onValueChange = { newValue ->
@@ -177,7 +210,8 @@ fun CalloutBlockItem(
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 17.sp,
                         color = paperTextColor,
-                        fontStyle = FontStyle.Italic
+                        fontFamily = calloutFontFamily,
+                        fontStyle = if (block.fontType == "Estándar") FontStyle.Italic else FontStyle.Normal
                     ),
                     cursorBrush = SolidColor(amber),
                     visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
@@ -188,7 +222,8 @@ fun CalloutBlockItem(
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     fontSize = 17.sp,
                                     color = paperHintColor.copy(alpha = 0.5f),
-                                    fontStyle = FontStyle.Italic
+                                    fontFamily = calloutFontFamily,
+                                    fontStyle = if (block.fontType == "Estándar") FontStyle.Italic else FontStyle.Normal
                                 )
                             )
                         }
@@ -248,81 +283,162 @@ fun CalloutBlockItem(
     }
 
     if (showCalloutMenu) {
-        AlertDialog(
-            onDismissRequest = { showCalloutMenu = false },
-            title = { Text("Opciones de cuadro destacado") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            showCalloutMenu = false
-                            showCalloutColorPicker = true
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("🎨 Cambiar color de resalte", color = amber)
-                    }
-                    TextButton(
-                        onClick = {
-                            showCalloutMenu = false
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onDelete()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("btn_delete_callout")
-                    ) {
-                        Text("🗑️ Eliminar cuadro destacado", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showCalloutMenu = false }) {
-                    Text("Cerrar")
-                }
-            }
-        )
-    }
+        Dialog(onDismissRequest = { showCalloutMenu = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color(0xFF2C2C2E),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    Text(
+                        text = "Opciones de cuadro destacado",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp
+                    )
 
-    if (showCalloutColorPicker) {
-        AlertDialog(
-            onDismissRequest = { showCalloutColorPicker = false },
-            title = { Text("Seleccionar color de resalte") },
-            text = {
-                val calloutPalette = listOf(
-                    "Gris neutro" to null,
-                    "Amarillo pastel" to "#FEF3C7",
-                    "Azul claro" to "#DBEAFE",
-                    "Verde menta" to "#D1FAE5",
-                    "Rosa pastel" to "#FCE7F3"
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    calloutPalette.forEach { (name, hex) ->
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onColorChanged(hex)
-                                    showCalloutColorPicker = false
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (hex != null) Color(android.graphics.Color.parseColor(hex)) else MaterialTheme.colorScheme.surfaceVariant
+                    // Section 1: Emoji
+                var showEmojiDialog by remember { mutableStateOf(false) }
+
+                if (showEmojiDialog) {
+                    com.example.ui.components.NativeEmojiInputDialog(
+                        onDismiss = { showEmojiDialog = false },
+                        onEmojiSelected = { emoji ->
+                            onBlockUpdated(block.copy(emoji = emoji))
+                            showEmojiDialog = false
+                        },
+                        onRemoveIcon = {
+                            onBlockUpdated(block.copy(emoji = null))
+                            showEmojiDialog = false
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "💡 Cambiar emoji / ícono",
+                        color = Color(0xFFFFD54F),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    TextButton(onClick = { showEmojiDialog = true }) {
+                        Text(
+                            text = block.emoji ?: "🚫 Elegir",
+                            fontSize = 24.sp
+                        )
+                    }
+                    }
+
+                    // Section 2: Font
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "🔤 Cambiar tipografía",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        val fonts = listOf("Estándar", "Serif", "Mono", "Cursiva")
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = name,
-                                modifier = Modifier.padding(12.dp),
-                                color = if (hex != null) Color.Black else MaterialTheme.colorScheme.onSurface
+                            fonts.forEach { font ->
+                                val isSelected = block.fontType == font
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (isSelected) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.15f),
+                                    modifier = Modifier.clickable {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onBlockUpdated(block.copy(fontType = font))
+                                    }
+                                ) {
+                                    Text(
+                                        text = font,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Section 3: Color Palette
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "🎨 Color de resalte y fondo",
+                            color = Color(0xFFFFD54F),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        val colors = listOf(
+                            "#FDE047", // Amarillo
+                            "#93C5FD", // Azul
+                            "#86EFAC", // Verde
+                            "#FCA5A5", // Rojo
+                            "#D8B4FE", // Morado
+                            "#D1D5DB"  // Gris
+                        )
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            colors.forEach { hex ->
+                                val isSelected = block.backgroundColorHex == hex
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(Color(android.graphics.Color.parseColor(hex)), CircleShape)
+                                        .then(if (isSelected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onBlockUpdated(block.copy(backgroundColorHex = hex))
+                                        }
+                                )
+                            }
+                        }
+                    }
+
+                    // Section 4 & 5: Delete and Close
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .clickable {
+                                    showCalloutMenu = false
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onDelete()
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Eliminar",
+                                tint = Color(0xFFE57373)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Eliminar cuadro destacado",
+                                color = Color(0xFFE57373),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.weight(1f))
+                        
+                        TextButton(onClick = { showCalloutMenu = false }) {
+                            Text("Cerrar", color = Color(0xFFFFD54F), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showCalloutColorPicker = false }) {
-                    Text("Cancelar")
-                }
             }
-        )
+        }
     }
 }

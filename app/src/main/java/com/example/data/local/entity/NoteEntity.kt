@@ -60,7 +60,8 @@ data class NoteEntity(
     val remoteUrl: String = "", // URL remota del archivo PDF principal en Firebase Cloud Storage
     val attachmentsJson: String = "[]", // Lista serializada de NoteMediaAttachment (URI local + URL remota)
     val searchableText: String = "", // Texto aplanado centralizado para FTS4
-    val syncEnabled: Boolean = true
+    val syncEnabled: Boolean = true,
+    val icon: String? = null
 ) {
     val timestamp: Long
         @androidx.room.Ignore get() = updatedAt

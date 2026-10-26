@@ -123,6 +123,8 @@ fun EditorBlockList(
     reminderTimestamp: Long?,
     onReminderClick: () -> Unit,
     onDeleteReminder: () -> Unit,
+    noteIcon: String?,
+    onNoteIconChange: (String?) -> Unit,
     titleTextFieldValue: TextFieldValue,
     onTitleValueChange: (TextFieldValue) -> Unit,
     onTitleNext: () -> Unit,
@@ -219,6 +221,40 @@ fun EditorBlockList(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
+
+        // Icon button
+        var showEmojiDialog by remember { mutableStateOf(false) }
+        
+        if (showEmojiDialog) {
+            com.example.ui.components.NativeEmojiInputDialog(
+                onDismiss = { showEmojiDialog = false },
+                onEmojiSelected = { emoji ->
+                    onNoteIconChange(emoji)
+                    showEmojiDialog = false
+                },
+                onRemoveIcon = if (noteIcon != null) { {
+                    onNoteIconChange(null)
+                    showEmojiDialog = false
+                } } else null
+            )
+        }
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start
+        ) {
+            if (noteIcon != null) {
+                TextButton(onClick = { showEmojiDialog = true }) {
+                    Text(noteIcon, fontSize = 48.sp)
+                }
+            } else {
+                TextButton(onClick = { showEmojiDialog = true }) {
+                    Text("☺️ Añadir ícono", color = paperHintColor)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
             // Title input
             val titleBringIntoViewRequester = remember { BringIntoViewRequester() }
@@ -575,8 +611,8 @@ fun EditorBlockList(
                                     onUpdateBlock(index, block.copy(content = sanitized.text))
                                 }
                             },
-                            onColorChanged = { hex ->
-                                onUpdateBlock(index, block.copy(backgroundColorHex = hex))
+                            onBlockUpdated = { updatedBlock ->
+                                onUpdateBlock(index, updatedBlock)
                             },
                             onDelete = { onRemoveBlock(index) },
                             onNoteLinkClick = onNoteLinkClick,

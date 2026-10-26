@@ -40,4 +40,17 @@
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
 
+    <shortcut
+        android:shortcutId="create_reminder"
+        android:enabled="true"
+        android:icon="@drawable/ic_reminder"
+        android:shortcutShortLabel="@string/shortcut_create_reminder_short"
+        android:shortcutLongLabel="@string/shortcut_create_reminder_long">
+        <intent
+            android:action="com.example.notejs.CREATE_REMINDER"
+            android:targetPackage="com.aistudio.notasjs.vqrmpx"
+            android:targetClass="com.example.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
 </shortcuts>

@@ -48,6 +48,12 @@ object NoteBlockSerializer {
                     obj.put("id", block.id)
                     obj.put("content", block.content)
                     obj.put("bg", block.backgroundColorHex ?: JSONObject.NULL)
+                    obj.put("fontType", block.fontType)
+                    if (block.emoji != null) {
+                        obj.put("emoji", block.emoji)
+                    } else {
+                        obj.put("emoji", JSONObject.NULL)
+                    }
                 }
                 is NoteBlock.Drawing -> {
                     obj.put("type", "drawing")
@@ -222,7 +228,9 @@ object NoteBlockSerializer {
                     "callout" -> {
                         val content = obj.optString("content", "")
                         val bg = if (obj.has("bg") && !obj.isNull("bg")) obj.optString("bg").takeIf { it.isNotBlank() && it != "null" } else null
-                        list.add(NoteBlock.CalloutBox(id = id, content = content, backgroundColorHex = bg))
+                        val fontType = obj.optString("fontType", "Estándar")
+                        val emoji = if (obj.has("emoji") && !obj.isNull("emoji")) obj.optString("emoji") else null
+                        list.add(NoteBlock.CalloutBox(id = id, content = content, backgroundColorHex = bg, fontType = fontType, emoji = emoji))
                     }
                     "drawing" -> {
                         val filePath = obj.optString("filePath", "")

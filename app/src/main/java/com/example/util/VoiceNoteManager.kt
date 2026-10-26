@@ -1,3 +1,3 @@
 package com.example.util
 
-// Grabador de audio eliminado. La aplicación utiliza exclusivamente el dictado por voz nativo de Android.
+// La aplicación utiliza exclusivamente la interfaz nativa del dictado por voz de Google (RecognizerIntent.ACTION_RECOGNIZE_SPEECH).

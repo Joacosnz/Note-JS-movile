@@ -93,9 +93,7 @@ android {
         }
       }
     }
-    if (!pluginGeneratesWebClientId) {
-      resValue("string", "default_web_client_id", fallbackWebClientId)
-    }
+    // default_web_client_id is provided by google-services plugin from google-services.json
   }
 
   signingConfigs {

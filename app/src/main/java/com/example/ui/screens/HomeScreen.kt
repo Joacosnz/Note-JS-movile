@@ -141,6 +141,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsStateWithLifecycle()
@@ -296,7 +297,7 @@ fun HomeScreen(
                         onSelectAll = { viewModel.selectAllNotes(currentListIds) },
                         onDeselectAll = { viewModel.deselectAllNotes() },
                         onOpenSettings = { viewModel.navigateTo(Screen.Settings) },
-                        onOpenReminders = { viewModel.navigateTo(Screen.Reminders) },
+                        onOpenReminders = { viewModel.navigateTo(Screen.Reminders()) },
                         isGridView = uiState.isGridView,
                         onToggleGridView = { viewModel.toggleViewMode() },
                         availableFolders = uiState.availableFolders,
@@ -503,8 +504,11 @@ fun HomeScreen(
                         }
 
                         NavTab.REMINDERS -> {
+                            val remScreen = currentScreen as? Screen.Reminders
                             RemindersScreen(
                                 viewModel = viewModel,
+                                initialCreateNewReminder = remScreen?.initialCreateNewReminder ?: false,
+                                initialOpenReminderId = remScreen?.initialOpenReminderId ?: 0L,
                                 showBackButton = false,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -657,7 +661,7 @@ fun HomeScreen(
                             }
                         },
                         onReminder = {
-                            viewModel.navigateTo(Screen.Reminders)
+                            viewModel.navigateTo(Screen.Reminders(initialCreateNewReminder = true))
                         },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
