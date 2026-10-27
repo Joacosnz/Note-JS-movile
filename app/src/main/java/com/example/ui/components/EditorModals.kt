@@ -468,7 +468,7 @@ internal fun EditorFontSizeCarouselSheet(
                         contentPadding = PaddingValues(vertical = 60.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(150) { index ->
+                        items(150, key = { it }) { index ->
                             val number = index + 1
                             val isSelected = number == customFontSizeSp
 
@@ -1150,7 +1150,7 @@ internal fun EditorReminderBottomSheet(
                                 .weight(0.50f)
                                 .fillMaxHeight()
                         ) {
-                            itemsIndexed(dayOptions) { idx, dayCal ->
+                            itemsIndexed(dayOptions, key = { _, dayCal -> dayCal.timeInMillis }) { idx, dayCal ->
                                 val isSelected = idx == selectedDayIndex
                                 val dayText = remember(dayCal) {
                                     val now = Calendar.getInstance()
@@ -1211,7 +1211,7 @@ internal fun EditorReminderBottomSheet(
                                 .weight(0.25f)
                                 .fillMaxHeight()
                         ) {
-                            itemsIndexed(hourOptions) { idx, hour ->
+                            itemsIndexed(hourOptions, key = { _, hour -> hour }) { idx, hour ->
                                 val isSelected = idx == selectedHourIndex
                                 Box(
                                     modifier = Modifier
@@ -1255,7 +1255,7 @@ internal fun EditorReminderBottomSheet(
                                 .weight(0.25f)
                                 .fillMaxHeight()
                         ) {
-                            itemsIndexed(minuteOptions) { idx, minute ->
+                            itemsIndexed(minuteOptions, key = { _, minute -> minute }) { idx, minute ->
                                 val isSelected = idx == selectedMinuteIndex
                                 Box(
                                     modifier = Modifier
@@ -1301,7 +1301,7 @@ internal fun EditorReminderBottomSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(REMINDER_OFFSET_OPTIONS) { option ->
+                        items(REMINDER_OFFSET_OPTIONS, key = { it.minutes }) { option ->
                             val isSelected = selectedReminderOffsets.contains(option.minutes)
                             FilterChip(
                                 selected = isSelected,

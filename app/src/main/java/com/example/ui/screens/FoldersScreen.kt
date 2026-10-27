@@ -198,7 +198,7 @@ fun FoldersScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // SECCIÓN CARPETAS
-                    item {
+                    item(key = "section_folders") {
                         Text(
                             text = "CARPETAS",
                             style = MaterialTheme.typography.labelSmall.copy(
@@ -241,32 +241,34 @@ fun FoldersScreen(
                                     }
                                 } else {
                                     allFolderNames.forEachIndexed { index, folderName ->
-                                        val count = uiState.folderNoteCounts[folderName]
-                                            ?: uiState.activeNotes.count { it.folder.equals(folderName, ignoreCase = true) }
-                                        if (index > 0) {
-                                            HorizontalDivider(
-                                                modifier = Modifier.padding(start = 48.dp),
-                                                thickness = 0.5.dp,
-                                                color = MaterialTheme.colorScheme.outlineVariant
+                                        androidx.compose.runtime.key(folderName) {
+                                            val count = uiState.folderNoteCounts[folderName]
+                                                ?: uiState.activeNotes.count { it.folder.equals(folderName, ignoreCase = true) }
+                                            if (index > 0) {
+                                                HorizontalDivider(
+                                                    modifier = Modifier.padding(start = 48.dp),
+                                                    thickness = 0.5.dp,
+                                                    color = MaterialTheme.colorScheme.outlineVariant
+                                                )
+                                            }
+                                            FolderRowItem(
+                                                icon = Icons.Default.Folder,
+                                                title = folderName,
+                                                count = count,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                onClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    targetFolderForCrud = folderName
+                                                    showFolderOptionsDialog = true
+                                                },
+                                                onLongClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    targetFolderForCrud = folderName
+                                                    showFolderOptionsDialog = true
+                                                },
+                                                testTag = "folder_item_$folderName"
                                             )
                                         }
-                                        FolderRowItem(
-                                            icon = Icons.Default.Folder,
-                                            title = folderName,
-                                            count = count,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                targetFolderForCrud = folderName
-                                                showFolderOptionsDialog = true
-                                            },
-                                            onLongClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                targetFolderForCrud = folderName
-                                                showFolderOptionsDialog = true
-                                            },
-                                            testTag = "folder_item_$folderName"
-                                        )
                                     }
                                 }
                             }
@@ -282,7 +284,7 @@ fun FoldersScreen(
                             !it.equals("Privado", ignoreCase = true)
                     }
                     if (tagsList.isNotEmpty()) {
-                        item {
+                        item(key = "section_tags") {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "ETIQUETAS",
@@ -302,31 +304,33 @@ fun FoldersScreen(
                             ) {
                                 Column {
                                     tagsList.forEachIndexed { index, tag ->
-                                        val count = uiState.tagNoteCounts[tag] ?: 0
-                                        if (index > 0) {
-                                            HorizontalDivider(
-                                                modifier = Modifier.padding(start = 48.dp),
-                                                thickness = 0.5.dp,
-                                                color = MaterialTheme.colorScheme.outlineVariant
+                                        androidx.compose.runtime.key(tag) {
+                                            val count = uiState.tagNoteCounts[tag] ?: 0
+                                            if (index > 0) {
+                                                HorizontalDivider(
+                                                    modifier = Modifier.padding(start = 48.dp),
+                                                    thickness = 0.5.dp,
+                                                    color = MaterialTheme.colorScheme.outlineVariant
+                                                )
+                                            }
+                                            FolderRowItem(
+                                                icon = Icons.Default.Tag,
+                                                title = "#$tag",
+                                                count = count,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                onClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    targetTagForCrud = tag
+                                                    showTagOptionsDialog = true
+                                                },
+                                                onLongClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    targetTagForCrud = tag
+                                                    showTagOptionsDialog = true
+                                                },
+                                                testTag = "tag_folder_$tag"
                                             )
                                         }
-                                        FolderRowItem(
-                                            icon = Icons.Default.Tag,
-                                            title = "#$tag",
-                                            count = count,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                targetTagForCrud = tag
-                                                showTagOptionsDialog = true
-                                            },
-                                            onLongClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                targetTagForCrud = tag
-                                                showTagOptionsDialog = true
-                                            },
-                                            testTag = "tag_folder_$tag"
-                                        )
                                     }
                                 }
                             }
@@ -334,7 +338,7 @@ fun FoldersScreen(
                     }
 
                     // ACCESOS RÁPIDOS
-                    item {
+                    item(key = "section_quick_access") {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "ACCESOS RÁPIDOS",
@@ -391,7 +395,7 @@ fun FoldersScreen(
                                     icon = Icons.Default.Notifications,
                                     title = "Calendario y Recordatorios",
                                     count = uiState.remindersCount,
-                                    tint = MaterialTheme.colorScheme.secondary,
+                                    tint = MaterialTheme.colorScheme.primary,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         viewModel.navigateTo(Screen.Reminders())
@@ -410,31 +414,12 @@ fun FoldersScreen(
                                     icon = Icons.Default.Archive,
                                     title = "Archivadas",
                                     count = uiState.archivedCount,
-                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    tint = MaterialTheme.colorScheme.primary,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         viewModel.selectTab(NavTab.ARCHIVED)
                                     },
                                     testTag = "folder_archive",
-                                    showTrailingIcon = false
-                                )
-
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(start = 48.dp),
-                                    thickness = 0.5.dp,
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
-
-                                FolderRowItem(
-                                    icon = Icons.Default.Delete,
-                                    title = "Papelera / Eliminadas",
-                                    count = uiState.trashedCount,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.selectTab(NavTab.TRASH)
-                                    },
-                                    testTag = "folder_trash",
                                     showTrailingIcon = false
                                 )
 
@@ -454,6 +439,25 @@ fun FoldersScreen(
                                         viewModel.navigateTo(Screen.PdfLibrary)
                                     },
                                     testTag = "folder_pdf_library",
+                                    showTrailingIcon = false
+                                )
+
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 48.dp),
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                )
+
+                                FolderRowItem(
+                                    icon = Icons.Default.Delete,
+                                    title = "Papelera / Eliminadas",
+                                    count = uiState.trashedCount,
+                                    tint = Color(0xFFE50914),
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.selectTab(NavTab.TRASH)
+                                    },
+                                    testTag = "folder_trash",
                                     showTrailingIcon = false
                                 )
                             }

@@ -22,13 +22,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
@@ -68,6 +72,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.OutlinedButton
@@ -222,6 +227,10 @@ fun SettingsScreen(
         )
     }
 
+    val isGoogleConnected = isFirebaseConnected || isDriveConnected
+    val isMsConnected = microsoftAccount != null && !microsoftAccount?.accessToken.isNullOrBlank()
+    val isAnyAccountConnected = isGoogleConnected || isMsConnected
+
     val authLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -313,12 +322,28 @@ fun SettingsScreen(
             val driveService = account?.let {
                 try { driveManager.getDriveService(it) } catch (_: Exception) { null }
             }
-            backupHistoryList = DriveRestoreUtil.fetchAllAvailableBackups(context, driveService)
+            val driveSnapshots = DriveRestoreUtil.fetchAllAvailableBackups(context, driveService)
+            val oneDriveSnapshots = if (isMsConnected) {
+                try {
+                    viewModel.oneDriveBackupManager.fetchOneDriveBackups()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+            val mergedById = linkedMapOf<String, BackupSnapshotInfo>()
+            (driveSnapshots + oneDriveSnapshots)
+                .sortedByDescending { it.timestamp }
+                .forEach { snap ->
+                    mergedById[snap.id] = snap
+                }
+            backupHistoryList = mergedById.values.toList()
         }
     }
 
-    LaunchedEffect(isFirebaseConnected, isDriveConnected, uiState.allActiveNotesCount, uiState.remindersCount) {
-        if (isFirebaseConnected || isDriveConnected) {
+    LaunchedEffect(isFirebaseConnected, isDriveConnected, isMsConnected, uiState.allActiveNotesCount, uiState.remindersCount) {
+        if (isAnyAccountConnected) {
             DriveBackupWorker.scheduleWithPreferences(context)
             refreshBackupState()
         } else {
@@ -386,10 +411,7 @@ fun SettingsScreen(
             item {
                 SettingsSectionHeader("CUENTA DE NOTE JS")
                 SettingsGroupCard {
-                    val isGoogleConnected = isFirebaseConnected || isDriveConnected
-                    val isMsConnected = microsoftAccount != null && !microsoftAccount?.accessToken.isNullOrBlank()
-
-                    if (!isGoogleConnected && !isMsConnected) {
+                    if (!isAnyAccountConnected) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -517,9 +539,11 @@ fun SettingsScreen(
                         val googleAccount = driveManager.getSignedInAccount()
                         val displayName = fbUser?.displayName?.ifBlank { null }
                             ?: googleAccount?.displayName?.ifBlank { null }
+                            ?: microsoftAccount?.displayName?.ifBlank { null }
                             ?: "Usuario"
                         val email = fbUser?.email?.ifBlank { null }
                             ?: googleAccount?.email?.ifBlank { null }
+                            ?: microsoftAccount?.email?.ifBlank { null }
                             ?: "Sin correo electrónico"
                         val photoUrl = fbUser?.photoUrl ?: googleAccount?.photoUrl
 
@@ -784,206 +808,731 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
 
-                            // Panel unificado de Sincronización Instantánea en la Nube
                             val isSyncingNow = isManualSyncing || syncState == com.example.model.SyncState.SYNCING
+                            var showUnifiedSyncSheet by remember { mutableStateOf(false) }
+                            val unifiedSyncSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+                            // Opción unificada de Sincronización que abre el menú desplegable de abajo hacia arriba
                             SettingsRow(
                                 icon = Icons.Default.CloudSync,
                                 badgeColor = statusBadgeColor,
-                                title = "Sincronización Instantánea en la Nube",
+                                title = "Sincronización",
                                 subtitle = when {
-                                    isSyncingNow -> "Sincronizando cambios entre dispositivos..."
-                                    pendingSyncCount > 0 -> "$pendingSyncCount cambios locales pendientes • Toca para sincronizar"
-                                    syncState == com.example.model.SyncState.OFFLINE -> "Sin conexión • Se sincronizará automáticamente al conectar"
-                                    else -> "Tus notas se sincronizan al instante en todos tus dispositivos"
+                                    isSyncingNow -> "Sincronizando cambios en la nube..."
+                                    isUploadingBackup -> "Subiendo copia de seguridad..."
+                                    isGoogleCalendarSyncing || isMicrosoftCalendarSyncing -> "Sincronizando calendario..."
+                                    else -> "Calendario, copias de seguridad y nube • Toca para abrir"
                                 },
-                                valueText = if (isSyncingNow) "Sincronizando..." else "Sincronizar",
-                                onClick = {
-                                    viewModel.syncPendingNotesNow { _, msg ->
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                testTag = "btn_sync_firestore_now"
+                                valueText = statusBadgeText,
+                                onClick = { showUnifiedSyncSheet = true },
+                                testTag = "btn_open_unified_sync_sheet"
                             )
 
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 60.dp),
-                                thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
+                            if (showUnifiedSyncSheet) {
+                                var showWorkdaysDialog by remember { mutableStateOf(false) }
+                                var showGoogleCalendarPickerDialog by remember { mutableStateOf(false) }
 
-                            // Menú desplegable unificado de Copia de Seguridad (visible únicamente al iniciar sesión en Google)
-                            WhatsAppStyleBackupCard(
-                                accentColor = amber,
-                                isDark = isDark,
-                                backupFrequency = backupFrequency,
-                                scheduledHour = scheduledBackupHour,
-                                scheduledMinute = scheduledBackupMinute,
-                                wifiOnly = backupWifiOnly,
-                                includePdfs = backupIncludePdfs,
-                                lastLocalBackupTime = lastLocalBackupTime,
-                                lastCloudBackupTime = lastCloudBackupTime,
-                                lastBackupSize = lastBackupSize,
-                                lastBackupNotesCount = lastBackupNotesCount,
-                                lastBackupRemindersCount = lastBackupRemindersCount,
-                                accountEmail = email,
-                                isBackingUp = isUploadingBackup,
-                                isRestoring = isRestoringBackup,
-                                backupStatusText = backupStatusText,
-                                backupHistory = backupHistoryList,
-                                onBackupNowClick = {
-                                    isUploadingBackup = true
-                                    backupStatusText = "Comprimiendo notas, recordatorios y subiendo copia..."
-                                    coroutineScope.launch {
-                                        val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
-                                        val driveService = account?.let {
-                                            try { driveManager.getDriveService(it) } catch (_: Exception) { null }
-                                        }
-                                        val result = DriveBackupWorker.performBackup(
-                                            context = context,
-                                            driveService = driveService,
-                                            dbName = DriveBackupWorker.DB_NAME,
-                                            triggerType = "MANUAL"
-                                        )
-                                        if (isFirebaseConnected) {
-                                            viewModel.syncPendingNotesNow()
-                                        }
-                                        refreshBackupState()
-                                        isUploadingBackup = false
-                                        backupStatusText = ""
-                                        when (result) {
-                                            is BackupResult.Success -> {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Copia de seguridad guardada exitosamente",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                            is BackupResult.AuthRequired -> {
-                                                authLauncher.launch(result.intent)
-                                            }
-                                            is BackupResult.Error -> {
-                                                Toast.makeText(
-                                                    context,
-                                                    result.message,
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                            }
-                                        }
-                                    }
-                                },
-                                onFrequencySelected = { freq ->
-                                    DriveBackupWorker.setBackupFrequency(context, freq)
-                                    backupFrequency = freq
-                                    val msg = when (freq) {
-                                        BackupFrequency.DAILY -> "Copia automática programada diariamente"
-                                        BackupFrequency.WEEKLY -> "Copia automática programada semanalmente"
-                                        BackupFrequency.MONTHLY -> "Copia automática programada una vez al mes"
-                                        BackupFrequency.MANUAL_ONLY -> "Copia configurada solo en modo manual"
-                                        BackupFrequency.NEVER -> "Copias automáticas desactivadas"
-                                    }
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                },
-                                onScheduledTimeSelected = { hour, minute ->
-                                    DriveBackupWorker.setScheduledTime(context, hour, minute)
-                                    scheduledBackupHour = hour
-                                    scheduledBackupMinute = minute
-                                    val timeFormatted = String.format(java.util.Locale.getDefault(), "%02d:%02d", hour, minute)
-                                    Toast.makeText(
-                                        context,
-                                        "Horario de copia automática fijado a las $timeFormatted",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                },
-                                onWifiOnlyChanged = { wifiOnly ->
-                                    DriveBackupWorker.setWifiOnly(context, wifiOnly)
-                                    backupWifiOnly = wifiOnly
-                                },
-                                onIncludePdfsChanged = { include ->
-                                    DriveBackupWorker.setIncludePdfs(context, include)
-                                    backupIncludePdfs = include
-                                },
-                                onRestoreSnapshot = { snapshot, mode ->
-                                    isRestoringBackup = true
-                                    backupStatusText = "Restaurando copia del historial..."
-                                    coroutineScope.launch {
-                                        val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
-                                        val driveService = account?.let {
-                                            try { driveManager.getDriveService(it) } catch (_: Exception) { null }
-                                        }
-                                        val result = DriveRestoreUtil.restoreSpecificBackup(
-                                            context = context,
-                                            snapshot = snapshot,
-                                            mode = mode,
-                                            driveService = driveService,
-                                            dbName = DriveBackupWorker.DB_NAME
-                                        )
-                                        isRestoringBackup = false
-                                        backupStatusText = ""
-                                        when (result) {
-                                            is RestoreResult.Success -> {
-                                                if (mode == RestoreMode.REPLACE_ALL) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Base de datos restaurada. Reiniciando...",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                    context.triggerRestart()
-                                                } else {
-                                                    if (isFirebaseConnected) {
-                                                        viewModel.syncPendingNotesNow()
-                                                    }
-                                                    refreshBackupState()
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Copia restaurada y combinada exitosamente (${snapshot.notesCount} notas, ${snapshot.remindersCount} recordatorios)",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
+                                ModalBottomSheet(
+                                    onDismissRequest = { showUnifiedSyncSheet = false },
+                                    sheetState = unifiedSyncSheetState,
+                                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                                    containerColor = MaterialTheme.colorScheme.background,
+                                    tonalElevation = 0.dp,
+                                    modifier = Modifier.testTag("unified_sync_bottom_sheet")
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .verticalScroll(rememberScrollState())
+                                            .navigationBarsPadding()
+                                            .padding(horizontal = 16.dp)
+                                            .padding(bottom = 28.dp),
+                                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                                    ) {
+                                        // Cabecera del menú desplegable inferior
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                IconBadge(
+                                                    icon = Icons.Default.CloudSync,
+                                                    badgeColor = statusBadgeColor
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column {
+                                                    Text(
+                                                        text = "Sincronización",
+                                                        style = MaterialTheme.typography.titleLarge.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 20.sp
+                                                        ),
+                                                        color = MaterialTheme.colorScheme.onBackground
+                                                    )
+                                                    Text(
+                                                        text = "Calendario, copias de seguridad y sincronización en la nube",
+                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
                                                 }
                                             }
-                                            is RestoreResult.NotFound -> {
-                                                Toast.makeText(
-                                                    context,
-                                                    "No se encontró el archivo de esta copia de seguridad",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
+                                            IconButton(onClick = { showUnifiedSyncSheet = false }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Cerrar menú de sincronización",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
                                             }
-                                            is RestoreResult.AuthRequired -> {
-                                                authLauncher.launch(result.intent)
+                                        }
+
+                                        // 1. SINCRONIZACIÓN INSTANTÁNEA EN LA NUBE
+                                        Column {
+                                            SettingsSectionHeader("SINCRONIZACIÓN EN LA NUBE")
+                                            SettingsGroupCard {
+                                                SettingsRow(
+                                                    icon = Icons.Default.CloudSync,
+                                                    badgeColor = statusBadgeColor,
+                                                    title = "Sincronización Instantánea en la Nube",
+                                                    subtitle = when {
+                                                        isSyncingNow -> "Sincronizando cambios entre dispositivos..."
+                                                        pendingSyncCount > 0 -> "$pendingSyncCount cambios locales pendientes • Toca para sincronizar"
+                                                        syncState == com.example.model.SyncState.OFFLINE -> "Sin conexión • Se sincronizará automáticamente al conectar"
+                                                        else -> "Tus notas se sincronizan al instante en todos tus dispositivos"
+                                                    },
+                                                    valueText = if (isSyncingNow) "Sincronizando..." else "Sincronizar",
+                                                    onClick = {
+                                                        viewModel.syncPendingNotesNow { _, msg ->
+                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                    testTag = "btn_sync_firestore_now"
+                                                )
                                             }
-                                            is RestoreResult.Error -> {
-                                                Toast.makeText(
-                                                    context,
-                                                    result.message,
-                                                    Toast.LENGTH_LONG
-                                                ).show()
+                                        }
+
+                                        // 2. SINCRONIZACIÓN DE CALENDARIO Y RECORDATORIOS
+                                        Column {
+                                            SettingsSectionHeader("SINCRONIZACIÓN DE CALENDARIO")
+                                            SettingsGroupCard {
+                                                if (isGoogleConnected) {
+                                                    SettingsSwitchRow(
+                                                        icon = Icons.Default.EventAvailable,
+                                                        badgeColor = Color(0xFF4285F4),
+                                                        title = "Sincronizar con Google Calendar",
+                                                        subtitle = if (isGoogleCalendarSyncEnabled) {
+                                                            "Vinculado con ${googleCalendarAccountLabel.ifBlank { "Google Calendar" }}"
+                                                        } else {
+                                                            "Sincroniza tus recordatorios y eventos con Google Calendar"
+                                                        },
+                                                        checked = isGoogleCalendarSyncEnabled,
+                                                        onCheckedChange = { enabled ->
+                                                            if (enabled) {
+                                                                if (GoogleCalendarSyncManager.hasCalendarPermissions(context)) {
+                                                                    viewModel.setGoogleCalendarSyncEnabled(true) { _, msg ->
+                                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                } else {
+                                                                    calendarPermissionLauncher.launch(
+                                                                        arrayOf(
+                                                                            android.Manifest.permission.READ_CALENDAR,
+                                                                            android.Manifest.permission.WRITE_CALENDAR
+                                                                        )
+                                                                    )
+                                                                }
+                                                            } else {
+                                                                viewModel.setGoogleCalendarSyncEnabled(false) { _, msg ->
+                                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            }
+                                                        },
+                                                        testTag = "settings_switch_google_calendar_sync"
+                                                    )
+
+                                                    HorizontalDivider(
+                                                        modifier = Modifier.padding(start = 60.dp),
+                                                        thickness = 0.5.dp,
+                                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                    )
+
+                                                    if (isGoogleCalendarSyncEnabled) {
+                                                        SettingsRow(
+                                                            icon = Icons.Default.AccountCircle,
+                                                            badgeColor = Color(0xFF34A853),
+                                                            title = "Calendario de Google vinculado",
+                                                            subtitle = "Toca para elegir la cuenta o calendario de destino",
+                                                            valueText = googleCalendarAccountLabel.ifBlank { "Principal" },
+                                                            onClick = { showGoogleCalendarPickerDialog = true },
+                                                            testTag = "settings_row_google_calendar_account"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+
+                                                        SettingsSwitchRow(
+                                                            icon = Icons.Default.NotificationsActive,
+                                                            badgeColor = Color(0xFFFF9500),
+                                                            title = "Sincronizar recordatorios",
+                                                            subtitle = "Incluir tus recordatorios además de los eventos en Google Calendar",
+                                                            checked = syncRemindersToGoogleCalendar,
+                                                            onCheckedChange = { viewModel.setSyncRemindersToGoogleCalendar(it) },
+                                                            testTag = "settings_switch_gcal_reminders"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+
+                                                        SettingsSwitchRow(
+                                                            icon = Icons.Default.EventRepeat,
+                                                            badgeColor = Color(0xFF5856D6),
+                                                            title = "Importar eventos de Google Calendar",
+                                                            subtitle = "Mostrar los eventos de tu Google Calendar dentro de Note JS",
+                                                            checked = importGoogleCalendarEvents,
+                                                            onCheckedChange = { viewModel.setImportGoogleCalendarEvents(it) },
+                                                            testTag = "settings_switch_gcal_import"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+
+                                                        val lastGCalSyncFormatted = remember(lastGoogleCalendarSyncTime) {
+                                                            if (lastGoogleCalendarSyncTime <= 0L) {
+                                                                "Listo para sincronizar"
+                                                            } else {
+                                                                val sdf = java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale("es", "ES"))
+                                                                "Última sincronización: ${sdf.format(java.util.Date(lastGoogleCalendarSyncTime))}"
+                                                            }
+                                                        }
+
+                                                        SettingsRow(
+                                                            icon = Icons.Default.Sync,
+                                                            badgeColor = Color(0xFF4285F4),
+                                                            title = "Sincronizar con Google Calendar ahora",
+                                                            subtitle = if (isGoogleCalendarSyncing) {
+                                                                "Sincronizando eventos y recordatorios..."
+                                                            } else {
+                                                                lastGCalSyncFormatted
+                                                            },
+                                                            valueText = if (isGoogleCalendarSyncing) "Sincronizando..." else "Sincronizar",
+                                                            onClick = {
+                                                                viewModel.syncWithGoogleCalendarNow(showSnackbar = true) { _, msg ->
+                                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            },
+                                                            testTag = "btn_sync_google_calendar_now"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+                                                    }
+                                                }
+
+                                                if (isMsConnected) {
+                                                    SettingsSwitchRow(
+                                                        icon = Icons.Default.EventAvailable,
+                                                        badgeColor = Color(0xFF0078D4),
+                                                        title = "Sincronizar con Microsoft Outlook",
+                                                        subtitle = if (isMicrosoftCalendarSyncEnabled) {
+                                                            "Vinculado con ${microsoftCalendarAccountLabel.ifBlank { "Outlook / Office 365" }}"
+                                                        } else {
+                                                            "Sincroniza tus recordatorios y eventos con Outlook y Microsoft 365"
+                                                        },
+                                                        checked = isMicrosoftCalendarSyncEnabled,
+                                                        onCheckedChange = { enabled ->
+                                                            viewModel.setMicrosoftCalendarSyncEnabled(enabled) { _, msg ->
+                                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        },
+                                                        testTag = "settings_switch_microsoft_calendar_sync"
+                                                    )
+
+                                                    HorizontalDivider(
+                                                        modifier = Modifier.padding(start = 60.dp),
+                                                        thickness = 0.5.dp,
+                                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                    )
+
+                                                    if (isMicrosoftCalendarSyncEnabled) {
+                                                        SettingsRow(
+                                                            icon = Icons.Default.AccountCircle,
+                                                            badgeColor = Color(0xFF0078D4),
+                                                            title = "Cuenta de Outlook vinculada",
+                                                            subtitle = "Eventos sincronizados mediante Microsoft Graph API",
+                                                            valueText = microsoftCalendarAccountLabel.ifBlank { "Microsoft 365" },
+                                                            onClick = {
+                                                                Toast.makeText(context, "Sincronizado con: $microsoftCalendarAccountLabel", Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            testTag = "settings_row_ms_calendar_account"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+
+                                                        SettingsSwitchRow(
+                                                            icon = Icons.Default.NotificationsActive,
+                                                            badgeColor = Color(0xFFFF9500),
+                                                            title = "Sincronizar recordatorios con Outlook",
+                                                            subtitle = "Incluir tus recordatorios además de los eventos en el calendario",
+                                                            checked = syncRemindersToMicrosoftCalendar,
+                                                            onCheckedChange = { viewModel.setSyncRemindersToMicrosoftCalendar(it) },
+                                                            testTag = "settings_switch_ms_reminders"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+
+                                                        SettingsSwitchRow(
+                                                            icon = Icons.Default.EventRepeat,
+                                                            badgeColor = Color(0xFF0078D4),
+                                                            title = "Importar eventos de Outlook Calendar",
+                                                            subtitle = "Mostrar los eventos de tu calendario de Microsoft dentro de Note JS",
+                                                            checked = importMicrosoftCalendarEvents,
+                                                            onCheckedChange = { viewModel.setImportMicrosoftCalendarEvents(it) },
+                                                            testTag = "settings_switch_ms_import"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+
+                                                        val lastMsSyncFormatted = remember(lastMicrosoftCalendarSyncTime) {
+                                                            if (lastMicrosoftCalendarSyncTime <= 0L) {
+                                                                "Listo para sincronizar"
+                                                            } else {
+                                                                val sdf = java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale("es", "ES"))
+                                                                "Última sincronización: ${sdf.format(java.util.Date(lastMicrosoftCalendarSyncTime))}"
+                                                            }
+                                                        }
+
+                                                        SettingsRow(
+                                                            icon = Icons.Default.Sync,
+                                                            badgeColor = Color(0xFF0078D4),
+                                                            title = "Sincronizar con Outlook Calendar ahora",
+                                                            subtitle = if (isMicrosoftCalendarSyncing) {
+                                                                "Sincronizando eventos y recordatorios con Microsoft..."
+                                                            } else {
+                                                                lastMsSyncFormatted
+                                                            },
+                                                            valueText = if (isMicrosoftCalendarSyncing) "Sincronizando..." else "Sincronizar",
+                                                            onClick = {
+                                                                viewModel.syncWithMicrosoftCalendarNow(showSnackbar = true) { _, msg ->
+                                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            },
+                                                            testTag = "btn_sync_microsoft_calendar_now"
+                                                        )
+
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(start = 60.dp),
+                                                            thickness = 0.5.dp,
+                                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                        )
+                                                    }
+                                                }
+
+                                                val workdaysLabel = remember(uiState.workdays) {
+                                                    if (uiState.workdays.isEmpty()) "Ninguno"
+                                                    else if (uiState.workdays == setOf(1, 2, 3, 4, 5)) "Lunes a Viernes"
+                                                    else if (uiState.workdays == setOf(1, 2, 3, 4, 5, 6)) "Lunes a Sábado"
+                                                    else if (uiState.workdays == setOf(6, 7)) "Fines de semana"
+                                                    else if (uiState.workdays.size == 7) "Todos los días"
+                                                    else "${uiState.workdays.size} días"
+                                                }
+
+                                                SettingsRow(
+                                                    icon = Icons.Default.CalendarMonth,
+                                                    badgeColor = Color(0xFF007AFF),
+                                                    title = "Días laborales",
+                                                    subtitle = "Usados para repetición de recordatorios",
+                                                    valueText = workdaysLabel,
+                                                    onClick = { showWorkdaysDialog = true },
+                                                    testTag = "settings_row_workdays"
+                                                )
+                                            }
+                                        }
+
+                                        // 3. COPIAS DE SEGURIDAD
+                                        Column {
+                                            SettingsSectionHeader("COPIAS DE SEGURIDAD")
+                                            SettingsGroupCard {
+                                                WhatsAppStyleBackupCard(
+                                                    accentColor = amber,
+                                                    isDark = isDark,
+                                                    backupFrequency = backupFrequency,
+                                                    scheduledHour = scheduledBackupHour,
+                                                    scheduledMinute = scheduledBackupMinute,
+                                                    wifiOnly = backupWifiOnly,
+                                                    includePdfs = backupIncludePdfs,
+                                                    lastLocalBackupTime = lastLocalBackupTime,
+                                                    lastCloudBackupTime = lastCloudBackupTime,
+                                                    lastBackupSize = lastBackupSize,
+                                                    lastBackupNotesCount = lastBackupNotesCount,
+                                                    lastBackupRemindersCount = lastBackupRemindersCount,
+                                                    accountEmail = email,
+                                                    isBackingUp = isUploadingBackup,
+                                                    isRestoring = isRestoringBackup,
+                                                    backupStatusText = backupStatusText,
+                                                    backupHistory = backupHistoryList,
+                                                    initiallyExpanded = true,
+                                                    onBackupNowClick = {
+                                                        isUploadingBackup = true
+                                                        backupStatusText = "Comprimiendo notas, recordatorios y subiendo copia..."
+                                                        coroutineScope.launch {
+                                                            if (isGoogleConnected) {
+                                                                val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
+                                                                val driveService = account?.let {
+                                                                    try { driveManager.getDriveService(it) } catch (_: Exception) { null }
+                                                                }
+                                                                val result = DriveBackupWorker.performBackup(
+                                                                    context = context,
+                                                                    driveService = driveService,
+                                                                    dbName = DriveBackupWorker.DB_NAME,
+                                                                    triggerType = "MANUAL"
+                                                                )
+                                                                if (isMsConnected) {
+                                                                    viewModel.oneDriveBackupManager.performOneDriveBackup(triggerType = "MANUAL_ONEDRIVE")
+                                                                }
+                                                                if (isFirebaseConnected) {
+                                                                    viewModel.syncPendingNotesNow()
+                                                                }
+                                                                refreshBackupState()
+                                                                isUploadingBackup = false
+                                                                backupStatusText = ""
+                                                                when (result) {
+                                                                    is BackupResult.Success -> {
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            "Copia de seguridad guardada exitosamente",
+                                                                            Toast.LENGTH_SHORT
+                                                                        ).show()
+                                                                    }
+                                                                    is BackupResult.AuthRequired -> {
+                                                                        authLauncher.launch(result.intent)
+                                                                    }
+                                                                    is BackupResult.Error -> {
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            result.message,
+                                                                            Toast.LENGTH_LONG
+                                                                        ).show()
+                                                                    }
+                                                                }
+                                                            } else if (isMsConnected) {
+                                                                val result = viewModel.oneDriveBackupManager.performOneDriveBackup(triggerType = "MANUAL_ONEDRIVE")
+                                                                refreshBackupState()
+                                                                isUploadingBackup = false
+                                                                backupStatusText = ""
+                                                                when (result) {
+                                                                    is BackupResult.Success -> {
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            "Copia de seguridad guardada exitosamente en OneDrive",
+                                                                            Toast.LENGTH_SHORT
+                                                                        ).show()
+                                                                    }
+                                                                    is BackupResult.AuthRequired -> {
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            "Autorización requerida en Microsoft",
+                                                                            Toast.LENGTH_SHORT
+                                                                        ).show()
+                                                                    }
+                                                                    is BackupResult.Error -> {
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            result.message,
+                                                                            Toast.LENGTH_LONG
+                                                                        ).show()
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    onFrequencySelected = { freq ->
+                                                        DriveBackupWorker.setBackupFrequency(context, freq)
+                                                        backupFrequency = freq
+                                                        val msg = when (freq) {
+                                                            BackupFrequency.DAILY -> "Copia automática programada diariamente"
+                                                            BackupFrequency.WEEKLY -> "Copia automática programada semanalmente"
+                                                            BackupFrequency.MONTHLY -> "Copia automática programada una vez al mes"
+                                                            BackupFrequency.MANUAL_ONLY -> "Copia configurada solo en modo manual"
+                                                            BackupFrequency.NEVER -> "Copias automáticas desactivadas"
+                                                        }
+                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    onScheduledTimeSelected = { hour, minute ->
+                                                        DriveBackupWorker.setScheduledTime(context, hour, minute)
+                                                        scheduledBackupHour = hour
+                                                        scheduledBackupMinute = minute
+                                                        val timeFormatted = String.format(java.util.Locale.getDefault(), "%02d:%02d", hour, minute)
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Horario de copia automática fijado a las $timeFormatted",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    },
+                                                    onWifiOnlyChanged = { wifiOnly ->
+                                                        DriveBackupWorker.setWifiOnly(context, wifiOnly)
+                                                        backupWifiOnly = wifiOnly
+                                                    },
+                                                    onIncludePdfsChanged = { include ->
+                                                        DriveBackupWorker.setIncludePdfs(context, include)
+                                                        backupIncludePdfs = include
+                                                    },
+                                                    onRestoreSnapshot = { snapshot, mode ->
+                                                        isRestoringBackup = true
+                                                        backupStatusText = "Restaurando copia del historial..."
+                                                        coroutineScope.launch {
+                                                            val isOneDriveSnap = snapshot.triggerType.contains("ONEDRIVE", ignoreCase = true) ||
+                                                                snapshot.accountEmail.contains("OneDrive", ignoreCase = true)
+                                                            val result = if (isOneDriveSnap) {
+                                                                viewModel.oneDriveBackupManager.restoreOneDriveBackup(snapshot, mode)
+                                                            } else {
+                                                                val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
+                                                                val driveService = account?.let {
+                                                                    try { driveManager.getDriveService(it) } catch (_: Exception) { null }
+                                                                }
+                                                                DriveRestoreUtil.restoreSpecificBackup(
+                                                                    context = context,
+                                                                    snapshot = snapshot,
+                                                                    mode = mode,
+                                                                    driveService = driveService,
+                                                                    dbName = DriveBackupWorker.DB_NAME
+                                                                )
+                                                            }
+                                                            isRestoringBackup = false
+                                                            backupStatusText = ""
+                                                            when (result) {
+                                                                is RestoreResult.Success -> {
+                                                                    if (mode == RestoreMode.REPLACE_ALL) {
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            "Base de datos restaurada. Reiniciando...",
+                                                                            Toast.LENGTH_SHORT
+                                                                        ).show()
+                                                                        context.triggerRestart()
+                                                                    } else {
+                                                                        if (isFirebaseConnected) {
+                                                                            viewModel.syncPendingNotesNow()
+                                                                        }
+                                                                        refreshBackupState()
+                                                                        Toast.makeText(
+                                                                            context,
+                                                                            "Copia restaurada y combinada exitosamente (${snapshot.notesCount} notas, ${snapshot.remindersCount} recordatorios)",
+                                                                            Toast.LENGTH_LONG
+                                                                        ).show()
+                                                                    }
+                                                                }
+                                                                is RestoreResult.NotFound -> {
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        "No se encontró el archivo de esta copia de seguridad",
+                                                                        Toast.LENGTH_LONG
+                                                                    ).show()
+                                                                }
+                                                                is RestoreResult.AuthRequired -> {
+                                                                    authLauncher.launch(result.intent)
+                                                                }
+                                                                is RestoreResult.Error -> {
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        result.message,
+                                                                        Toast.LENGTH_LONG
+                                                                    ).show()
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    onDeleteSnapshot = { snapshot ->
+                                                        coroutineScope.launch {
+                                                            val isOneDriveSnap = snapshot.triggerType.contains("ONEDRIVE", ignoreCase = true) ||
+                                                                snapshot.accountEmail.contains("OneDrive", ignoreCase = true)
+                                                            val deletedOneDrive = if (isOneDriveSnap) {
+                                                                viewModel.oneDriveBackupManager.deleteOneDriveBackup(snapshot)
+                                                            } else {
+                                                                false
+                                                            }
+                                                            val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
+                                                            val driveService = account?.let {
+                                                                try { driveManager.getDriveService(it) } catch (_: Exception) { null }
+                                                            }
+                                                            val deleted = DriveRestoreUtil.deleteBackupSnapshot(context, snapshot, driveService)
+                                                            refreshBackupState()
+                                                            if (deleted || deletedOneDrive) {
+                                                                Toast.makeText(
+                                                                    context,
+                                                                    "Copia anterior eliminada",
+                                                                    Toast.LENGTH_SHORT
+                                                                ).show()
+                                                            }
+                                                        }
+                                                    },
+                                                    onExportJsonClick = {
+                                                        shareBackupJson(context, viewModel)
+                                                    },
+                                                    onOpenDriveSyncClick = {
+                                                        showManualDriveSyncDialog = true
+                                                    }
+                                                )
                                             }
                                         }
                                     }
-                                },
-                                onDeleteSnapshot = { snapshot ->
-                                    coroutineScope.launch {
-                                        val account = try { driveManager.getSignedInAccount() } catch (_: Exception) { null }
-                                        val driveService = account?.let {
-                                            try { driveManager.getDriveService(it) } catch (_: Exception) { null }
-                                        }
-                                        val deleted = DriveRestoreUtil.deleteBackupSnapshot(context, snapshot, driveService)
-                                        refreshBackupState()
-                                        if (deleted) {
-                                            Toast.makeText(
-                                                context,
-                                                "Copia anterior eliminada",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    }
-                                },
-                                onExportJsonClick = {
-                                    shareBackupJson(context, viewModel)
-                                },
-                                onOpenDriveSyncClick = {
-                                    showManualDriveSyncDialog = true
                                 }
-                            )
+
+                                if (showGoogleCalendarPickerDialog) {
+                                    val availableCalendars = remember {
+                                        viewModel.getAvailableGoogleCalendars()
+                                    }
+                                    AlertDialog(
+                                        onDismissRequest = { showGoogleCalendarPickerDialog = false },
+                                        title = { Text("Seleccionar Google Calendar") },
+                                        text = {
+                                            if (availableCalendars.isEmpty()) {
+                                                Text(
+                                                    text = "No se encontraron calendarios adicionales. Tus eventos y recordatorios se sincronizarán con el calendario principal del dispositivo.",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            } else {
+                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    availableCalendars.forEach { calInfo ->
+                                                        val isSelected = googleCalendarAccountLabel == calInfo.summaryLabel ||
+                                                            googleCalendarAccountLabel == calInfo.displayName
+                                                        Surface(
+                                                            shape = RoundedCornerShape(10.dp),
+                                                            color = if (isSelected) amber.copy(alpha = 0.16f) else Color.Transparent,
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .clickable {
+                                                                    viewModel.selectGoogleCalendarAccount(calInfo) { _, msg ->
+                                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                    showGoogleCalendarPickerDialog = false
+                                                                }
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                RadioButton(
+                                                                    selected = isSelected,
+                                                                    onClick = null,
+                                                                    colors = RadioButtonDefaults.colors(selectedColor = amber)
+                                                                )
+                                                                Spacer(modifier = Modifier.width(8.dp))
+                                                                Column(modifier = Modifier.weight(1f)) {
+                                                                    Text(
+                                                                        text = calInfo.displayName,
+                                                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                                                            fontWeight = FontWeight.SemiBold
+                                                                        ),
+                                                                        maxLines = 1,
+                                                                        overflow = TextOverflow.Ellipsis
+                                                                    )
+                                                                    if (calInfo.accountName.isNotBlank()) {
+                                                                        Text(
+                                                                            text = calInfo.accountName,
+                                                                            style = MaterialTheme.typography.labelSmall,
+                                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                            maxLines = 1,
+                                                                            overflow = TextOverflow.Ellipsis
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        confirmButton = {
+                                            TextButton(onClick = { showGoogleCalendarPickerDialog = false }) {
+                                                Text("Cerrar")
+                                            }
+                                        }
+                                    )
+                                }
+
+                                if (showWorkdaysDialog) {
+                                    var tempWorkdays by remember { mutableStateOf(uiState.workdays) }
+                                    val daysMap = listOf(
+                                        1 to "Lunes", 2 to "Martes", 3 to "Miércoles",
+                                        4 to "Jueves", 5 to "Viernes", 6 to "Sábado", 7 to "Domingo"
+                                    )
+
+                                    AlertDialog(
+                                        onDismissRequest = { showWorkdaysDialog = false },
+                                        title = { Text("Días laborales") },
+                                        text = {
+                                            Column {
+                                                daysMap.forEach { (dayInt, dayName) ->
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable {
+                                                                tempWorkdays = if (tempWorkdays.contains(dayInt)) {
+                                                                    tempWorkdays - dayInt
+                                                                } else {
+                                                                    tempWorkdays + dayInt
+                                                                }
+                                                            }
+                                                            .padding(vertical = 8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        androidx.compose.material3.Checkbox(
+                                                            checked = tempWorkdays.contains(dayInt),
+                                                            onCheckedChange = null
+                                                        )
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text(dayName)
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        confirmButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    viewModel.setWorkdays(tempWorkdays)
+                                                    showWorkdaysDialog = false
+                                                }
+                                            ) {
+                                                Text("Guardar")
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showWorkdaysDialog = false }) {
+                                                Text("Cancelar")
+                                            }
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1085,395 +1634,6 @@ fun SettingsScreen(
                         onClick = { showSortDialog = true },
                         testTag = "settings_row_sort"
                     )
-                }
-            }
-
-            // SECCIÓN: RECORDATORIOS Y CALENDARIO
-            item {
-                SettingsSectionHeader("RECORDATORIOS Y CALENDARIO")
-                SettingsGroupCard {
-                    var showWorkdaysDialog by remember { mutableStateOf(false) }
-                    var showGoogleCalendarPickerDialog by remember { mutableStateOf(false) }
-
-                    SettingsSwitchRow(
-                        icon = Icons.Default.EventAvailable,
-                        badgeColor = Color(0xFF4285F4),
-                        title = "Sincronizar con Google Calendar",
-                        subtitle = if (isGoogleCalendarSyncEnabled) {
-                            "Vinculado con ${googleCalendarAccountLabel.ifBlank { "Google Calendar" }}"
-                        } else {
-                            "Sincroniza tus recordatorios y eventos con Google Calendar"
-                        },
-                        checked = isGoogleCalendarSyncEnabled,
-                        onCheckedChange = { enabled ->
-                            if (enabled) {
-                                if (GoogleCalendarSyncManager.hasCalendarPermissions(context)) {
-                                    viewModel.setGoogleCalendarSyncEnabled(true) { _, msg ->
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    calendarPermissionLauncher.launch(
-                                        arrayOf(
-                                            android.Manifest.permission.READ_CALENDAR,
-                                            android.Manifest.permission.WRITE_CALENDAR
-                                        )
-                                    )
-                                }
-                            } else {
-                                viewModel.setGoogleCalendarSyncEnabled(false) { _, msg ->
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        testTag = "settings_switch_google_calendar_sync"
-                    )
-
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 60.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
-
-                    if (isGoogleCalendarSyncEnabled) {
-                        SettingsRow(
-                            icon = Icons.Default.AccountCircle,
-                            badgeColor = Color(0xFF34A853),
-                            title = "Calendario de Google vinculado",
-                            subtitle = "Toca para elegir la cuenta o calendario de destino",
-                            valueText = googleCalendarAccountLabel.ifBlank { "Principal" },
-                            onClick = { showGoogleCalendarPickerDialog = true },
-                            testTag = "settings_row_google_calendar_account"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        SettingsSwitchRow(
-                            icon = Icons.Default.NotificationsActive,
-                            badgeColor = Color(0xFFFF9500),
-                            title = "Sincronizar recordatorios",
-                            subtitle = "Incluir tus recordatorios además de los eventos en Google Calendar",
-                            checked = syncRemindersToGoogleCalendar,
-                            onCheckedChange = { viewModel.setSyncRemindersToGoogleCalendar(it) },
-                            testTag = "settings_switch_gcal_reminders"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        SettingsSwitchRow(
-                            icon = Icons.Default.EventRepeat,
-                            badgeColor = Color(0xFF5856D6),
-                            title = "Importar eventos de Google Calendar",
-                            subtitle = "Mostrar los eventos de tu Google Calendar dentro de Note JS",
-                            checked = importGoogleCalendarEvents,
-                            onCheckedChange = { viewModel.setImportGoogleCalendarEvents(it) },
-                            testTag = "settings_switch_gcal_import"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        val lastGCalSyncFormatted = remember(lastGoogleCalendarSyncTime) {
-                            if (lastGoogleCalendarSyncTime <= 0L) {
-                                "Listo para sincronizar"
-                            } else {
-                                val sdf = java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale("es", "ES"))
-                                "Última sincronización: ${sdf.format(java.util.Date(lastGoogleCalendarSyncTime))}"
-                            }
-                        }
-
-                        SettingsRow(
-                            icon = Icons.Default.Sync,
-                            badgeColor = Color(0xFF4285F4),
-                            title = "Sincronizar con Google Calendar ahora",
-                            subtitle = if (isGoogleCalendarSyncing) {
-                                "Sincronizando eventos y recordatorios..."
-                            } else {
-                                lastGCalSyncFormatted
-                            },
-                            valueText = if (isGoogleCalendarSyncing) "Sincronizando..." else "Sincronizar",
-                            onClick = {
-                                viewModel.syncWithGoogleCalendarNow { _, msg ->
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            testTag = "btn_sync_google_calendar_now"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                    }
-
-                    // --- SECCIÓN: MICROSOFT OUTLOOK / OFFICE 365 CALENDAR ---
-                    SettingsSwitchRow(
-                        icon = Icons.Default.EventAvailable,
-                        badgeColor = Color(0xFF0078D4),
-                        title = "Sincronizar con Microsoft Outlook",
-                        subtitle = if (isMicrosoftCalendarSyncEnabled) {
-                            "Vinculado con ${microsoftCalendarAccountLabel.ifBlank { "Outlook / Office 365" }}"
-                        } else {
-                            "Sincroniza tus recordatorios y eventos con Outlook y Microsoft 365"
-                        },
-                        checked = isMicrosoftCalendarSyncEnabled,
-                        onCheckedChange = { enabled ->
-                            viewModel.setMicrosoftCalendarSyncEnabled(enabled) { _, msg ->
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        testTag = "settings_switch_microsoft_calendar_sync"
-                    )
-
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 60.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
-
-                    if (isMicrosoftCalendarSyncEnabled) {
-                        SettingsRow(
-                            icon = Icons.Default.AccountCircle,
-                            badgeColor = Color(0xFF0078D4),
-                            title = "Cuenta de Outlook vinculada",
-                            subtitle = "Eventos sincronizados mediante Microsoft Graph API",
-                            valueText = microsoftCalendarAccountLabel.ifBlank { "Microsoft 365" },
-                            onClick = {
-                                Toast.makeText(context, "Sincronizado con: $microsoftCalendarAccountLabel", Toast.LENGTH_SHORT).show()
-                            },
-                            testTag = "settings_row_ms_calendar_account"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        SettingsSwitchRow(
-                            icon = Icons.Default.NotificationsActive,
-                            badgeColor = Color(0xFFFF9500),
-                            title = "Sincronizar recordatorios con Outlook",
-                            subtitle = "Incluir tus recordatorios además de los eventos en el calendario",
-                            checked = syncRemindersToMicrosoftCalendar,
-                            onCheckedChange = { viewModel.setSyncRemindersToMicrosoftCalendar(it) },
-                            testTag = "settings_switch_ms_reminders"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        SettingsSwitchRow(
-                            icon = Icons.Default.EventRepeat,
-                            badgeColor = Color(0xFF0078D4),
-                            title = "Importar eventos de Outlook Calendar",
-                            subtitle = "Mostrar los eventos de tu calendario de Microsoft dentro de Note JS",
-                            checked = importMicrosoftCalendarEvents,
-                            onCheckedChange = { viewModel.setImportMicrosoftCalendarEvents(it) },
-                            testTag = "settings_switch_ms_import"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-
-                        val lastMsSyncFormatted = remember(lastMicrosoftCalendarSyncTime) {
-                            if (lastMicrosoftCalendarSyncTime <= 0L) {
-                                "Listo para sincronizar"
-                            } else {
-                                val sdf = java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale("es", "ES"))
-                                "Última sincronización: ${sdf.format(java.util.Date(lastMicrosoftCalendarSyncTime))}"
-                            }
-                        }
-
-                        SettingsRow(
-                            icon = Icons.Default.Sync,
-                            badgeColor = Color(0xFF0078D4),
-                            title = "Sincronizar con Outlook Calendar ahora",
-                            subtitle = if (isMicrosoftCalendarSyncing) {
-                                "Sincronizando eventos y recordatorios con Microsoft..."
-                            } else {
-                                lastMsSyncFormatted
-                            },
-                            valueText = if (isMicrosoftCalendarSyncing) "Sincronizando..." else "Sincronizar",
-                            onClick = {
-                                viewModel.syncWithMicrosoftCalendarNow { _, msg ->
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            testTag = "btn_sync_microsoft_calendar_now"
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 60.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
-                    }
-
-                    val workdaysLabel = remember(uiState.workdays) {
-                        if (uiState.workdays.isEmpty()) "Ninguno"
-                        else if (uiState.workdays == setOf(1, 2, 3, 4, 5)) "Lunes a Viernes"
-                        else if (uiState.workdays == setOf(1, 2, 3, 4, 5, 6)) "Lunes a Sábado"
-                        else if (uiState.workdays == setOf(6, 7)) "Fines de semana"
-                        else if (uiState.workdays.size == 7) "Todos los días"
-                        else "${uiState.workdays.size} días"
-                    }
-
-                    SettingsRow(
-                        icon = Icons.Default.CalendarMonth,
-                        badgeColor = Color(0xFF007AFF),
-                        title = "Días laborales",
-                        subtitle = "Usados para repetición de recordatorios",
-                        valueText = workdaysLabel,
-                        onClick = { showWorkdaysDialog = true },
-                        testTag = "settings_row_workdays"
-                    )
-
-                    if (showGoogleCalendarPickerDialog) {
-                        val availableCalendars = remember {
-                            viewModel.getAvailableGoogleCalendars()
-                        }
-                        AlertDialog(
-                            onDismissRequest = { showGoogleCalendarPickerDialog = false },
-                            title = { Text("Seleccionar Google Calendar") },
-                            text = {
-                                if (availableCalendars.isEmpty()) {
-                                    Text(
-                                        text = "No se encontraron calendarios adicionales. Tus eventos y recordatorios se sincronizarán con el calendario principal del dispositivo.",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                } else {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        availableCalendars.forEach { calInfo ->
-                                            val isSelected = googleCalendarAccountLabel == calInfo.summaryLabel ||
-                                                googleCalendarAccountLabel == calInfo.displayName
-                                            Surface(
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (isSelected) amber.copy(alpha = 0.16f) else Color.Transparent,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        viewModel.selectGoogleCalendarAccount(calInfo) { _, msg ->
-                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        showGoogleCalendarPickerDialog = false
-                                                    }
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    RadioButton(
-                                                        selected = isSelected,
-                                                        onClick = null,
-                                                        colors = RadioButtonDefaults.colors(selectedColor = amber)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        Text(
-                                                            text = calInfo.displayName,
-                                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                                fontWeight = FontWeight.SemiBold
-                                                            ),
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                        if (calInfo.accountName.isNotBlank()) {
-                                                            Text(
-                                                                text = calInfo.accountName,
-                                                                style = MaterialTheme.typography.labelSmall,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(onClick = { showGoogleCalendarPickerDialog = false }) {
-                                    Text("Cerrar")
-                                }
-                            }
-                        )
-                    }
-
-                    if (showWorkdaysDialog) {
-                        var tempWorkdays by remember { mutableStateOf(uiState.workdays) }
-                        val daysMap = listOf(
-                            1 to "Lunes", 2 to "Martes", 3 to "Miércoles", 
-                            4 to "Jueves", 5 to "Viernes", 6 to "Sábado", 7 to "Domingo"
-                        )
-                        
-                        androidx.compose.material3.AlertDialog(
-                            onDismissRequest = { showWorkdaysDialog = false },
-                            title = { Text("Días laborales") },
-                            text = {
-                                Column {
-                                    daysMap.forEach { (dayInt, dayName) ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    tempWorkdays = if (tempWorkdays.contains(dayInt)) {
-                                                        tempWorkdays - dayInt
-                                                    } else {
-                                                        tempWorkdays + dayInt
-                                                    }
-                                                }
-                                                .padding(vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            androidx.compose.material3.Checkbox(
-                                                checked = tempWorkdays.contains(dayInt),
-                                                onCheckedChange = null
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(dayName)
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        viewModel.setWorkdays(tempWorkdays)
-                                        showWorkdaysDialog = false
-                                    }
-                                ) {
-                                    Text("Guardar")
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showWorkdaysDialog = false }) {
-                                    Text("Cancelar")
-                                }
-                            }
-                        )
-                    }
                 }
             }
 

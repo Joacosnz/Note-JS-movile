@@ -1,6 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -35,11 +37,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,9 +49,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +69,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 /**
  * Barra de Navegación Inferior Flotante con paradigma de diseño "Liquid Glass".
@@ -89,7 +94,46 @@ fun NoteJsBottomToolbar(
 ) {
     val isDark = isAppInDarkTheme()
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     var isMenuExpanded by remember { mutableStateOf(false) }
+
+    // Animaciones direccionales de los símbolos de la barra inferior:
+    // - Inicio: horizontal de izquierda a derecha (-offsetX -> 0f)
+    // - Recordatorios (Calendario): vertical de abajo hacia arriba (+offsetY -> 0f)
+    // - Carpetas: horizontal de derecha a izquierda (+offsetX -> 0f)
+    val homeOffsetX = remember { Animatable(0f) }
+    val remindersOffsetY = remember { Animatable(0f) }
+    val foldersOffsetX = remember { Animatable(0f) }
+
+    LaunchedEffect(isHomeActive) {
+        if (isHomeActive) {
+            homeOffsetX.snapTo(-22f)
+            homeOffsetX.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+            )
+        }
+    }
+
+    LaunchedEffect(isRemindersActive) {
+        if (isRemindersActive) {
+            remindersOffsetY.snapTo(22f)
+            remindersOffsetY.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+            )
+        }
+    }
+
+    LaunchedEffect(isFoldersActive) {
+        if (isFoldersActive) {
+            foldersOffsetX.snapTo(22f)
+            foldersOffsetX.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+            )
+        }
+    }
 
     val activeColor = com.example.ui.theme.NoteJsAmber
     val inactiveColor = Color(0xFF8E8E93)
@@ -193,7 +237,7 @@ fun NoteJsBottomToolbar(
                         ) {
                             // Opción 0: Recordatorio / Evento
                             QuickActionMenuItem(
-                                icon = Icons.Default.Notifications,
+                                icon = Icons.Default.CalendarMonth,
                                 label = "Recordatorios",
                                 accentColor = activeColor,
                                 textColor = if (isDark) Color.White else Color(0xFF1C1C1E),
@@ -282,7 +326,7 @@ fun NoteJsBottomToolbar(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 1. Inicio (Casita)
+                        // 1. Inicio (Casita) — desplazamiento horizontal de izquierda a derecha
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
@@ -290,12 +334,22 @@ fun NoteJsBottomToolbar(
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     if (isMenuExpanded) isMenuExpanded = false
+                                    coroutineScope.launch {
+                                        homeOffsetX.snapTo(-22f)
+                                        homeOffsetX.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                                        )
+                                    }
                                     onHomeClick()
                                 }
                                 .testTag("home_nav_button"),
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(
+                                modifier = Modifier.graphicsLayer {
+                                    translationX = homeOffsetX.value
+                                },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
@@ -319,7 +373,7 @@ fun NoteJsBottomToolbar(
                             }
                         }
 
-                        // 2. Recordatorios (Campana / Notificaciones)
+                        // 2. Recordatorios (Calendario) — desplazamiento vertical de abajo hacia arriba
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
@@ -327,17 +381,27 @@ fun NoteJsBottomToolbar(
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     if (isMenuExpanded) isMenuExpanded = false
+                                    coroutineScope.launch {
+                                        remindersOffsetY.snapTo(22f)
+                                        remindersOffsetY.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                                        )
+                                    }
                                     onRemindersClick()
                                 }
                                 .testTag("reminders_nav_button"),
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(
+                                modifier = Modifier.graphicsLayer {
+                                    translationY = remindersOffsetY.value
+                                },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Notifications,
+                                    imageVector = Icons.Default.CalendarMonth,
                                     contentDescription = "Recordatorios",
                                     tint = if (isRemindersActive) activeColor else inactiveColor,
                                     modifier = Modifier.size(24.dp),
@@ -388,7 +452,7 @@ fun NoteJsBottomToolbar(
                             )
                         }
 
-                        // 4. Biblioteca / Carpetas
+                        // 4. Biblioteca / Carpetas — desplazamiento horizontal de derecha a izquierda
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
@@ -396,12 +460,22 @@ fun NoteJsBottomToolbar(
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     if (isMenuExpanded) isMenuExpanded = false
+                                    coroutineScope.launch {
+                                        foldersOffsetX.snapTo(22f)
+                                        foldersOffsetX.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                                        )
+                                    }
                                     onFoldersClick()
                                 }
                                 .testTag("folders_nav_button"),
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(
+                                modifier = Modifier.graphicsLayer {
+                                    translationX = foldersOffsetX.value
+                                },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {

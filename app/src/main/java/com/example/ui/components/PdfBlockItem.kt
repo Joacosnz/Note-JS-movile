@@ -549,7 +549,7 @@ fun PdfInlineBlock(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        items(colors) { colorHex ->
+                                        items(colors, key = { it }) { colorHex ->
                                             val colorInt = runCatching { android.graphics.Color.parseColor(colorHex) }.getOrDefault(android.graphics.Color.BLACK)
                                             val isColorSelected = selectedColor.equals(colorHex, ignoreCase = true)
 
@@ -872,7 +872,7 @@ fun PdfInlineBlock(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items((0 until block.pageCount).toList()) { index ->
+                    items((0 until block.pageCount).toList(), key = { index -> "${block.id}_page_$index" }) { index ->
                         Card(
                             modifier = Modifier
                                 .aspectRatio(0.7f)

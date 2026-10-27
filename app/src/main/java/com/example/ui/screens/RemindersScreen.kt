@@ -94,6 +94,7 @@ import com.example.data.local.entity.CalendarItemType
 import com.example.data.local.entity.ReminderEntity
 import com.example.model.UnifiedReminderItem
 import com.example.ui.components.NoteJsBottomToolbar
+import com.example.ui.components.SyncConflictResolutionDialog
 import com.example.ui.components.editor.ChecklistItemReminderDialog
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
@@ -153,11 +154,32 @@ fun RemindersScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isGoogleCalendarSyncEnabled by viewModel.isGoogleCalendarSyncEnabled.collectAsStateWithLifecycle()
     val isGoogleCalendarSyncing by viewModel.isGoogleCalendarSyncing.collectAsStateWithLifecycle()
+    val isMicrosoftCalendarSyncEnabled by viewModel.isMicrosoftCalendarSyncEnabled.collectAsStateWithLifecycle()
+    val isMicrosoftCalendarSyncing by viewModel.isMicrosoftCalendarSyncing.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val microsoftAccount by viewModel.microsoftAccount.collectAsStateWithLifecycle()
+    val pendingSyncConflicts by viewModel.pendingSyncConflicts.collectAsStateWithLifecycle()
 
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
+
+    val isGoogleConnected = remember(currentUser, context) {
+        currentUser != null || try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null
+        } catch (_: Exception) {
+            false
+        } || try {
+            com.example.data.drive.GoogleDriveManager(context).getSignedInAccount() != null
+        } catch (_: Exception) {
+            false
+        }
+    }
+    val isMsConnected = microsoftAccount != null && !microsoftAccount?.accessToken.isNullOrBlank()
+    val isAnyAccountConnected = isGoogleConnected || isMsConnected
+    val isAnyCalendarSyncing = isGoogleCalendarSyncing || isMicrosoftCalendarSyncing
+    val isAnyCalendarSyncEnabled = isGoogleCalendarSyncEnabled || isMicrosoftCalendarSyncEnabled
 
     val calendarPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -178,26 +200,42 @@ fun RemindersScreen(
     }
 
     val triggerGoogleCalendarSync: () -> Unit = {
-        if (com.example.util.GoogleCalendarSyncManager.hasCalendarPermissions(context)) {
-            viewModel.syncWithGoogleCalendarNow { _, msg ->
-                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            calendarPermissionLauncher.launch(
-                arrayOf(
-                    android.Manifest.permission.READ_CALENDAR,
-                    android.Manifest.permission.WRITE_CALENDAR
+        if (isGoogleConnected) {
+            if (com.example.util.GoogleCalendarSyncManager.hasCalendarPermissions(context)) {
+                viewModel.syncWithGoogleCalendarNow(showSnackbar = true) { _, msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                calendarPermissionLauncher.launch(
+                    arrayOf(
+                        android.Manifest.permission.READ_CALENDAR,
+                        android.Manifest.permission.WRITE_CALENDAR
+                    )
                 )
-            )
+            }
+        }
+        if (isMsConnected) {
+            viewModel.syncWithMicrosoftCalendarNow(showSnackbar = !isGoogleConnected) { _, msg ->
+                if (!isGoogleConnected) {
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.refreshGoogleCalendarState()
-        if (com.example.util.GoogleCalendarSyncManager.isSyncEnabled(context) &&
-            com.example.util.GoogleCalendarSyncManager.hasCalendarPermissions(context)
-        ) {
-            viewModel.syncWithGoogleCalendarNow()
+    LaunchedEffect(isAnyAccountConnected) {
+        if (isAnyAccountConnected) {
+            viewModel.refreshGoogleCalendarState()
+            viewModel.refreshMicrosoftCalendarState()
+            if (isGoogleConnected &&
+                com.example.util.GoogleCalendarSyncManager.isSyncEnabled(context) &&
+                com.example.util.GoogleCalendarSyncManager.hasCalendarPermissions(context)
+            ) {
+                viewModel.syncWithGoogleCalendarNow()
+            }
+            if (isMsConnected && com.example.util.MicrosoftCalendarSyncManager.isSyncEnabled(context)) {
+                viewModel.syncWithMicrosoftCalendarNow()
+            }
         }
     }
 
@@ -474,25 +512,27 @@ fun RemindersScreen(
                     }
                 }
 
-                IconButton(
-                    onClick = triggerGoogleCalendarSync,
-                    enabled = !isGoogleCalendarSyncing,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .testTag("btn_reminders_google_calendar_sync")
-                ) {
-                    if (isGoogleCalendarSyncing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = amber,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (isGoogleCalendarSyncEnabled) Icons.Default.EventAvailable else Icons.Default.Sync,
-                            contentDescription = "Sincronizar con Google Calendar",
-                            tint = if (isGoogleCalendarSyncEnabled) Color(0xFF34A853) else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                if (isAnyAccountConnected) {
+                    IconButton(
+                        onClick = triggerGoogleCalendarSync,
+                        enabled = !isAnyCalendarSyncing,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("btn_reminders_google_calendar_sync")
+                    ) {
+                        if (isAnyCalendarSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = amber,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isAnyCalendarSyncEnabled) Icons.Default.EventAvailable else Icons.Default.Sync,
+                                contentDescription = "Sincronizar calendario",
+                                tint = if (isAnyCalendarSyncEnabled) Color(0xFF34A853) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -591,7 +631,7 @@ fun RemindersScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                item {
+                item(key = "filter_events") {
                     FilterChip(
                         selected = showEvents,
                         onClick = { showEvents = !showEvents },
@@ -605,7 +645,7 @@ fun RemindersScreen(
                         }
                     )
                 }
-                item {
+                item(key = "filter_completed") {
                     FilterChip(
                         selected = showCompleted,
                         onClick = { showCompleted = !showCompleted },
@@ -619,7 +659,7 @@ fun RemindersScreen(
                         }
                     )
                 }
-                item {
+                item(key = "filter_google_sync") {
                     FilterChip(
                         selected = isGoogleCalendarSyncEnabled,
                         onClick = triggerGoogleCalendarSync,
@@ -950,6 +990,19 @@ fun RemindersScreen(
             }
         )
     }
+
+    if (pendingSyncConflicts.isNotEmpty()) {
+        SyncConflictResolutionDialog(
+            conflicts = pendingSyncConflicts,
+            accentColor = amber,
+            onResolveConflict = { conflict, choice, applyToAll ->
+                viewModel.resolveSyncConflict(conflict, choice, applyToAll)
+            },
+            onDismiss = {
+                viewModel.dismissSyncConflicts()
+            }
+        )
+    }
 }
 
 @Composable
@@ -1012,7 +1065,7 @@ private fun SmartListsView(
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(SmartListTab.entries.toList()) { tab ->
+            items(SmartListTab.entries.toList(), key = { it.name }) { tab ->
                 val active = selectedSmartTab == tab
                 val count = when (tab) {
                     SmartListTab.HOY -> hoyList.size
@@ -1138,7 +1191,7 @@ private fun SmartListsView(
                 }
 
                 if (standaloneChecklistItems.isNotEmpty() && selectedSmartTab == SmartListTab.TODOS) {
-                    item {
+                    item(key = "header_checklist_reminders") {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "TAREAS PROGRAMADAS EN CHECKLISTS DE NOTAS",

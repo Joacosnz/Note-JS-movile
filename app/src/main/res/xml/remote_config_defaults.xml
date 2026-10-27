@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<defaultsMap>
+    <entry>
+        <key>firebase_database_name</key>
+        <value>NoteJsDataBase</value>
+    </entry>
+    <entry>
+        <key>min_required_version_code</key>
+        <value>2</value>
+    </entry>
+    <entry>
+        <key>min_version_code</key>
+        <value>2</value>
+    </entry>
+    <entry>
+        <key>force_update_version_code</key>
+        <value>2</value>
+    </entry>
+    <entry>
+        <key>latest_version_code</key>
+        <value>2</value>
+    </entry>
+    <entry>
+        <key>min_required_version_name</key>
+        <value>1.7.10</value>
+    </entry>
+    <entry>
+        <key>latest_version_name</key>
+        <value>1.7.10</value>
+    </entry>
+    <entry>
+        <key>force_update_required</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <key>mandatory_update</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <key>actualizacion_obligatoria</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <key>update_available</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <key>update_title</key>
+        <value>Actualización Obligatoria Disponible</value>
+    </entry>
+    <entry>
+        <key>update_message</key>
+        <value>Se requiere actualizar Note JS a la versión más reciente para seguir utilizando la aplicación con las últimas mejoras de rendimiento, seguridad y sincronización con NoteJsDataBase.</value>
+    </entry>
+    <entry>
+        <key>update_release_notes</key>
+        <value>Optimización de memoria RAM (RGB_565 y caché inteligente)|Sincronización mejorada con NoteJsDataBase|Mayor fluidez en listas y cuadrículas de notas|Correcciones de estabilidad para dispositivos de gama baja</value>
+    </entry>
+    <entry>
+        <key>update_url</key>
+        <value>https://play.google.com/store/apps/details?id=com.aistudio.notasjs.vqrmpx</value>
+    </entry>
+</defaultsMap>

@@ -1,0 +1,288 @@
+{
+  "entities": {
+    "Note": {
+      "title": "Note",
+      "description": "A user-owned note synchronized across devices in real time. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "remoteUuid": {
+          "type": "string",
+          "description": "Unique identifier of the note matching the Firestore document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the note owner."
+        },
+        "title": {
+          "type": "string",
+          "description": "Note title."
+        },
+        "content": {
+          "type": "string",
+          "description": "Serialized content blocks of the note."
+        },
+        "noteType": {
+          "type": "string",
+          "description": "Type of note (TEXT, CHECKLIST, DRAWING, MATH)."
+        },
+        "colorIndex": {
+          "type": "integer",
+          "description": "Color palette index for the note card."
+        },
+        "paperStyle": {
+          "type": "string",
+          "description": "Paper background style (BLANK, RULED, GRID, DOTS)."
+        },
+        "isPinned": {
+          "type": "boolean",
+          "description": "Whether the note is pinned."
+        },
+        "isArchived": {
+          "type": "boolean",
+          "description": "Whether the note is archived."
+        },
+        "isTrashed": {
+          "type": "boolean",
+          "description": "Whether the note is in the trash."
+        },
+        "isLocked": {
+          "type": "boolean",
+          "description": "Whether the note is protected by lock/biometrics."
+        },
+        "lockPin": {
+          "type": "string",
+          "description": "Optional PIN for locked note."
+        },
+        "tags": {
+          "type": "string",
+          "description": "Comma-separated tags."
+        },
+        "folder": {
+          "type": "string",
+          "description": "Folder name."
+        },
+        "checklistData": {
+          "type": "string",
+          "description": "Serialized checklist items."
+        },
+        "drawingData": {
+          "type": "string",
+          "description": "Serialized drawing stroke data."
+        },
+        "mathEvaluations": {
+          "type": "string",
+          "description": "Serialized math evaluations."
+        },
+        "pdfPath": {
+          "type": "string",
+          "description": "Local PDF path metadata."
+        },
+        "pdfAnnotationData": {
+          "type": "string",
+          "description": "Serialized PDF annotations."
+        },
+        "reminderTimestamp": {
+          "type": "integer",
+          "description": "Optional epoch milliseconds for scheduled reminder."
+        },
+        "isReminderDone": {
+          "type": "boolean",
+          "description": "Whether the scheduled reminder has completed."
+        },
+        "lastModifiedLocal": {
+          "type": "integer",
+          "description": "Client-side epoch milliseconds of last local edit."
+        },
+        "remoteUrl": {
+          "type": "string",
+          "description": "Remote storage URL for attached PDF."
+        },
+        "remoteImageUrl": {
+          "type": "string",
+          "description": "Remote storage URL for attached main image."
+        },
+        "attachmentsJson": {
+          "type": "string",
+          "description": "Serialized JSON array of media attachment metadata."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "remoteUuid",
+        "userId",
+        "title",
+        "content",
+        "noteType",
+        "colorIndex",
+        "paperStyle",
+        "isPinned",
+        "isArchived",
+        "isTrashed",
+        "isLocked",
+        "lockPin",
+        "tags",
+        "folder",
+        "checklistData",
+        "drawingData",
+        "mathEvaluations",
+        "pdfPath",
+        "pdfAnnotationData",
+        "isReminderDone",
+        "lastModifiedLocal",
+        "remoteUrl",
+        "remoteImageUrl",
+        "attachmentsJson",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Reminder": {
+      "title": "Reminder",
+      "description": "A standalone reminder or calendar event synchronized across devices in real time. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "remoteUuid": {
+          "type": "string",
+          "description": "Unique identifier of the reminder/event matching the Firestore document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "itemType": {
+          "type": "string",
+          "description": "Item type: REMINDER or EVENT."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the reminder or calendar event."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes or description."
+        },
+        "location": {
+          "type": "string",
+          "description": "Optional location or meeting link."
+        },
+        "scheduledAt": {
+          "type": "integer",
+          "description": "Start timestamp in epoch milliseconds."
+        },
+        "endTimeMillis": {
+          "type": "integer",
+          "description": "End timestamp in epoch milliseconds for events."
+        },
+        "isAllDay": {
+          "type": "boolean",
+          "description": "Whether the item spans the entire day without a specific hour."
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "Whether the reminder is completed."
+        },
+        "completedAt": {
+          "type": "integer",
+          "description": "Epoch milliseconds when completed, or 0."
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Priority level from 0 (none) to 3 (high)."
+        },
+        "listName": {
+          "type": "string",
+          "description": "Name of the reminder list or calendar category."
+        },
+        "colorHex": {
+          "type": "integer",
+          "description": "ARGB color value for the list or calendar."
+        },
+        "recurrenceRule": {
+          "type": "string",
+          "description": "Recurrence pattern (NONE, DAILY, WEEKDAYS, WEEKLY, MONTHLY, YEARLY)."
+        },
+        "subtasksJson": {
+          "type": "string",
+          "description": "Serialized JSON array of subtasks."
+        },
+        "linkedNoteId": {
+          "type": "integer",
+          "description": "Optional local Note ID linked to this item."
+        },
+        "linkedNoteUuid": {
+          "type": "string",
+          "description": "Optional remoteUuid of the linked Note."
+        },
+        "linkedNoteTitle": {
+          "type": "string",
+          "description": "Cached title of the linked Note."
+        },
+        "alertOffsetMinutes": {
+          "type": "integer",
+          "description": "Minutes before scheduledAt to trigger local alarm."
+        },
+        "lastModifiedLocal": {
+          "type": "integer",
+          "description": "Client-side epoch milliseconds of last local edit."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update server timestamp. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "remoteUuid",
+        "userId",
+        "itemType",
+        "title",
+        "notes",
+        "location",
+        "scheduledAt",
+        "endTimeMillis",
+        "isAllDay",
+        "isCompleted",
+        "completedAt",
+        "priority",
+        "listName",
+        "colorHex",
+        "recurrenceRule",
+        "subtasksJson",
+        "linkedNoteUuid",
+        "linkedNoteTitle",
+        "alertOffsetMinutes",
+        "lastModifiedLocal",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/notes/{noteId}": {
+      "schema": {
+        "$ref": "#/entities/Note"
+      },
+      "description": "User-isolated subcollection storing synchronized notes for each authenticated user."
+    },
+    "/users/{userId}/reminders/{reminderId}": {
+      "schema": {
+        "$ref": "#/entities/Reminder"
+      },
+      "description": "User-isolated subcollection storing synchronized standalone reminders and calendar events for each authenticated user."
+    }
+  }
+}

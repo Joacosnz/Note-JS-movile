@@ -379,7 +379,7 @@ fun PdfLibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(20.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
+                        item(key = "pdf_grid_header", span = { GridItemSpan(maxLineSpan) }) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()

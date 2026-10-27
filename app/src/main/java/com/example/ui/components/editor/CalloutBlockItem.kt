@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -472,6 +473,9 @@ fun CalloutBlockItem(
                     // PARTE INFERIOR: Menú desplegable de abajo hacia arriba
                     AnimatedVisibility(
                         visible = isSheetVisible,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.50f),
                         enter = slideInVertically(
                             initialOffsetY = { it },
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
@@ -483,7 +487,7 @@ fun CalloutBlockItem(
                     ) {
                         Surface(
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .fillMaxSize()
                                 .clickable(
                                     indication = null,
                                     interactionSource = remember { MutableInteractionSource() }
@@ -495,10 +499,9 @@ fun CalloutBlockItem(
                         ) {
                             Column(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 440.dp)
+                                    .fillMaxSize()
                                     .verticalScroll(rememberScrollState())
-                                    .padding(horizontal = 20.dp, vertical = 14.dp)
+                                    .padding(horizontal = 20.dp, vertical = 16.dp)
                             ) {
                                 // Indicador de arrastre (drag handle)
                                 Box(
@@ -763,7 +766,7 @@ fun CalloutBlockItem(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(22.dp))
+                                Spacer(modifier = Modifier.weight(1f, fill = false).heightIn(min = 20.dp))
 
                                 // 4. BOTONES MEJORADOS DE ELIMINAR Y CERRAR / LISTO
                                 Row(

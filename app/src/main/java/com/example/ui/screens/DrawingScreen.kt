@@ -468,7 +468,7 @@ fun DrawingScreen(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                items(notejsPalette) { color ->
+                                items(notejsPalette, key = { it.value.toLong() }) { color ->
                                     val isSelected = selectedColor == color
                                     Box(
                                         modifier = Modifier

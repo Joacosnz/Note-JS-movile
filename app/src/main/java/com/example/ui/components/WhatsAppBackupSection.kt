@@ -123,9 +123,10 @@ fun WhatsAppStyleBackupCard(
     onDeleteSnapshot: (BackupSnapshotInfo) -> Unit,
     onExportJsonClick: () -> Unit,
     onOpenDriveSyncClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initiallyExpanded: Boolean = false
 ) {
-    var isDropdownExpanded by rememberSaveable { mutableStateOf(false) }
+    var isDropdownExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     var showFrequencyDropdown by remember { mutableStateOf(false) }
     var showTimeDropdown by remember { mutableStateOf(false) }
     var showHistoryDialog by remember { mutableStateOf(false) }

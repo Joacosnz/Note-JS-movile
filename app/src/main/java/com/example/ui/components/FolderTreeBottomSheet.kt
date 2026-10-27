@@ -118,7 +118,7 @@ fun FolderTreeBottomSheet(
                     .testTag("folder_tree_lazy_column")
             ) {
                 // Item estático inicial para "Todas las notas"
-                item {
+                item(key = "tree_item_all_notes") {
                     val totalNotesCount = uiState.allActiveNotes.count { !it.isLocked }
                     val isNormalAllSelected = isAllSelected && !uiState.isViewingPrivateFolder
                     Surface(
@@ -168,7 +168,7 @@ fun FolderTreeBottomSheet(
                 }
 
                 // Item estático para "🔒 Carpeta Privada"
-                item {
+                item(key = "tree_item_private_folder") {
                     val privateNotesCount = uiState.allActiveNotes.count { it.isLocked }
                     val isPrivateSelected = uiState.isViewingPrivateFolder
                     Surface(

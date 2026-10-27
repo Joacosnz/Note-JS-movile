@@ -1115,7 +1115,7 @@ fun MonthPinchZoomView(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            items(6) { weekIndex ->
+            items(6, key = { it }) { weekIndex ->
                 val weekSlice = monthDays.subList(weekIndex * 7, (weekIndex + 1) * 7)
                 if (weekIndex == 5 && weekSlice.none { it.third }) return@items
 
@@ -2166,7 +2166,7 @@ fun HybridCalendarItemSheet(
             )
             Spacer(modifier = Modifier.height(6.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(RecurrenceRule.entries.toList()) { rule ->
+                items(RecurrenceRule.entries.toList(), key = { it.name }) { rule ->
                     FilterChip(
                         selected = recurrenceRule == rule,
                         onClick = { recurrenceRule = rule },
@@ -2196,7 +2196,7 @@ fun HybridCalendarItemSheet(
                     60 to "1 h antes",
                     1440 to "1 día antes"
                 )
-                items(offsets) { (minOffset, label) ->
+                items(offsets, key = { it.first }) { (minOffset, label) ->
                     FilterChip(
                         selected = alertOffsetMinutes == minOffset,
                         onClick = { alertOffsetMinutes = minOffset },
