@@ -25,6 +25,7 @@ import com.example.data.remote.mapper.toReminderEntity
 import com.example.model.AudioBlock
 import com.example.model.NoteBlock
 import com.example.model.SyncState
+import com.example.util.GoogleCalendarSyncManager
 import com.example.util.NoteBlockSerializer
 import com.example.util.ReminderScheduler
 import com.example.util.isValidForSync
@@ -503,7 +504,12 @@ class NoteRepository(
         )
         val localId = rDao.insertReminder(toSave)
         val saved = toSave.copy(id = localId)
-        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, saved) }
+        context?.let { ctx ->
+            ReminderScheduler.scheduleStandaloneReminder(ctx, saved)
+            syncScope.launch {
+                GoogleCalendarSyncManager.syncItemToGoogleCalendar(ctx, saved)
+            }
+        }
         syncReminderToCloud(saved)
         return localId
     }
@@ -528,13 +534,23 @@ class NoteRepository(
             lastModifiedLocal = now
         )
         rDao.updateReminder(toUpdate)
-        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, toUpdate) }
+        context?.let { ctx ->
+            ReminderScheduler.scheduleStandaloneReminder(ctx, toUpdate)
+            syncScope.launch {
+                GoogleCalendarSyncManager.syncItemToGoogleCalendar(ctx, toUpdate)
+            }
+        }
         syncReminderToCloud(toUpdate)
     }
 
     suspend fun deleteReminder(reminder: ReminderEntity) {
         val rDao = reminderDao ?: return
-        context?.let { ReminderScheduler.cancelStandaloneReminder(it, reminder.id) }
+        context?.let { ctx ->
+            ReminderScheduler.cancelStandaloneReminder(ctx, reminder.id)
+            syncScope.launch {
+                GoogleCalendarSyncManager.deleteItemFromGoogleCalendar(ctx, reminder.remoteUuid)
+            }
+        }
         val userId = currentUserId ?: _activeUserId.value
         if (userId.isNotBlank() && userId != NoteEntity.LOCAL_ANONYMOUS_USER_ID && reminder.remoteUuid.isNotBlank()) {
             rDao.markReminderPendingDelete(reminder.id)

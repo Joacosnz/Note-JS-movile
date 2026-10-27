@@ -15,6 +15,7 @@ import com.example.data.remote.FirestoreManager
 import com.example.data.remote.OfflineSyncWorker
 import com.example.data.remote.mapper.toReminderEntity
 import com.example.model.SyncState
+import com.example.util.GoogleCalendarSyncManager
 import com.example.util.ReminderScheduler
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -213,7 +214,12 @@ class ReminderRepository(
             reminderDao.insertReminder(unifiedToSave)
         }
         val scheduledEntity = unifiedToSave.copy(id = unifiedId)
-        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
+        context?.let { ctx ->
+            ReminderScheduler.scheduleStandaloneReminder(ctx, scheduledEntity)
+            syncScope.launch {
+                GoogleCalendarSyncManager.syncItemToGoogleCalendar(ctx, scheduledEntity)
+            }
+        }
 
         syncItemToFirestoreAsync(scheduledEntity)
         notifyWidgetsUpdate()
@@ -267,7 +273,12 @@ class ReminderRepository(
         }
 
         val scheduledEntity = unifiedEntity.copy(id = unifiedId)
-        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
+        context?.let { ctx ->
+            ReminderScheduler.scheduleStandaloneReminder(ctx, scheduledEntity)
+            syncScope.launch {
+                GoogleCalendarSyncManager.syncItemToGoogleCalendar(ctx, scheduledEntity)
+            }
+        }
         syncItemToFirestoreAsync(scheduledEntity)
         notifyWidgetsUpdate()
     }
@@ -293,6 +304,14 @@ class ReminderRepository(
         }
         existingUnified?.let {
             context?.let { ctx -> ReminderScheduler.cancelStandaloneReminder(ctx, it.id) }
+        }
+        val uuidForGCal = targetUuid.ifBlank { existingUnified?.remoteUuid.orEmpty() }
+        if (uuidForGCal.isNotBlank()) {
+            context?.let { ctx ->
+                syncScope.launch {
+                    GoogleCalendarSyncManager.deleteItemFromGoogleCalendar(ctx, uuidForGCal)
+                }
+            }
         }
 
         val uid = _activeUserId.value
@@ -364,7 +383,12 @@ class ReminderRepository(
             reminderDao.insertReminder(unifiedToSave)
         }
         val scheduledEntity = unifiedToSave.copy(id = unifiedId)
-        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
+        context?.let { ctx ->
+            ReminderScheduler.scheduleStandaloneReminder(ctx, scheduledEntity)
+            syncScope.launch {
+                GoogleCalendarSyncManager.syncItemToGoogleCalendar(ctx, scheduledEntity)
+            }
+        }
 
         syncItemToFirestoreAsync(scheduledEntity)
         notifyWidgetsUpdate()
@@ -419,7 +443,12 @@ class ReminderRepository(
         }
 
         val scheduledEntity = unifiedEntity.copy(id = unifiedId)
-        context?.let { ReminderScheduler.scheduleStandaloneReminder(it, scheduledEntity) }
+        context?.let { ctx ->
+            ReminderScheduler.scheduleStandaloneReminder(ctx, scheduledEntity)
+            syncScope.launch {
+                GoogleCalendarSyncManager.syncItemToGoogleCalendar(ctx, scheduledEntity)
+            }
+        }
         syncItemToFirestoreAsync(scheduledEntity)
         notifyWidgetsUpdate()
     }
@@ -443,6 +472,14 @@ class ReminderRepository(
         }
         existingUnified?.let {
             context?.let { ctx -> ReminderScheduler.cancelStandaloneReminder(ctx, it.id) }
+        }
+        val uuidForGCal = targetUuid.ifBlank { existingUnified?.remoteUuid.orEmpty() }
+        if (uuidForGCal.isNotBlank()) {
+            context?.let { ctx ->
+                syncScope.launch {
+                    GoogleCalendarSyncManager.deleteItemFromGoogleCalendar(ctx, uuidForGCal)
+                }
+            }
         }
 
         val uid = _activeUserId.value

@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
@@ -122,6 +123,7 @@ import com.example.ui.components.NoteContentPreview
 import com.example.ui.components.NoteLockDialog
 import com.example.ui.components.NoteReminderBottomSheet
 import com.example.ui.components.SortBottomSheet
+import com.example.ui.components.SyncConflictResolutionDialog
 import com.example.ui.components.TagFilterRow
 import com.example.ui.utils.BiometricAuthManager
 import com.example.ui.theme.NoteJsAmber
@@ -145,6 +147,7 @@ fun HomeScreen(
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val pendingSyncCount by viewModel.pendingSyncCount.collectAsStateWithLifecycle()
+    val pendingSyncConflicts by viewModel.pendingSyncConflicts.collectAsStateWithLifecycle()
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val context = LocalContext.current
@@ -297,7 +300,6 @@ fun HomeScreen(
                         onSelectAll = { viewModel.selectAllNotes(currentListIds) },
                         onDeselectAll = { viewModel.deselectAllNotes() },
                         onOpenSettings = { viewModel.navigateTo(Screen.Settings) },
-                        onOpenReminders = { viewModel.navigateTo(Screen.Reminders()) },
                         isGridView = uiState.isGridView,
                         onToggleGridView = { viewModel.toggleViewMode() },
                         availableFolders = uiState.availableFolders,
@@ -521,28 +523,25 @@ fun HomeScreen(
                             } else {
                                 LazyColumn(
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxSize()
                                 ) {
-                                    item {
+                                    itemsIndexed(uiState.archivedNotes, key = { _, note -> note.id }) { index, note ->
                                         Surface(
                                             shape = RoundedCornerShape(16.dp),
                                             color = Color(0xFF1C1C1E),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Column {
-                                                uiState.archivedNotes.forEachIndexed { index, note ->
-                                                    NoteJsNoteRow(
-                                                        note = note,
-                                                        isUnlocked = true,
-                                                        isLastItem = index == uiState.archivedNotes.size - 1,
-                                                        onClick = { selectedNoteForAction = note },
-                                                        onLongClick = { previewNote = note },
-                                                        isSelectionMode = uiState.isSelectionMode,
-                                                        isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                        onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
-                                                    )
-                                                }
-                                            }
+                                            NoteJsNoteRow(
+                                                note = note,
+                                                isUnlocked = true,
+                                                isLastItem = index == uiState.archivedNotes.size - 1,
+                                                onClick = { selectedNoteForAction = note },
+                                                onLongClick = { previewNote = note },
+                                                isSelectionMode = uiState.isSelectionMode,
+                                                isSelected = uiState.selectedNoteIds.contains(note.id),
+                                                onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
+                                            )
                                         }
                                     }
                                 }
@@ -578,28 +577,25 @@ fun HomeScreen(
                                 } else {
                                     LazyColumn(
                                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 100.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
                                         modifier = Modifier.fillMaxSize()
                                     ) {
-                                        item {
+                                        itemsIndexed(uiState.trashedNotes, key = { _, note -> note.id }) { index, note ->
                                             Surface(
                                                 shape = RoundedCornerShape(16.dp),
                                                 color = Color(0xFF1C1C1E),
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
-                                                Column {
-                                                    uiState.trashedNotes.forEachIndexed { index, note ->
-                                                        NoteJsNoteRow(
-                                                            note = note,
-                                                            isUnlocked = true,
-                                                            isLastItem = index == uiState.trashedNotes.size - 1,
-                                                            onClick = { selectedNoteForAction = note },
-                                                            onLongClick = { previewNote = note },
-                                                            isSelectionMode = uiState.isSelectionMode,
-                                                            isSelected = uiState.selectedNoteIds.contains(note.id),
-                                                            onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
-                                                        )
-                                                    }
-                                                }
+                                                NoteJsNoteRow(
+                                                    note = note,
+                                                    isUnlocked = true,
+                                                    isLastItem = index == uiState.trashedNotes.size - 1,
+                                                    onClick = { selectedNoteForAction = note },
+                                                    onLongClick = { previewNote = note },
+                                                    isSelectionMode = uiState.isSelectionMode,
+                                                    isSelected = uiState.selectedNoteIds.contains(note.id),
+                                                    onSelectToggle = { viewModel.toggleNoteSelection(note.id) }
+                                                )
                                             }
                                         }
                                     }
@@ -627,10 +623,12 @@ fun HomeScreen(
                     NoteJsBottomToolbar(
                         isHomeActive = true,
                         isFoldersActive = false,
+                        isRemindersActive = false,
                         onHomeClick = {
                             viewModel.selectFolder(null)
                         },
                         onFoldersClick = { viewModel.navigateTo(Screen.Folders) },
+                        onRemindersClick = { viewModel.navigateTo(Screen.Reminders()) },
                         onNewNote = {
                             viewModel.navigateTo(Screen.Editor(0L))
                         },
@@ -991,6 +989,19 @@ fun HomeScreen(
             onDismiss = {
                 showPinUnlockDialog = false
                 pendingUnlockAction = null
+            }
+        )
+    }
+
+    if (pendingSyncConflicts.isNotEmpty()) {
+        SyncConflictResolutionDialog(
+            conflicts = pendingSyncConflicts,
+            accentColor = amber,
+            onResolveConflict = { conflict, choice, applyToAll ->
+                viewModel.resolveSyncConflict(conflict, choice, applyToAll)
+            },
+            onDismiss = {
+                viewModel.dismissSyncConflicts()
             }
         )
     }

@@ -65,7 +65,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val amberColor = Color(0xFFFFB300)
+private val amberColor: Color
+    get() = com.example.ui.theme.NoteJsAmber
 
 data class VisualTableTemplate(
     val title: String,

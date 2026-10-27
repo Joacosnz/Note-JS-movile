@@ -469,11 +469,13 @@ fun FoldersScreen(
             },
             isHomeActive = false,
             isFoldersActive = true,
+            isRemindersActive = false,
             onHomeClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 viewModel.selectFolder(null)
             },
             onFoldersClick = {},
+            onRemindersClick = { viewModel.navigateTo(Screen.Reminders()) },
             onVoiceNote = {
                 viewModel.navigateTo(Screen.Editor(0L, openVoiceDictation = true))
             },

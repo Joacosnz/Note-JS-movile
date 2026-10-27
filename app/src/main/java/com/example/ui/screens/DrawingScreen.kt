@@ -30,7 +30,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Highlight
+import com.example.ui.components.NoteJsHighlighterIcon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -429,7 +429,7 @@ fun DrawingScreen(
                             val isSelected = currentTool == tool
                             val icon = when (tool) {
                                 DrawingTool.PEN -> Icons.Default.Create
-                                DrawingTool.HIGHLIGHTER -> Icons.Default.Highlight
+                                DrawingTool.HIGHLIGHTER -> NoteJsHighlighterIcon
                                 DrawingTool.PENCIL -> Icons.Default.Edit
                                 DrawingTool.ERASER -> Icons.Default.Clear
                             }

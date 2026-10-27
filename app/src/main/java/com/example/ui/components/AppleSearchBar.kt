@@ -61,7 +61,7 @@ fun NoteJsSearchBar(
 
     // Colores Liquid Glass
     val backgroundColor = if (isDark) Color(0xFF141416).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.82f)
-    val searchIconColor = Color(0xFFEAB308)
+    val searchIconColor = com.example.ui.theme.NoteJsAmber
     val textColor = if (isDark) Color.White else Color(0xFF111827)
     val placeholderColor = Color(0xFF71717A) // Gris mineral neutro
 

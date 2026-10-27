@@ -493,7 +493,7 @@ fun PdfInlineBlock(
                                         },
                                         label = { Text("Resaltador") },
                                         leadingIcon = {
-                                            Icon(Icons.Default.Brush, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Icon(NoteJsHighlighterIcon, contentDescription = null, modifier = Modifier.size(18.dp))
                                         },
                                         shape = RoundedCornerShape(12.dp)
                                     )

@@ -100,7 +100,8 @@ fun NoteJsNoteRow(
         Color.DarkGray
     }
 
-    val displayTitle = if (isLockedNote) "Nota Protegida" else if (note.title.isBlank()) "Nota sin título" else note.title
+    val iconPrefix = if (!note.icon.isNullOrBlank()) "${note.icon} " else ""
+    val displayTitle = if (isLockedNote) "Nota Protegida" else if (note.title.isBlank()) "${iconPrefix}Nota sin título" else "$iconPrefix${note.title}"
 
     Column(
         modifier = modifier

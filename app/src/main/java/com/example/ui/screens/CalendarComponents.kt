@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -979,15 +980,19 @@ fun MonthPinchZoomView(
                 }
             }
     ) {
-        // Barra de control de densidad (Pinch-to-Zoom + Selector directo accesible)
+        // Barra de control de densidad y zoom (Pinch-to-Zoom + Selector directo accesible)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Controles de zoom (-, label, +)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 IconButton(
                     onClick = {
                         val prevIdx = (currentZoomLevel.ordinal - 1).coerceAtLeast(0)
@@ -1016,7 +1021,6 @@ fun MonthPinchZoomView(
                     tint = amber,
                     modifier = Modifier.size(15.dp)
                 )
-                Spacer(modifier = Modifier.width(2.dp))
                 Text(
                     text = currentZoomLevel.label,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
@@ -1046,8 +1050,14 @@ fun MonthPinchZoomView(
                 }
             }
 
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Selector de Densidad envuelto en un Row con horizontalScroll y spacedBy(8.dp)
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MonthZoomLevel.entries.forEach { level ->
@@ -1072,7 +1082,9 @@ fun MonthPinchZoomView(
                             fontSize = 10.sp,
                             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                             color = if (active) amber else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -1101,7 +1113,7 @@ fun MonthPinchZoomView(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 96.dp)
+            contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             items(6) { weekIndex ->
                 val weekSlice = monthDays.subList(weekIndex * 7, (weekIndex + 1) * 7)
@@ -2361,7 +2373,57 @@ fun HybridCalendarItemSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            OutlinedButton(
+                onClick = {
+                    val finalSubtasks = subtasks.toList().let { list ->
+                        val pending = newSubtaskTitle.trim()
+                        if (pending.isNotEmpty()) list + ReminderSubtask(title = pending) else list
+                    }
+                    val previewItem = (existingItem ?: ReminderEntity(title = "", scheduledAt = scheduledAt)).copy(
+                        itemType = itemType.code,
+                        title = title.ifBlank {
+                            if (itemType == CalendarItemType.EVENT) "Nuevo evento" else "Nuevo recordatorio"
+                        },
+                        notes = notes,
+                        location = location,
+                        scheduledAt = scheduledAt,
+                        endTimeMillis = if (itemType == CalendarItemType.EVENT && !isAllDay) endTimeMillis else 0L,
+                        isAllDay = isAllDay,
+                        priority = priority,
+                        listName = listName,
+                        tags = tags,
+                        colorHex = colorHex,
+                        recurrenceRule = recurrenceRule.code,
+                        subtasksJson = ReminderSubtaskSerializer.serialize(finalSubtasks),
+                        linkedNoteId = selectedLinkedNote?.id,
+                        linkedNoteUuid = selectedLinkedNote?.remoteUuid ?: "",
+                        linkedNoteTitle = selectedLinkedNote?.title ?: "",
+                        alertOffsetMinutes = alertOffsetMinutes
+                    )
+                    com.example.util.GoogleCalendarSyncManager.openInGoogleCalendarApp(context, previewItem)
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_open_in_google_calendar")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CalendarToday,
+                    contentDescription = null,
+                    tint = Color(0xFF4285F4),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Abrir / Ver en Google Calendar",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

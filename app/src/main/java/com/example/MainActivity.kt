@@ -12,10 +12,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
@@ -423,13 +427,49 @@ fun NotesApp(
             AnimatedContent(
                 targetState = currentScreen,
                 transitionSpec = {
-                    if (isNavigatingBack) {
-                        (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
-                            slideOutHorizontally { width -> width } + fadeOut()
+                    if (targetState is Screen.Reminders && initialState is Screen.Reminders) {
+                        fadeIn(animationSpec = tween(200)).togetherWith(
+                            fadeOut(animationSpec = tween(200))
+                        )
+                    } else if (targetState is Screen.Reminders) {
+                        (slideInVertically(
+                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            initialOffsetY = { fullHeight -> fullHeight }
+                        ) + fadeIn(
+                            animationSpec = tween(durationMillis = 250)
+                        )).togetherWith(
+                            slideOutVertically(
+                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                                targetOffsetY = { fullHeight -> -fullHeight / 4 }
+                            ) + fadeOut(
+                                animationSpec = tween(durationMillis = 200)
+                            )
+                        )
+                    } else if (initialState is Screen.Reminders) {
+                        (slideInVertically(
+                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            initialOffsetY = { fullHeight -> -fullHeight / 4 }
+                        ) + fadeIn(
+                            animationSpec = tween(durationMillis = 250)
+                        )).togetherWith(
+                            slideOutVertically(
+                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                                targetOffsetY = { fullHeight -> fullHeight }
+                            ) + fadeOut(
+                                animationSpec = tween(durationMillis = 200)
+                            )
+                        )
+                    } else if (isNavigatingBack) {
+                        (slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> -width / 3 } +
+                                fadeIn(animationSpec = tween(180))).togetherWith(
+                            slideOutHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> width } +
+                                    fadeOut(animationSpec = tween(180))
                         )
                     } else {
-                        (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
-                            slideOutHorizontally { width -> -width } + fadeOut()
+                        (slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> width } +
+                                fadeIn(animationSpec = tween(180))).togetherWith(
+                            slideOutHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> -width / 3 } +
+                                    fadeOut(animationSpec = tween(180))
                         )
                     }
                 },

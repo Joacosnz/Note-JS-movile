@@ -80,15 +80,15 @@ fun ReorderableGroupedNotesCard(
             currentNotes.forEachIndexed { index, note ->
                 val isBeingDragged = draggedIndex == index
                 val itemZIndex = if (isBeingDragged) 10f else 1f
-                val translationY = if (isBeingDragged) dragOffsetY else 0f
-                val scale = if (isBeingDragged) 1.02f else 1f
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .zIndex(itemZIndex)
                         .graphicsLayer {
-                            this.translationY = translationY
+                            val isCurrentDragged = draggedIndex == index
+                            this.translationY = if (isCurrentDragged) dragOffsetY else 0f
+                            val scale = if (isCurrentDragged) 1.02f else 1f
                             this.scaleX = scale
                             this.scaleY = scale
                         }

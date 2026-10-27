@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
@@ -137,17 +139,19 @@ fun NoteJsTopBar(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineLarge.copy(
-                        fontSize = 34.sp,
+                        fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.5).sp,
                     ),
                     color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     if (onSyncStatusClick != null) {
                         val badgeColor = when {
@@ -162,42 +166,21 @@ fun NoteJsTopBar(
                             syncState == SyncState.OFFLINE -> Icons.Default.CloudOff
                             else -> Icons.Default.CloudDone
                         }
-                        val badgeLabel = when {
-                            !isSignedIn -> "Local"
-                            syncState == SyncState.SYNCING -> "Sync..."
-                            pendingSyncCount > 0 -> "$pendingSyncCount pend."
-                            syncState == SyncState.OFFLINE -> "Offline"
-                            else -> "Al día"
-                        }
 
-                        Box(
+                        IconButton(
+                            onClick = onSyncStatusClick,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
+                                .size(36.dp)
+                                .clip(CircleShape)
                                 .background(badgeColor.copy(alpha = 0.14f))
-                                .clickable { onSyncStatusClick() }
-                                .padding(horizontal = 8.dp, vertical = 5.dp)
-                                .testTag("sync_status_badge"),
-                            contentAlignment = Alignment.Center
+                                .testTag("sync_status_badge")
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = badgeIcon,
-                                    contentDescription = "Estado de sincronización",
-                                    tint = badgeColor,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = badgeLabel,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    ),
-                                    color = badgeColor
-                                )
-                            }
+                            Icon(
+                                imageVector = badgeIcon,
+                                contentDescription = "Estado de sincronización",
+                                tint = badgeColor,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
 
@@ -210,7 +193,7 @@ fun NoteJsTopBar(
                                 imageVector = Icons.Rounded.Folder,
                                 contentDescription = "Seleccionar carpeta",
                                 tint = amber,
-                                modifier = Modifier.size(26.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -224,21 +207,7 @@ fun NoteJsTopBar(
                                 imageVector = if (isGridView) Icons.Default.ViewAgenda else Icons.Default.GridView,
                                 contentDescription = if (isGridView) "Ver como lista" else "Ver como cuadrícula",
                                 tint = amber,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
-
-                    if (onOpenReminders != null) {
-                        IconButton(
-                            onClick = onOpenReminders,
-                            modifier = Modifier.testTag("btn_open_reminders")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Schedule,
-                                contentDescription = "Recordatorios y Tareas",
-                                tint = amber,
-                                modifier = Modifier.size(26.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -252,7 +221,7 @@ fun NoteJsTopBar(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Ajustes",
                                 tint = amber,
-                                modifier = Modifier.size(26.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }

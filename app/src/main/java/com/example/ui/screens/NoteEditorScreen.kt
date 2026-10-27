@@ -981,8 +981,16 @@ fun NoteEditorScreen(
             val scanningResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
             if (scanningResult?.pdf != null) {
                 val pdfUri = scanningResult.pdf!!.uri
-                scannedPdfName = "CamNotes Scanner"
-                pendingScannedPdfUriString = pdfUri.toString()
+                val docName = "Documento escaneado ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}"
+                saveSnapshot()
+                viewModel.insertPdfBlock(pdfUri, customFileName = docName) { newBlock ->
+                    if (!blocks.any { b -> b.id == newBlock.id }) {
+                        blocks.add(newBlock)
+                    }
+                    saveSnapshot()
+                }
+                pendingScannedPdfUriString = null
+                Toast.makeText(context, "Documento escaneado insertado", Toast.LENGTH_SHORT).show()
             }
         }
     }

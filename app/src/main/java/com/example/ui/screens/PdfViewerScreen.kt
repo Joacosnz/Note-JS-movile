@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.example.ui.components.NoteJsHighlighterIcon
 import com.example.util.PdfHelper
 import com.example.util.PdfModifierUtil
 import com.example.util.SignatureHelper
@@ -606,7 +607,7 @@ fun PdfViewerScreen(
                                 )
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Highlight,
+                                    imageVector = NoteJsHighlighterIcon,
                                     contentDescription = "Resaltador",
                                     tint = if (activeTool == MarkupTool.HIGHLIGHTER) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                                 )

@@ -89,13 +89,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -124,7 +126,7 @@ internal fun FormatOptionItem(
     icon: ImageVector,
     text: String,
     isPaperDark: Boolean = false,
-    amberColor: Color = Color(0xFFFFB800),
+    amberColor: Color = com.example.ui.theme.NoteJsAmber,
     onClick: () -> Unit
 ) {
     val bgColor = if (isPaperDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f)
@@ -196,6 +198,8 @@ internal fun EditorAccessoryBar(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     var isInsertMenuExpanded by remember { mutableStateOf(false) }
     val rotation by animateFloatAsState(
         targetValue = if (isInsertMenuExpanded) 45f else 0f,
@@ -261,7 +265,7 @@ internal fun EditorAccessoryBar(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 340.dp)
+                                .heightIn(max = 480.dp)
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
@@ -390,7 +394,7 @@ internal fun EditorAccessoryBar(
 
                             FormatOptionItem(
                                 icon = Icons.Default.DocumentScanner,
-                                text = "Escanear documento (Modo Escáner Pro)",
+                                text = "Escanear documento",
                                 isPaperDark = isPaperDark,
                                 amberColor = amber
                             ) {
@@ -400,7 +404,7 @@ internal fun EditorAccessoryBar(
 
                             FormatOptionItem(
                                 icon = Icons.Default.Functions,
-                                text = "Ecuación en bloque (KaTeX)",
+                                text = "Ecuación en bloque",
                                 isPaperDark = isPaperDark,
                                 amberColor = amber
                             ) {
@@ -410,7 +414,7 @@ internal fun EditorAccessoryBar(
 
                             FormatOptionItem(
                                 icon = Icons.Default.Functions,
-                                text = "Fórmula en línea (Inline Math $...$)",
+                                text = "Fórmula en línea",
                                 isPaperDark = isPaperDark,
                                 amberColor = amber
                             ) {
@@ -440,7 +444,12 @@ internal fun EditorAccessoryBar(
                     IconButton(
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            isInsertMenuExpanded = !isInsertMenuExpanded
+                            val nextState = !isInsertMenuExpanded
+                            if (nextState) {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                            }
+                            isInsertMenuExpanded = nextState
                         },
                         modifier = Modifier.testTag("btn_insert_menu")
                     ) {
@@ -454,7 +463,7 @@ internal fun EditorAccessoryBar(
                                 tint = amber,
                                 modifier = Modifier
                                     .size(28.dp)
-                                    .rotate(rotation)
+                                    .graphicsLayer { rotationZ = rotation }
                             )
                         }
                     }
@@ -565,10 +574,10 @@ internal fun EditorAccessoryBar(
                                 .background(if (isHighlightActive) amber.copy(alpha = 0.25f) else Color.Transparent)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Brush,
+                                imageVector = NoteJsHighlighterIcon,
                                 contentDescription = "Resaltar",
                                 tint = amber,
-                                modifier = Modifier.size(26.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }

@@ -54,7 +54,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -79,8 +78,10 @@ fun NoteJsBottomToolbar(
     modifier: Modifier = Modifier,
     isHomeActive: Boolean = true,
     isFoldersActive: Boolean = false,
+    isRemindersActive: Boolean = false,
     onHomeClick: () -> Unit = {},
     onFoldersClick: () -> Unit = {},
+    onRemindersClick: () -> Unit = {},
     onVoiceNote: () -> Unit = {},
     onReadPdf: () -> Unit = {},
     onScanDocument: () -> Unit = {},
@@ -90,7 +91,7 @@ fun NoteJsBottomToolbar(
     val haptic = LocalHapticFeedback.current
     var isMenuExpanded by remember { mutableStateOf(false) }
 
-    val activeColor = Color(0xFFEAB308)
+    val activeColor = com.example.ui.theme.NoteJsAmber
     val inactiveColor = Color(0xFF8E8E93)
     val backgroundColor = if (isDark) Color(0xFF18181B).copy(alpha = 0.94f) else Color.White.copy(alpha = 0.94f)
 
@@ -159,7 +160,7 @@ fun NoteJsBottomToolbar(
             ) {
                 Column(
                     modifier = Modifier
-                        .width(230.dp)
+                        .width(286.dp)
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -276,11 +277,12 @@ fun NoteJsBottomToolbar(
                     Row(
                         modifier = Modifier
                             .height(58.dp)
-                            .padding(horizontal = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 1. Inicio (Casita - Izquierda)
+                        // 1. Inicio (Casita)
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
@@ -317,9 +319,44 @@ fun NoteJsBottomToolbar(
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(16.dp))
+                        // 2. Recordatorios (Campana / Notificaciones)
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (isMenuExpanded) isMenuExpanded = false
+                                    onRemindersClick()
+                                }
+                                .testTag("reminders_nav_button"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Notifications,
+                                    contentDescription = "Recordatorios",
+                                    tint = if (isRemindersActive) activeColor else inactiveColor,
+                                    modifier = Modifier.size(24.dp),
+                                )
 
-                        // 2. Crear Nota / Mantener presionado para expandir la barra (+ Centro)
+                                if (isRemindersActive) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .width(16.dp)
+                                            .height(3.dp)
+                                            .clip(RoundedCornerShape(1.5.dp))
+                                            .background(activeColor),
+                                    )
+                                }
+                            }
+                        }
+
+                        // 3. Crear Nota / Mantener presionado para expandir la barra (+)
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
@@ -347,13 +384,11 @@ fun NoteJsBottomToolbar(
                                 tint = activeColor,
                                 modifier = Modifier
                                     .size(32.dp)
-                                    .rotate(rotation),
+                                    .graphicsLayer { rotationZ = rotation },
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        // 3. Biblioteca / Carpetas (Derecha)
+                        // 4. Biblioteca / Carpetas
                         Box(
                             modifier = Modifier
                                 .size(48.dp)

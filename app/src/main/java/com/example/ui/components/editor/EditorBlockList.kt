@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -222,117 +223,130 @@ fun EditorBlockList(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-        // Icon button
-        var showEmojiDialog by remember { mutableStateOf(false) }
-        
-        if (showEmojiDialog) {
-            com.example.ui.components.NativeEmojiInputDialog(
-                onDismiss = { showEmojiDialog = false },
-                onEmojiSelected = { emoji ->
-                    onNoteIconChange(emoji)
-                    showEmojiDialog = false
-                },
-                onRemoveIcon = if (noteIcon != null) { {
-                    onNoteIconChange(null)
-                    showEmojiDialog = false
-                } } else null
-            )
-        }
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start
-        ) {
-            if (noteIcon != null) {
-                TextButton(onClick = { showEmojiDialog = true }) {
-                    Text(noteIcon, fontSize = 48.sp)
-                }
-            } else {
-                TextButton(onClick = { showEmojiDialog = true }) {
-                    Text("☺️ Añadir ícono", color = paperHintColor)
-                }
+            // Icon dialog
+            var showEmojiDialog by remember { mutableStateOf(false) }
+
+            if (showEmojiDialog) {
+                com.example.ui.components.NativeEmojiInputDialog(
+                    onDismiss = { showEmojiDialog = false },
+                    onEmojiSelected = { emoji ->
+                        onNoteIconChange(emoji)
+                        showEmojiDialog = false
+                    },
+                    onRemoveIcon = if (!noteIcon.isNullOrBlank()) { {
+                        onNoteIconChange(null)
+                        showEmojiDialog = false
+                    } } else null
+                )
             }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-            // Title input
+            // Title input with Gboard-style emoji icon selector on the left
             val titleBringIntoViewRequester = remember { BringIntoViewRequester() }
             var titleTextLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
             var titlePreviewingWebUrl by remember { mutableStateOf<String?>(null) }
             var titleLinkModeRefreshTrigger by remember { mutableIntStateOf(0) }
-            BasicTextField(
-                value = titleTextFieldValue,
-                onValueChange = { newValue ->
-                    val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, titleTextFieldValue)
-                    val finalValue = com.example.ui.components.sanitizeTextFieldValue(solved ?: newValue)
-                    onTitleValueChange(finalValue)
-                    evaluateNoteLinkTrigger("TITLE", finalValue)
-                    coroutineScope.launch {
-                        val layout = titleTextLayoutResult
-                        if (layout != null) {
-                            val cursorOffset = finalValue.selection.max
-                            if (cursorOffset in 0..layout.layoutInput.text.length) {
-                                val cursorRect = layout.getCursorRect(cursorOffset)
-                                val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
-                                titleBringIntoViewRequester.bringIntoView(expandedRect)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { showEmojiDialog = true },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("btn_note_icon_picker")
+                ) {
+                    if (!noteIcon.isNullOrBlank()) {
+                        Text(
+                            text = noteIcon,
+                            fontSize = 22.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.SentimentSatisfiedAlt,
+                            contentDescription = "Elegir ícono de nota",
+                            tint = paperHintColor.copy(alpha = 0.7f),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                BasicTextField(
+                    value = titleTextFieldValue,
+                    onValueChange = { newValue ->
+                        val solved = MathEvaluator.tryAutoSolveEquationOnEqual(newValue, titleTextFieldValue)
+                        val finalValue = com.example.ui.components.sanitizeTextFieldValue(solved ?: newValue)
+                        onTitleValueChange(finalValue)
+                        evaluateNoteLinkTrigger("TITLE", finalValue)
+                        coroutineScope.launch {
+                            val layout = titleTextLayoutResult
+                            if (layout != null) {
+                                val cursorOffset = finalValue.selection.max
+                                if (cursorOffset in 0..layout.layoutInput.text.length) {
+                                    val cursorRect = layout.getCursorRect(cursorOffset)
+                                    val expandedRect = cursorRect.copy(bottom = cursorRect.bottom + 40f)
+                                    titleBringIntoViewRequester.bringIntoView(expandedRect)
+                                } else {
+                                    titleBringIntoViewRequester.bringIntoView()
+                                }
                             } else {
                                 titleBringIntoViewRequester.bringIntoView()
                             }
-                        } else {
-                            titleBringIntoViewRequester.bringIntoView()
                         }
-                    }
-                },
-                onTextLayout = { titleTextLayoutResult = it },
-                textStyle = MaterialTheme.typography.headlineMedium.copy(
-                    color = paperTextColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp,
-                    letterSpacing = (-0.5).sp
-                ),
-                cursorBrush = SolidColor(amber),
-                visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(
-                    onNext = { onTitleNext() }
-                ),
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onNoteLinkClick(titleTextLayoutResult) { linkedId ->
-                        onNoteLinkClick(linkedId)
-                    }
-                    .onWebLinkClick(titleTextLayoutResult) { webUrl ->
-                        titlePreviewingWebUrl = webUrl
-                    }
-                    .onInlineMathClick(titleTextLayoutResult) { code, start, end ->
-                        onInlineMathClick("TITLE", code, true, TextRange(start, end))
-                    }
-                    .onFocusChanged { focusState ->
-                        if (focusState.isFocused) {
-                            onFocusedBlockIdChange("TITLE")
+                    },
+                    onTextLayout = { titleTextLayoutResult = it },
+                    textStyle = MaterialTheme.typography.headlineMedium.copy(
+                        color = paperTextColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    cursorBrush = SolidColor(amber),
+                    visualTransformation = remember(isPaperDark) { markdownVisualTransformation(isPaperDark, amber) },
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { onTitleNext() }
+                    ),
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .onNoteLinkClick(titleTextLayoutResult) { linkedId ->
+                            onNoteLinkClick(linkedId)
                         }
+                        .onWebLinkClick(titleTextLayoutResult) { webUrl ->
+                            titlePreviewingWebUrl = webUrl
+                        }
+                        .onInlineMathClick(titleTextLayoutResult) { code, start, end ->
+                            onInlineMathClick("TITLE", code, true, TextRange(start, end))
+                        }
+                        .onFocusChanged { focusState ->
+                            if (focusState.isFocused) {
+                                onFocusedBlockIdChange("TITLE")
+                            }
+                        }
+                        .bringIntoViewRequester(titleBringIntoViewRequester)
+                        .testTag("notejs_editor_title"),
+                    decorationBox = { innerTextField ->
+                        if (titleTextFieldValue.text.isEmpty()) {
+                            Text(
+                                text = "Título",
+                                style = MaterialTheme.typography.headlineMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 28.sp
+                                ),
+                                color = paperHintColor.copy(alpha = 0.5f)
+                            )
+                        }
+                        innerTextField()
                     }
-                    .bringIntoViewRequester(titleBringIntoViewRequester)
-                    .testTag("notejs_editor_title"),
-                decorationBox = { innerTextField ->
-                    if (titleTextFieldValue.text.isEmpty()) {
-                        Text(
-                            text = "Título",
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 28.sp
-                            ),
-                            color = paperHintColor.copy(alpha = 0.5f)
-                        )
-                    }
-                    innerTextField()
-                }
-            )
+                )
+            }
 
             com.example.ui.components.InlineMathPreviewRow(
                 text = titleTextFieldValue.text,

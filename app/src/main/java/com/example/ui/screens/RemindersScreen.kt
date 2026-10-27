@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
@@ -41,12 +44,15 @@ import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -87,6 +93,7 @@ import com.example.data.local.entity.CalendarCategoryPresets
 import com.example.data.local.entity.CalendarItemType
 import com.example.data.local.entity.ReminderEntity
 import com.example.model.UnifiedReminderItem
+import com.example.ui.components.NoteJsBottomToolbar
 import com.example.ui.components.editor.ChecklistItemReminderDialog
 import com.example.ui.theme.NoteJsAmber
 import com.example.ui.theme.NoteJsAmberDark
@@ -144,11 +151,55 @@ fun RemindersScreen(
     }
     val checklistReminders by viewModel.unifiedReminders.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isGoogleCalendarSyncEnabled by viewModel.isGoogleCalendarSyncEnabled.collectAsStateWithLifecycle()
+    val isGoogleCalendarSyncing by viewModel.isGoogleCalendarSyncing.collectAsStateWithLifecycle()
 
     val isDark = isAppInDarkTheme()
     val amber = if (isDark) NoteJsAmberDark else NoteJsAmber
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
+
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[android.Manifest.permission.READ_CALENDAR] == true &&
+            permissions[android.Manifest.permission.WRITE_CALENDAR] == true
+        if (granted) {
+            viewModel.setGoogleCalendarSyncEnabled(true) { _, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(
+                context,
+                "Concede permisos de Calendario para sincronizar con Google Calendar",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val triggerGoogleCalendarSync: () -> Unit = {
+        if (com.example.util.GoogleCalendarSyncManager.hasCalendarPermissions(context)) {
+            viewModel.syncWithGoogleCalendarNow { _, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            calendarPermissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.READ_CALENDAR,
+                    android.Manifest.permission.WRITE_CALENDAR
+                )
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshGoogleCalendarState()
+        if (com.example.util.GoogleCalendarSyncManager.isSyncEnabled(context) &&
+            com.example.util.GoogleCalendarSyncManager.hasCalendarPermissions(context)
+        ) {
+            viewModel.syncWithGoogleCalendarNow()
+        }
+    }
 
     var viewMode by rememberSaveable { mutableStateOf(CalendarViewMode.DAY) }
     var selectedSmartTab by rememberSaveable { mutableStateOf(SmartListTab.HOY) }
@@ -274,9 +325,40 @@ fun RemindersScreen(
     Scaffold(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
             .testTag("reminders_calendar_screen"),
         containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            NoteJsBottomToolbar(
+                isHomeActive = false,
+                isFoldersActive = false,
+                isRemindersActive = true,
+                onHomeClick = {
+                    viewModel.selectFolder(null)
+                    viewModel.navigateTo(Screen.Home)
+                },
+                onFoldersClick = { viewModel.navigateTo(Screen.Folders) },
+                onRemindersClick = {
+                    selectedDateMillis = System.currentTimeMillis()
+                    viewMode = CalendarViewMode.DAY
+                },
+                onNewNote = {
+                    viewModel.navigateTo(Screen.Editor(0L))
+                },
+                onVoiceNote = {
+                    viewModel.navigateTo(Screen.Editor(0L, openVoiceDictation = true))
+                },
+                onReadPdf = {
+                    viewModel.navigateTo(Screen.PdfLibrary)
+                },
+                onReminder = {
+                    editingItem = null
+                    modalInitialScheduledAt = System.currentTimeMillis() + 3600_000L
+                    modalInitialIsAllDay = false
+                    modalInitialType = CalendarItemType.REMINDER
+                    showHybridModal = true
+                }
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
@@ -297,9 +379,7 @@ fun RemindersScreen(
                 containerColor = amber,
                 contentColor = Color.Black,
                 shape = CircleShape,
-                modifier = Modifier
-                    .testTag("fab_new_calendar_item")
-                    .padding(bottom = if (showBackButton) 16.dp else 84.dp)
+                modifier = Modifier.testTag("fab_new_calendar_item")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
@@ -395,6 +475,28 @@ fun RemindersScreen(
                 }
 
                 IconButton(
+                    onClick = triggerGoogleCalendarSync,
+                    enabled = !isGoogleCalendarSyncing,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("btn_reminders_google_calendar_sync")
+                ) {
+                    if (isGoogleCalendarSyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = amber,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isGoogleCalendarSyncEnabled) Icons.Default.EventAvailable else Icons.Default.Sync,
+                            contentDescription = "Sincronizar con Google Calendar",
+                            tint = if (isGoogleCalendarSyncEnabled) Color(0xFF34A853) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                IconButton(
                     onClick = {
                         isSearchVisible = !isSearchVisible
                         if (!isSearchVisible) searchQuery = ""
@@ -460,21 +562,22 @@ fun RemindersScreen(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp)
+                                modifier = Modifier.padding(vertical = 7.dp, horizontal = 2.dp)
                             ) {
                                 Icon(
                                     imageVector = mode.icon,
                                     contentDescription = null,
                                     tint = if (active) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(13.dp)
                                 )
-                                Spacer(modifier = Modifier.width(3.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
                                 Text(
                                     text = mode.title,
                                     fontSize = 11.sp,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                                     color = if (active) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -516,7 +619,32 @@ fun RemindersScreen(
                         }
                     )
                 }
-
+                item {
+                    FilterChip(
+                        selected = isGoogleCalendarSyncEnabled,
+                        onClick = triggerGoogleCalendarSync,
+                        label = {
+                            Text(
+                                text = if (isGoogleCalendarSyncing) {
+                                    "Sincronizando..."
+                                } else if (isGoogleCalendarSyncEnabled) {
+                                    "Google Calendar ✓"
+                                } else {
+                                    "Vincular Google Calendar"
+                                },
+                                fontSize = 11.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.EventAvailable,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        modifier = Modifier.testTag("chip_sync_google_calendar")
+                    )
+                }
             }
 
             HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)

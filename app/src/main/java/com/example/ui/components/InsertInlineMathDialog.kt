@@ -53,7 +53,7 @@ fun InsertInlineMathDialog(
     onDelete: (() -> Unit)? = null
 ) {
     var latexCode by remember { mutableStateOf(initialCode) }
-    val amber = Color(0xFFFFB800)
+    val amber = com.example.ui.theme.NoteJsAmber
 
     val quickTemplates = listOf(
         "Ec. lineal" to "ax + b = c",

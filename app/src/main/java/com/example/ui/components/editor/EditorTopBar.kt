@@ -164,10 +164,13 @@ fun EditorTopBar(
                     Icon(
                         imageVector = syncIcon,
                         contentDescription = "Sincronizando...",
-                        tint = syncTint.copy(alpha = alpha),
+                        tint = syncTint,
                         modifier = Modifier
                             .size(20.dp)
-                            .graphicsLayer { rotationZ = rotation }
+                            .graphicsLayer {
+                                rotationZ = rotation
+                                this.alpha = alpha
+                            }
                     )
                 } else {
                     Icon(

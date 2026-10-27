@@ -52,6 +52,35 @@ class SettingsManager(context: Context) {
     private val _workdays = MutableStateFlow(getWorkdays())
     val workdays: StateFlow<Set<Int>> = _workdays.asStateFlow()
 
+    private val _accentColorHex = MutableStateFlow(getAccentColorHex())
+    val accentColorHex: StateFlow<String> = _accentColorHex.asStateFlow()
+
+    init {
+        com.example.ui.theme.setNoteJsAccentColor(
+            com.example.ui.theme.parseNoteJsAccentHex(getAccentColorHex())
+        )
+    }
+
+    fun getAccentColorHex(): String {
+        return prefs.getString(
+            KEY_ACCENT_COLOR_HEX,
+            com.example.ui.theme.DEFAULT_NOTE_JS_ACCENT_HEX
+        ) ?: com.example.ui.theme.DEFAULT_NOTE_JS_ACCENT_HEX
+    }
+
+    fun setAccentColorHex(hex: String) {
+        val normalized = "#" + hex.trim().removePrefix("#").uppercase()
+        prefs.edit().putString(KEY_ACCENT_COLOR_HEX, normalized).apply()
+        _accentColorHex.value = normalized
+        com.example.ui.theme.setNoteJsAccentColor(
+            com.example.ui.theme.parseNoteJsAccentHex(normalized)
+        )
+    }
+
+    fun resetAccentColorToDefault() {
+        setAccentColorHex(com.example.ui.theme.DEFAULT_NOTE_JS_ACCENT_HEX)
+    }
+
     fun getThemeMode(): ThemeMode {
         val name = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
         return try {
@@ -193,5 +222,6 @@ class SettingsManager(context: Context) {
         private const val KEY_MANUAL_NOTE_ORDER = "key_manual_note_order"
         private const val KEY_WORKDAYS = "key_workdays"
         private const val KEY_FIRST_RUN_NOTE_GENERATED = "key_first_run_note_generated"
+        private const val KEY_ACCENT_COLOR_HEX = "key_accent_color_hex"
     }
 }

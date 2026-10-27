@@ -40,9 +40,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -173,7 +173,7 @@ fun MultiTieredFab(
                     contentDescription = if (expanded) "Cerrar opciones" else "Crear nueva nota",
                     modifier = Modifier
                         .size(28.dp)
-                        .rotate(rotation)
+                        .graphicsLayer { rotationZ = rotation }
                 )
             }
         }

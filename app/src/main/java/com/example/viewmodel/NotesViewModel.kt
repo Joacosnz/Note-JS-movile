@@ -47,6 +47,8 @@ import com.example.util.FileManager
 import com.example.util.MathEvaluator
 import com.example.util.NoteBlockSerializer
 import com.example.util.OnboardingNoteHelper
+import com.example.util.GoogleCalendarAccountInfo
+import com.example.util.GoogleCalendarSyncManager
 import com.example.util.PdfModifierUtil
 import com.example.util.PdfRenderUtil
 import com.example.util.PdfTextExtractor
@@ -54,6 +56,13 @@ import com.example.util.ReminderScheduler
 import com.example.util.SettingsManager
 import com.example.util.ThemeMode
 import com.example.util.PaperThemeMode
+import com.example.auth.microsoft.MicrosoftAccountInfo
+import com.example.auth.microsoft.MicrosoftAuthManager
+import com.example.data.microsoft.OneDriveBackupManager
+import com.example.model.ConflictRecordType
+import com.example.model.ConflictResolutionChoice
+import com.example.model.SyncConflictItem
+import com.example.util.MicrosoftCalendarSyncManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -148,6 +157,7 @@ data class NotesUiState(
     val isBiometricLockEnabled: Boolean = true,
     val isAppBiometricLockEnabled: Boolean = false,
     val workdays: Set<Int> = setOf(1, 2, 3, 4, 5),
+    val accentColorHex: String = com.example.ui.theme.DEFAULT_NOTE_JS_ACCENT_HEX,
     val isViewingPrivateFolder: Boolean = false,
     val isPrivateUnlocked: Boolean = isViewingPrivateFolder
 )
@@ -189,7 +199,8 @@ private data class SettingsState(
     val defaultLockPin: String,
     val isBiometricLockEnabled: Boolean,
     val isAppBiometricLockEnabled: Boolean,
-    val workdays: Set<Int>
+    val workdays: Set<Int>,
+    val accentColorHex: String
 )
 
 class NotesViewModel @JvmOverloads constructor(
@@ -244,6 +255,50 @@ class NotesViewModel @JvmOverloads constructor(
 
     private val _lastDriveSyncTime = MutableStateFlow<Long>(0L)
     val lastDriveSyncTime: StateFlow<Long> = _lastDriveSyncTime.asStateFlow()
+
+    private val _isGoogleCalendarSyncEnabled = MutableStateFlow(false)
+    val isGoogleCalendarSyncEnabled: StateFlow<Boolean> = _isGoogleCalendarSyncEnabled.asStateFlow()
+
+    private val _isGoogleCalendarSyncing = MutableStateFlow(false)
+    val isGoogleCalendarSyncing: StateFlow<Boolean> = _isGoogleCalendarSyncing.asStateFlow()
+
+    private val _lastGoogleCalendarSyncTime = MutableStateFlow(0L)
+    val lastGoogleCalendarSyncTime: StateFlow<Long> = _lastGoogleCalendarSyncTime.asStateFlow()
+
+    private val _googleCalendarAccountLabel = MutableStateFlow("")
+    val googleCalendarAccountLabel: StateFlow<String> = _googleCalendarAccountLabel.asStateFlow()
+
+    private val _syncRemindersToGoogleCalendar = MutableStateFlow(true)
+    val syncRemindersToGoogleCalendar: StateFlow<Boolean> = _syncRemindersToGoogleCalendar.asStateFlow()
+
+    private val _importGoogleCalendarEvents = MutableStateFlow(true)
+    val importGoogleCalendarEvents: StateFlow<Boolean> = _importGoogleCalendarEvents.asStateFlow()
+
+    // --- INTEGRACIÓN CON MICROSOFT GRAPH API (OUTLOOK & ONEDRIVE) ---
+    val microsoftAuthManager = MicrosoftAuthManager(application)
+    val microsoftAccount: StateFlow<MicrosoftAccountInfo?> = microsoftAuthManager.currentAccount
+    val oneDriveBackupManager = OneDriveBackupManager(application)
+
+    private val _isMicrosoftCalendarSyncEnabled = MutableStateFlow(false)
+    val isMicrosoftCalendarSyncEnabled: StateFlow<Boolean> = _isMicrosoftCalendarSyncEnabled.asStateFlow()
+
+    private val _isMicrosoftCalendarSyncing = MutableStateFlow(false)
+    val isMicrosoftCalendarSyncing: StateFlow<Boolean> = _isMicrosoftCalendarSyncing.asStateFlow()
+
+    private val _lastMicrosoftCalendarSyncTime = MutableStateFlow(0L)
+    val lastMicrosoftCalendarSyncTime: StateFlow<Long> = _lastMicrosoftCalendarSyncTime.asStateFlow()
+
+    private val _microsoftCalendarAccountLabel = MutableStateFlow("")
+    val microsoftCalendarAccountLabel: StateFlow<String> = _microsoftCalendarAccountLabel.asStateFlow()
+
+    private val _syncRemindersToMicrosoftCalendar = MutableStateFlow(true)
+    val syncRemindersToMicrosoftCalendar: StateFlow<Boolean> = _syncRemindersToMicrosoftCalendar.asStateFlow()
+
+    private val _importMicrosoftCalendarEvents = MutableStateFlow(true)
+    val importMicrosoftCalendarEvents: StateFlow<Boolean> = _importMicrosoftCalendarEvents.asStateFlow()
+
+    private val _pendingSyncConflicts = MutableStateFlow<List<SyncConflictItem>>(emptyList())
+    val pendingSyncConflicts: StateFlow<List<SyncConflictItem>> = _pendingSyncConflicts.asStateFlow()
 
     val savedSignatures: StateFlow<List<SignatureEntity>>
 
@@ -356,14 +411,26 @@ class NotesViewModel @JvmOverloads constructor(
             authManager.currentUserFlow.collectLatest { user ->
                 if (user != null) {
                     repository.startListeningToCloud(user.uid)
+                    com.example.data.drive.DriveBackupWorker.scheduleWithPreferences(application)
                 } else {
                     repository.stopListeningToCloud(resetToAnonymous = true)
+                    com.example.data.drive.DriveBackupWorker.cancel(application)
                 }
             }
         }
         _isGridView.value = settingsManager.isGridViewDefault()
         _sortOption.value = settingsManager.getDefaultSortOption()
         _lastDriveSyncTime.value = DriveSyncManager.getLastSyncTime(application)
+        com.example.data.drive.DriveBackupWorker.scheduleWithPreferences(application)
+        refreshGoogleCalendarState()
+        refreshMicrosoftCalendarState()
+        if (_isGoogleCalendarSyncEnabled.value && GoogleCalendarSyncManager.hasCalendarPermissions(application)) {
+            com.example.util.GoogleCalendarSyncWorker.schedulePeriodicSync(application)
+            viewModelScope.launch(Dispatchers.IO) {
+                GoogleCalendarSyncManager.syncBidirectionalWithGoogleCalendar(application)
+                refreshGoogleCalendarState()
+            }
+        }
         savedSignatures = repository.signatures
             .stateIn(
                 scope = viewModelScope,
@@ -472,20 +539,23 @@ class NotesViewModel @JvmOverloads constructor(
         combine(
             settingsManager.isBiometricLockEnabled,
             settingsManager.isAppBiometricLockEnabled,
-            settingsManager.workdays
-        ) { bioLock, appBioLock, workdays ->
-            Triple(bioLock, appBioLock, workdays)
+            settingsManager.workdays,
+            settingsManager.accentColorHex
+        ) { bioLock, appBioLock, workdays, accentHex ->
+            listOf(bioLock, appBioLock, workdays, accentHex)
         }
     ) { base, extra ->
+        @Suppress("UNCHECKED_CAST")
         SettingsState(
             themeMode = base[0] as ThemeMode,
             paperThemeMode = base[1] as PaperThemeMode,
             defaultPaperStyle = base[2] as String,
             geminiApiKey = base[3] as String,
             defaultLockPin = base[4] as String,
-            isBiometricLockEnabled = extra.first,
-            isAppBiometricLockEnabled = extra.second,
-            workdays = extra.third
+            isBiometricLockEnabled = extra[0] as Boolean,
+            isAppBiometricLockEnabled = extra[1] as Boolean,
+            workdays = extra[2] as Set<Int>,
+            accentColorHex = extra[3] as String
         )
     }
 
@@ -618,6 +688,7 @@ class NotesViewModel @JvmOverloads constructor(
             isBiometricLockEnabled = settings.isBiometricLockEnabled,
             isAppBiometricLockEnabled = settings.isAppBiometricLockEnabled,
             workdays = settings.workdays,
+            accentColorHex = settings.accentColorHex,
             isViewingPrivateFolder = filter.isViewingPrivateFolder,
             isPrivateUnlocked = filter.isViewingPrivateFolder
         )
@@ -854,6 +925,10 @@ class NotesViewModel @JvmOverloads constructor(
             navigateTo(Screen.PdfLibrary)
             return
         }
+        if (tab == NavTab.REMINDERS) {
+            navigateTo(Screen.Reminders())
+            return
+        }
         transitionToSnapshot(
             NavigationSnapshot(
                 screen = Screen.Home,
@@ -987,6 +1062,14 @@ class NotesViewModel @JvmOverloads constructor(
 
     fun setPaperThemeMode(mode: PaperThemeMode) {
         settingsManager.setPaperThemeMode(mode)
+    }
+
+    fun setAccentColorHex(hex: String) {
+        settingsManager.setAccentColorHex(hex)
+    }
+
+    fun resetAccentColorToDefault() {
+        settingsManager.resetAccentColorToDefault()
     }
 
     fun setDefaultPaperStyle(style: String) {
@@ -2486,9 +2569,28 @@ class NotesViewModel @JvmOverloads constructor(
                     firestoreManager.setSyncState(SyncState.SYNCING)
                     repository.startListeningToCloud(uid)
                     repository.syncPendingNotesSuspending(uid, forcePushAll = true)
+
+                    // Detectar conflictos entre Google y Microsoft si hay sesión de Microsoft activa
+                    val detectedConflicts = mutableListOf<SyncConflictItem>()
+                    if (microsoftAuthManager.isSignedIn()) {
+                        detectedConflicts.addAll(oneDriveBackupManager.checkAndDetectNoteConflicts())
+                        if (_isMicrosoftCalendarSyncEnabled.value) {
+                            val calRes = MicrosoftCalendarSyncManager.syncBidirectionalWithOutlookCalendar(context)
+                            detectedConflicts.addAll(calRes.conflicts)
+                            refreshMicrosoftCalendarState()
+                        }
+                    }
+                    if (detectedConflicts.isNotEmpty()) {
+                        appendSyncConflicts(detectedConflicts)
+                    }
+
                     firestoreManager.setSyncState(SyncState.SYNCED)
                     _lastDriveSyncTime.value = System.currentTimeMillis()
-                    val okMsg = "Sincronización instantánea en la nube completada"
+                    val okMsg = if (detectedConflicts.isNotEmpty()) {
+                        "Sincronización completada • ${detectedConflicts.size} conflicto(s) pendiente(s) de resolver"
+                    } else {
+                        "Sincronización instantánea en la nube completada"
+                    }
                     _snackbarMessage.value = okMsg
                     withContext(Dispatchers.Main) {
                         onComplete?.invoke(true, okMsg)
@@ -2600,6 +2702,403 @@ class NotesViewModel @JvmOverloads constructor(
                 withContext(Dispatchers.Main) {
                     onCompleted(fallbackResult)
                 }
+            }
+        }
+    }
+
+    // --- SINCRONIZACIÓN DE RECORDATORIOS Y EVENTOS CON GOOGLE CALENDAR ---
+
+    fun refreshGoogleCalendarState() {
+        val context = getApplication<Application>()
+        val hasPerms = GoogleCalendarSyncManager.hasCalendarPermissions(context)
+        val enabledPref = GoogleCalendarSyncManager.isSyncEnabled(context)
+        _isGoogleCalendarSyncEnabled.value = enabledPref && hasPerms
+        _syncRemindersToGoogleCalendar.value = GoogleCalendarSyncManager.isSyncRemindersEnabled(context)
+        _importGoogleCalendarEvents.value = GoogleCalendarSyncManager.isImportEventsEnabled(context)
+        _lastGoogleCalendarSyncTime.value = GoogleCalendarSyncManager.getLastSyncTime(context)
+
+        if (hasPerms) {
+            val resolved = GoogleCalendarSyncManager.resolveTargetCalendar(context)
+            if (resolved != null) {
+                _googleCalendarAccountLabel.value = resolved.summaryLabel
+            } else {
+                val (calName, accName) = GoogleCalendarSyncManager.getSelectedCalendarInfoFromPrefs(context)
+                _googleCalendarAccountLabel.value = accName.ifBlank { calName.ifBlank { "Google Calendar" } }
+            }
+        } else {
+            val (calName, accName) = GoogleCalendarSyncManager.getSelectedCalendarInfoFromPrefs(context)
+            _googleCalendarAccountLabel.value = accName.ifBlank { calName }
+        }
+    }
+
+    fun getAvailableGoogleCalendars(): List<GoogleCalendarAccountInfo> {
+        return GoogleCalendarSyncManager.getAvailableCalendars(getApplication())
+    }
+
+    fun setGoogleCalendarSyncEnabled(
+        enabled: Boolean,
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ) {
+        val context = getApplication<Application>()
+        if (enabled && !GoogleCalendarSyncManager.hasCalendarPermissions(context)) {
+            val msg = "Concede permisos de Calendario para activar la sincronización con Google Calendar"
+            _snackbarMessage.value = msg
+            onComplete?.invoke(false, msg)
+            return
+        }
+
+        GoogleCalendarSyncManager.setSyncEnabled(context, enabled)
+        refreshGoogleCalendarState()
+
+        if (enabled) {
+            syncWithGoogleCalendarNow(showSnackbar = true, onComplete = onComplete)
+        } else {
+            val msg = "Sincronización automática con Google Calendar desactivada"
+            _snackbarMessage.value = msg
+            onComplete?.invoke(true, msg)
+        }
+    }
+
+    fun setSyncRemindersToGoogleCalendar(enabled: Boolean) {
+        val context = getApplication<Application>()
+        GoogleCalendarSyncManager.setSyncRemindersEnabled(context, enabled)
+        _syncRemindersToGoogleCalendar.value = enabled
+        if (_isGoogleCalendarSyncEnabled.value) {
+            syncWithGoogleCalendarNow(showSnackbar = true)
+        }
+    }
+
+    fun setImportGoogleCalendarEvents(enabled: Boolean) {
+        val context = getApplication<Application>()
+        GoogleCalendarSyncManager.setImportEventsEnabled(context, enabled)
+        _importGoogleCalendarEvents.value = enabled
+        if (_isGoogleCalendarSyncEnabled.value && enabled) {
+            syncWithGoogleCalendarNow(showSnackbar = true)
+        }
+    }
+
+    fun selectGoogleCalendarAccount(
+        info: GoogleCalendarAccountInfo,
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ) {
+        val context = getApplication<Application>()
+        GoogleCalendarSyncManager.setSelectedCalendar(context, info)
+        GoogleCalendarSyncManager.setSyncEnabled(context, true)
+        refreshGoogleCalendarState()
+        syncWithGoogleCalendarNow(showSnackbar = true, onComplete = onComplete)
+    }
+
+    fun syncWithGoogleCalendarNow(
+        showSnackbar: Boolean = false,
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ) {
+        if (_isGoogleCalendarSyncing.value) return
+        val context = getApplication<Application>()
+        if (!GoogleCalendarSyncManager.hasCalendarPermissions(context)) {
+            val msg = "Permisos de Calendario requeridos para sincronizar con Google Calendar"
+            if (showSnackbar || onComplete != null) {
+                _snackbarMessage.value = msg
+            }
+            onComplete?.invoke(false, msg)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isGoogleCalendarSyncing.value = true
+            try {
+                if (!GoogleCalendarSyncManager.isSyncEnabled(context)) {
+                    GoogleCalendarSyncManager.setSyncEnabled(context, true)
+                }
+                val result = GoogleCalendarSyncManager.syncBidirectionalWithGoogleCalendar(context)
+                refreshGoogleCalendarState()
+                if (_isMicrosoftCalendarSyncEnabled.value && microsoftAuthManager.isSignedIn()) {
+                    val msResult = MicrosoftCalendarSyncManager.syncBidirectionalWithOutlookCalendar(context)
+                    refreshMicrosoftCalendarState()
+                    if (msResult.conflicts.isNotEmpty()) {
+                        appendSyncConflicts(msResult.conflicts)
+                    }
+                }
+                if (showSnackbar) {
+                    _snackbarMessage.value = result.message
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(result.success, result.message)
+                }
+            } catch (e: Exception) {
+                val errMsg = "Error al sincronizar con Google Calendar: ${e.localizedMessage ?: "Intenta nuevamente"}"
+                if (showSnackbar) {
+                    _snackbarMessage.value = errMsg
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false, errMsg)
+                }
+            } finally {
+                _isGoogleCalendarSyncing.value = false
+            }
+        }
+    }
+
+    // --- MÉTODOS DE MICROSOFT GRAPH API: OUTLOOK CALENDAR & ONEDRIVE ---
+
+    fun refreshMicrosoftCalendarState() {
+        val context = getApplication<Application>()
+        _isMicrosoftCalendarSyncEnabled.value = MicrosoftCalendarSyncManager.isSyncEnabled(context)
+        _syncRemindersToMicrosoftCalendar.value = MicrosoftCalendarSyncManager.isSyncRemindersEnabled(context)
+        _importMicrosoftCalendarEvents.value = MicrosoftCalendarSyncManager.isImportEventsEnabled(context)
+        _lastMicrosoftCalendarSyncTime.value = MicrosoftCalendarSyncManager.getLastSyncTime(context)
+        _microsoftCalendarAccountLabel.value = MicrosoftCalendarSyncManager.getAccountLabel(context)
+    }
+
+    fun setMicrosoftCalendarSyncEnabled(
+        enabled: Boolean,
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ) {
+        val context = getApplication<Application>()
+        if (enabled && !microsoftAuthManager.isSignedIn()) {
+            val msg = "Inicia sesión con tu cuenta de Microsoft para sincronizar con Outlook Calendar"
+            _snackbarMessage.value = msg
+            onComplete?.invoke(false, msg)
+            return
+        }
+
+        MicrosoftCalendarSyncManager.setSyncEnabled(context, enabled)
+        refreshMicrosoftCalendarState()
+
+        if (enabled) {
+            syncWithMicrosoftCalendarNow(showSnackbar = true, onComplete = onComplete)
+        } else {
+            val msg = "Sincronización con Outlook Calendar desactivada"
+            _snackbarMessage.value = msg
+            onComplete?.invoke(true, msg)
+        }
+    }
+
+    fun setSyncRemindersToMicrosoftCalendar(enabled: Boolean) {
+        val context = getApplication<Application>()
+        MicrosoftCalendarSyncManager.setSyncRemindersEnabled(context, enabled)
+        _syncRemindersToMicrosoftCalendar.value = enabled
+        if (_isMicrosoftCalendarSyncEnabled.value) {
+            syncWithMicrosoftCalendarNow(showSnackbar = true)
+        }
+    }
+
+    fun setImportMicrosoftCalendarEvents(enabled: Boolean) {
+        val context = getApplication<Application>()
+        MicrosoftCalendarSyncManager.setImportEventsEnabled(context, enabled)
+        _importMicrosoftCalendarEvents.value = enabled
+        if (_isMicrosoftCalendarSyncEnabled.value && enabled) {
+            syncWithMicrosoftCalendarNow(showSnackbar = true)
+        }
+    }
+
+    fun syncWithMicrosoftCalendarNow(
+        showSnackbar: Boolean = false,
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ) {
+        if (_isMicrosoftCalendarSyncing.value) return
+        val context = getApplication<Application>()
+        if (!microsoftAuthManager.isSignedIn()) {
+            val msg = "Debes vincular tu cuenta de Microsoft antes de sincronizar"
+            if (showSnackbar || onComplete != null) {
+                _snackbarMessage.value = msg
+            }
+            onComplete?.invoke(false, msg)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isMicrosoftCalendarSyncing.value = true
+            try {
+                if (!MicrosoftCalendarSyncManager.isSyncEnabled(context)) {
+                    MicrosoftCalendarSyncManager.setSyncEnabled(context, true)
+                }
+                val result = MicrosoftCalendarSyncManager.syncBidirectionalWithOutlookCalendar(context)
+                refreshMicrosoftCalendarState()
+                val noteConflicts = oneDriveBackupManager.checkAndDetectNoteConflicts()
+                val allConflicts = result.conflicts + noteConflicts
+                if (allConflicts.isNotEmpty()) {
+                    appendSyncConflicts(allConflicts)
+                }
+                if (showSnackbar) {
+                    _snackbarMessage.value = result.message
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(result.success, result.message)
+                }
+            } catch (e: Exception) {
+                val errMsg = "Error al sincronizar con Outlook: ${e.localizedMessage ?: "Intenta nuevamente"}"
+                if (showSnackbar) {
+                    _snackbarMessage.value = errMsg
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false, errMsg)
+                }
+            } finally {
+                _isMicrosoftCalendarSyncing.value = false
+            }
+        }
+    }
+
+    fun backupToOneDriveNow(onComplete: ((Boolean, String) -> Unit)? = null) {
+        val context = getApplication<Application>()
+        if (!microsoftAuthManager.isSignedIn()) {
+            val msg = "Inicia sesión con Microsoft para guardar en OneDrive"
+            _snackbarMessage.value = msg
+            onComplete?.invoke(false, msg)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isManualSyncing.value = true
+            try {
+                val noteConflicts = oneDriveBackupManager.checkAndDetectNoteConflicts()
+                if (noteConflicts.isNotEmpty()) {
+                    appendSyncConflicts(noteConflicts)
+                    val conflictMsg = "Se detectaron ${noteConflicts.size} conflicto(s) entre Google y Microsoft. Resuélvelos antes de respaldar."
+                    _snackbarMessage.value = conflictMsg
+                    withContext(Dispatchers.Main) {
+                        onComplete?.invoke(false, conflictMsg)
+                    }
+                    return@launch
+                }
+
+                val res = oneDriveBackupManager.performOneDriveBackup(triggerType = "MANUAL_ONEDRIVE")
+                val (success, msg) = when (res) {
+                    is com.example.data.drive.BackupResult.Success -> {
+                        true to "Copia guardada con éxito en OneDrive"
+                    }
+                    is com.example.data.drive.BackupResult.Error -> false to res.message
+                    is com.example.data.drive.BackupResult.AuthRequired -> false to "Autorización requerida en Microsoft"
+                }
+                _snackbarMessage.value = msg
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(success, msg)
+                }
+            } catch (e: Exception) {
+                val errMsg = "Error al guardar en OneDrive: ${e.localizedMessage ?: "Fallo de conexión"}"
+                _snackbarMessage.value = errMsg
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false, errMsg)
+                }
+            } finally {
+                _isManualSyncing.value = false
+            }
+        }
+    }
+
+    fun restoreFromOneDrive(
+        snapshot: com.example.data.drive.BackupSnapshotInfo,
+        mode: com.example.data.drive.RestoreMode,
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ) {
+        val context = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val res = oneDriveBackupManager.restoreOneDriveBackup(snapshot, mode)
+                val (success, msg) = when (res) {
+                    is com.example.data.drive.RestoreResult.Success -> true to "Copia de OneDrive restaurada correctamente"
+                    is com.example.data.drive.RestoreResult.NotFound -> false to "Archivo de respaldo no encontrado en OneDrive"
+                    is com.example.data.drive.RestoreResult.Error -> false to res.message
+                    is com.example.data.drive.RestoreResult.AuthRequired -> false to "Autorización requerida para descargar de OneDrive"
+                }
+                _snackbarMessage.value = msg
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(success, msg)
+                }
+            } catch (e: Exception) {
+                val errMsg = "Error al restaurar desde OneDrive: ${e.localizedMessage}"
+                _snackbarMessage.value = errMsg
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false, errMsg)
+                }
+            }
+        }
+    }
+
+    private fun appendSyncConflicts(newConflicts: List<SyncConflictItem>) {
+        if (newConflicts.isEmpty()) return
+        val existingById = _pendingSyncConflicts.value.associateBy { it.id }.toMutableMap()
+        newConflicts.forEach { conflict ->
+            existingById[conflict.id] = conflict
+        }
+        _pendingSyncConflicts.value = existingById.values.toList()
+    }
+
+    fun resolveSyncConflict(
+        conflict: SyncConflictItem,
+        choice: ConflictResolutionChoice,
+        applyToAll: Boolean = false
+    ) {
+        val context = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val targets = if (applyToAll) {
+                _pendingSyncConflicts.value
+            } else {
+                listOf(conflict)
+            }
+
+            var resolvedNotes = false
+            var resolvedCalendar = false
+
+            for (item in targets) {
+                when (item.recordType) {
+                    ConflictRecordType.NOTE -> {
+                        oneDriveBackupManager.resolveNoteConflict(item, choice)
+                        resolvedNotes = true
+                    }
+                    ConflictRecordType.REMINDER, ConflictRecordType.CALENDAR_EVENT -> {
+                        MicrosoftCalendarSyncManager.resolveCalendarConflict(context, item, choice)
+                        resolvedCalendar = true
+                    }
+                }
+            }
+
+            // Sincronizar con Firestore si se actualizaron notas y el usuario tiene Google vinculado
+            if (resolvedNotes) {
+                val uid = resolveEffectiveCloudUserId()
+                if (uid != null) {
+                    repository.syncPendingNotesSuspending(uid, forcePushAll = true)
+                }
+                // Si el usuario eligió conservar Google o ambas, actualizamos la copia en OneDrive
+                if (choice == ConflictResolutionChoice.KEEP_GOOGLE || choice == ConflictResolutionChoice.KEEP_BOTH) {
+                    oneDriveBackupManager.performOneDriveBackup(triggerType = "CONFLICT_RESOLUTION")
+                }
+            }
+
+            if (resolvedCalendar) {
+                refreshMicrosoftCalendarState()
+                refreshGoogleCalendarState()
+            }
+
+            val resolvedIds = targets.map { it.id }.toSet()
+            _pendingSyncConflicts.value = _pendingSyncConflicts.value.filterNot { it.id in resolvedIds }
+
+            val choiceLabel = when (choice) {
+                ConflictResolutionChoice.KEEP_GOOGLE -> "versión de Google aplicada"
+                ConflictResolutionChoice.KEEP_MICROSOFT -> "versión de Microsoft aplicada"
+                ConflictResolutionChoice.KEEP_BOTH -> "ambas versiones conservadas"
+            }
+            _snackbarMessage.value = if (targets.size > 1) {
+                "${targets.size} conflictos resueltos ($choiceLabel)"
+            } else {
+                "Conflicto resuelto ($choiceLabel)"
+            }
+        }
+    }
+
+    fun dismissSyncConflicts() {
+        _pendingSyncConflicts.value = emptyList()
+    }
+
+    fun signOutMicrosoft(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            microsoftAuthManager.signOut()
+            val context = getApplication<Application>()
+            MicrosoftCalendarSyncManager.setSyncEnabled(context, false)
+            refreshMicrosoftCalendarState()
+            _pendingSyncConflicts.value = emptyList()
+            withContext(Dispatchers.Main) {
+                onComplete()
             }
         }
     }

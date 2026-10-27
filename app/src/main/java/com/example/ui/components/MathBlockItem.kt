@@ -19,7 +19,7 @@ fun MathBlockItem(
     modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
-    val amber = Color(0xFFFFB800)
+    val amber = com.example.ui.theme.NoteJsAmber
     NotionMathBlockItem(
         block = block,
         onUpdateBlock = onUpdateBlock,

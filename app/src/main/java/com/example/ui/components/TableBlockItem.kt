@@ -85,7 +85,8 @@ import androidx.compose.ui.unit.sp
 import com.example.model.NoteBlock
 import com.example.model.TableCell
 
-private val amberColor = Color(0xFFFFB300)
+private val amberColor: Color
+    get() = com.example.ui.theme.NoteJsAmber
 
 data class TableColorOption(
     val name: String,

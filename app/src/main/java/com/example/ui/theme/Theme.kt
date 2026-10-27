@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -19,46 +20,51 @@ val LocalIsDarkTheme = staticCompositionLocalOf { false }
 @Composable
 fun isAppInDarkTheme(): Boolean = LocalIsDarkTheme.current
 
-private val DarkColorScheme = darkColorScheme(
-    primary = NoteJsAmberDark,
-    onPrimary = Color.Black,
-    primaryContainer = Color(0xFF3D2800),
-    onPrimaryContainer = NoteJsAmberDark,
-    secondary = NoteJsAmberDark,
-    background = NoteJsSystemBgDark,
-    surface = NoteJsCardBgDark,
-    surfaceVariant = NoteJsSecondaryCardDark,
-    surfaceTint = Color.Transparent,
-    onBackground = Color.White,
-    onSurface = Color.White,
-    onSurfaceVariant = NoteJsTextSecondaryDark,
-    outline = NoteJsSeparatorDark,
-    outlineVariant = NoteJsSeparatorDark
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = NoteJsAmber,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFEF3C7),
-    onPrimaryContainer = Color(0xFF78350F),
-    secondary = NoteJsAmber,
-    background = NoteJsSystemBgLight,
-    surface = NoteJsCardBgLight,
-    surfaceVariant = NoteJsSearchBarLight,
-    surfaceTint = Color.Transparent,
-    onBackground = Color.Black,
-    onSurface = Color.Black,
-    onSurfaceVariant = NoteJsTextSecondaryLight,
-    outline = NoteJsSeparatorLight,
-    outlineVariant = NoteJsSeparatorLight
-)
-
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val accentDark = NoteJsAmberDark
+    val accentLight = NoteJsAmber
+    val onAccentDark = if (accentDark.luminance() > 0.45f) Color.Black else Color.White
+    val onAccentLight = if (accentLight.luminance() > 0.45f) Color.Black else Color.White
+
+    val colorScheme = if (darkTheme) {
+        darkColorScheme(
+            primary = accentDark,
+            onPrimary = onAccentDark,
+            primaryContainer = accentDark.copy(alpha = 0.22f),
+            onPrimaryContainer = accentDark,
+            secondary = accentDark,
+            background = NoteJsSystemBgDark,
+            surface = NoteJsCardBgDark,
+            surfaceVariant = NoteJsSecondaryCardDark,
+            surfaceTint = Color.Transparent,
+            onBackground = Color.White,
+            onSurface = Color.White,
+            onSurfaceVariant = NoteJsTextSecondaryDark,
+            outline = NoteJsSeparatorDark,
+            outlineVariant = NoteJsSeparatorDark
+        )
+    } else {
+        lightColorScheme(
+            primary = accentLight,
+            onPrimary = onAccentLight,
+            primaryContainer = accentLight.copy(alpha = 0.18f),
+            onPrimaryContainer = accentLight,
+            secondary = accentLight,
+            background = NoteJsSystemBgLight,
+            surface = NoteJsCardBgLight,
+            surfaceVariant = NoteJsSearchBarLight,
+            surfaceTint = Color.Transparent,
+            onBackground = Color.Black,
+            onSurface = Color.Black,
+            onSurfaceVariant = NoteJsTextSecondaryLight,
+            outline = NoteJsSeparatorLight,
+            outlineVariant = NoteJsSeparatorLight
+        )
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {

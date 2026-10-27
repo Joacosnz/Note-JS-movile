@@ -279,8 +279,9 @@ fun KeepNoteCard(
                     verticalAlignment = Alignment.Top
                 ) {
                     if (note.title.isNotBlank()) {
+                        val iconPrefix = if (!note.icon.isNullOrBlank()) "${note.icon} " else ""
                         Text(
-                            text = note.title,
+                            text = "$iconPrefix${note.title}",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 15.sp,
