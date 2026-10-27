@@ -432,43 +432,74 @@ fun NotesApp(
                             fadeOut(animationSpec = tween(200))
                         )
                     } else if (targetState is Screen.Reminders) {
+                        // Recordatorios / Calendario: desplazamiento vertical de abajo hacia arriba
                         (slideInVertically(
-                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
                             initialOffsetY = { fullHeight -> fullHeight }
                         ) + fadeIn(
-                            animationSpec = tween(durationMillis = 250)
+                            animationSpec = tween(durationMillis = 240)
                         )).togetherWith(
                             slideOutVertically(
-                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                                animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
                                 targetOffsetY = { fullHeight -> -fullHeight / 4 }
+                            ) + fadeOut(
+                                animationSpec = tween(durationMillis = 200)
+                            )
+                        )
+                    } else if (targetState is Screen.Folders) {
+                        // Carpetas: desplazamiento horizontal desde la derecha hacia la izquierda
+                        (slideInHorizontally(
+                            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                            initialOffsetX = { fullWidth -> fullWidth }
+                        ) + fadeIn(
+                            animationSpec = tween(durationMillis = 200)
+                        )).togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                                targetOffsetX = { fullWidth -> -fullWidth / 3 }
+                            ) + fadeOut(
+                                animationSpec = tween(durationMillis = 200)
+                            )
+                        )
+                    } else if (targetState is Screen.Home) {
+                        // Página principal (Inicio): desplazamiento horizontal hacia la derecha desde la izquierda
+                        (slideInHorizontally(
+                            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                            initialOffsetX = { fullWidth -> -fullWidth }
+                        ) + fadeIn(
+                            animationSpec = tween(durationMillis = 200)
+                        )).togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                                targetOffsetX = { fullWidth -> fullWidth / 3 }
                             ) + fadeOut(
                                 animationSpec = tween(durationMillis = 200)
                             )
                         )
                     } else if (initialState is Screen.Reminders) {
                         (slideInVertically(
-                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
                             initialOffsetY = { fullHeight -> -fullHeight / 4 }
                         ) + fadeIn(
-                            animationSpec = tween(durationMillis = 250)
+                            animationSpec = tween(durationMillis = 240)
                         )).togetherWith(
                             slideOutVertically(
-                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                                animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
                                 targetOffsetY = { fullHeight -> fullHeight }
                             ) + fadeOut(
                                 animationSpec = tween(durationMillis = 200)
                             )
                         )
                     } else if (isNavigatingBack) {
-                        (slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> -width / 3 } +
+                        (slideInHorizontally(animationSpec = tween(240, easing = FastOutSlowInEasing)) { width -> -width / 3 } +
                                 fadeIn(animationSpec = tween(180))).togetherWith(
-                            slideOutHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> width } +
+                            slideOutHorizontally(animationSpec = tween(240, easing = FastOutSlowInEasing)) { width -> width } +
                                     fadeOut(animationSpec = tween(180))
                         )
                     } else {
-                        (slideInHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> width } +
+                        (slideInHorizontally(animationSpec = tween(240, easing = FastOutSlowInEasing)) { width -> width } +
                                 fadeIn(animationSpec = tween(180))).togetherWith(
-                            slideOutHorizontally(animationSpec = tween(220, easing = FastOutSlowInEasing)) { width -> -width / 3 } +
+                            slideOutHorizontally(animationSpec = tween(240, easing = FastOutSlowInEasing)) { width -> -width / 3 } +
                                     fadeOut(animationSpec = tween(180))
                         )
                     }

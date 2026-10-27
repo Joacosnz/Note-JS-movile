@@ -372,7 +372,7 @@ fun NoteReminderBottomSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(REMINDER_OFFSET_OPTIONS) { option ->
+                    items(REMINDER_OFFSET_OPTIONS, key = { it.minutes }) { option ->
                         val isSelected = selectedOffsets.contains(option.minutes)
                         FilterChip(
                             selected = isSelected,
@@ -454,7 +454,7 @@ fun NoteReminderBottomSheet(
                             .weight(0.50f)
                             .fillMaxHeight()
                     ) {
-                        itemsIndexed(dayOptions) { idx, dayCal ->
+                        itemsIndexed(dayOptions, key = { _, dayCal -> dayCal.timeInMillis }) { idx, dayCal ->
                             val isSelected = idx == selectedDayIndex
                             val dayText = remember(dayCal) {
                                 val now = Calendar.getInstance()
@@ -517,7 +517,7 @@ fun NoteReminderBottomSheet(
                             .weight(0.25f)
                             .fillMaxHeight()
                     ) {
-                        itemsIndexed(hourOptions) { idx, hour ->
+                        itemsIndexed(hourOptions, key = { _, hour -> hour }) { idx, hour ->
                             val isSelected = idx == selectedHourIndex
                             Box(
                                 modifier = Modifier
@@ -561,7 +561,7 @@ fun NoteReminderBottomSheet(
                             .weight(0.25f)
                             .fillMaxHeight()
                     ) {
-                        itemsIndexed(minuteOptions) { idx, minute ->
+                        itemsIndexed(minuteOptions, key = { _, minute -> minute }) { idx, minute ->
                             val isSelected = idx == selectedMinuteIndex
                             Box(
                                 modifier = Modifier

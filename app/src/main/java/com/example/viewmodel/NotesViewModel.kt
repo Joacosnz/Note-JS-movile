@@ -794,9 +794,8 @@ class NotesViewModel @JvmOverloads constructor(
     fun navigateTo(screen: Screen) {
         val current = currentNavigationSnapshot()
         val targetTab = when (screen) {
-            is Screen.Reminders -> NavTab.REMINDERS
             is Screen.Home -> NavTab.NOTES
-            else -> current.activeTab
+            else -> if (current.activeTab == NavTab.REMINDERS) NavTab.NOTES else current.activeTab
         }
         transitionToSnapshot(current.copy(screen = screen, activeTab = targetTab))
     }

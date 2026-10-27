@@ -383,7 +383,7 @@ fun NotionMathBlockItem(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(categories.indices.toList()) { catIdx ->
+                        items(categories.indices.toList(), key = { it }) { catIdx ->
                             val isSelected = selectedCategoryIndex == catIdx
                             FilterChip(
                                 selected = isSelected,
@@ -419,7 +419,7 @@ fun NotionMathBlockItem(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(activeTemplates) { (label, template) ->
+                        items(activeTemplates, key = { it.first }) { (label, template) ->
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = if (isDark) Color(0xFF2B2B30) else Color(0xFFE2E2E8),

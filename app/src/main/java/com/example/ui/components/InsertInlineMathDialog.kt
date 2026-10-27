@@ -129,7 +129,7 @@ fun InsertInlineMathDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(quickTemplates) { (label, template) ->
+                    items(quickTemplates, key = { it.first }) { (label, template) ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = amber.copy(alpha = 0.15f),

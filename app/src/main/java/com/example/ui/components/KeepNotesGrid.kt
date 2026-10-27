@@ -112,7 +112,7 @@ fun KeepNotesGrid(
     ) {
         // 1. Sección de notas fijadas
         if (pinnedNotes.isNotEmpty()) {
-            item(span = StaggeredGridItemSpan.FullLine) {
+            item(key = "grid_header_pinned", span = StaggeredGridItemSpan.FullLine) {
                 KeepSectionHeader(title = "FIJADAS")
             }
             items(pinnedNotes, key = { it.id }) { note ->
@@ -137,7 +137,7 @@ fun KeepNotesGrid(
             }
 
             if (otherNotes.isNotEmpty()) {
-                item(span = StaggeredGridItemSpan.FullLine) {
+                item(key = "grid_header_others", span = StaggeredGridItemSpan.FullLine) {
                     KeepSectionHeader(title = "OTRAS")
                 }
             }

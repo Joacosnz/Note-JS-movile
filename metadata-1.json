@@ -1,0 +1,6 @@
+{
+  "name": "Note JS",
+  "description": "Aplicación de notas con paleta Google Keep, bloques de ecuaciones Notion KaTeX, reordenación drag-and-drop, lista agrupada iOS y persistencia Room.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

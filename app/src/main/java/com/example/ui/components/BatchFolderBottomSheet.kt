@@ -115,7 +115,7 @@ fun BatchFolderBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(folders) { folder ->
+                    items(folders, key = { it }) { folder ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

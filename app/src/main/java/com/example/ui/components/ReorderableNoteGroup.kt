@@ -78,6 +78,7 @@ fun ReorderableGroupedNotesCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             currentNotes.forEachIndexed { index, note ->
+                androidx.compose.runtime.key(note.id) {
                 val isBeingDragged = draggedIndex == index
                 val itemZIndex = if (isBeingDragged) 10f else 1f
 
@@ -166,6 +167,7 @@ fun ReorderableGroupedNotesCard(
                         dragHandleModifier = dragModifier,
                         modifier = rowModifier
                     )
+                }
                 }
             }
         }

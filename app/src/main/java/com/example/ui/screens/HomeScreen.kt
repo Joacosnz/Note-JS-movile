@@ -413,7 +413,7 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     when (uiState.activeTab) {
-                        NavTab.NOTES -> {
+                        NavTab.NOTES, NavTab.REMINDERS -> {
                             val pinned = uiState.activeNotes.filter { it.isPinned }
                             val others = uiState.activeNotes.filter { !it.isPinned }
 
@@ -459,8 +459,8 @@ fun HomeScreen(
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         if (pinned.isNotEmpty()) {
-                                            item { NoteJsSectionHeader("FIJADAS") }
-                                            item {
+                                            item(key = "section_header_pinned") { NoteJsSectionHeader("FIJADAS") }
+                                            item(key = "section_group_pinned") {
                                                 ReorderableGroupedNotesCard(
                                                     notes = pinned,
                                                     unlockedNoteIds = uiState.unlockedNoteIds,
@@ -475,16 +475,16 @@ fun HomeScreen(
                                                     }
                                                 )
                                             }
-                                            item { Spacer(modifier = Modifier.height(16.dp)) }
+                                            item(key = "section_spacer_pinned") { Spacer(modifier = Modifier.height(16.dp)) }
                                         }
 
                                         if (others.isNotEmpty()) {
                                             if (pinned.isNotEmpty()) {
-                                                item {
+                                                item(key = "section_header_others") {
                                                     NoteJsSectionHeader("NOTAS")
                                                 }
                                             }
-                                            item {
+                                            item(key = "section_group_others") {
                                                 ReorderableGroupedNotesCard(
                                                     notes = others,
                                                     unlockedNoteIds = uiState.unlockedNoteIds,
@@ -503,18 +503,6 @@ fun HomeScreen(
                                     }
                                 }
                             }
-                        }
-
-                        NavTab.REMINDERS -> {
-                            val remScreen = currentScreen as? Screen.Reminders
-                            RemindersScreen(
-                                viewModel = viewModel,
-                                initialCreateNewReminder = remScreen?.initialCreateNewReminder ?: false,
-                                initialOpenReminderId = remScreen?.initialOpenReminderId ?: 0L,
-                                creationTriggerTimestamp = remScreen?.triggerTimestamp ?: 0L,
-                                showBackButton = false,
-                                modifier = Modifier.fillMaxSize()
-                            )
                         }
 
                         NavTab.ARCHIVED -> {

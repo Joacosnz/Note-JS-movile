@@ -196,22 +196,6 @@ fun NoteJsFoldersDrawer(
                                 )
 
                                 FolderRowItem(
-                                    icon = Icons.Default.Notifications,
-                                    title = "Con recordatorio",
-                                    count = remindersCount,
-                                    isSelected = activeTab == NavTab.REMINDERS,
-                                    tint = amber,
-                                    onClick = { onSelectTab(NavTab.REMINDERS) },
-                                    testTag = "folder_reminders"
-                                )
-
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(start = 44.dp),
-                                    thickness = 0.5.dp,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-
-                                FolderRowItem(
                                     icon = Icons.Default.Archive,
                                     title = "Archivadas",
                                     count = archivedCount,
@@ -219,22 +203,6 @@ fun NoteJsFoldersDrawer(
                                     tint = amber,
                                     onClick = { onSelectTab(NavTab.ARCHIVED) },
                                     testTag = "folder_archive"
-                                )
-
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(start = 44.dp),
-                                    thickness = 0.5.dp,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-
-                                FolderRowItem(
-                                    icon = Icons.Default.Delete,
-                                    title = "Eliminadas recientemente",
-                                    count = trashCount,
-                                    isSelected = activeTab == NavTab.TRASH,
-                                    tint = amber,
-                                    onClick = { onSelectTab(NavTab.TRASH) },
-                                    testTag = "folder_trash"
                                 )
 
                                 HorizontalDivider(
@@ -253,6 +221,22 @@ fun NoteJsFoldersDrawer(
                                         onOpenPdfLibrary?.invoke() ?: onSelectTab(NavTab.PDF_LIBRARY)
                                     },
                                     testTag = "folder_pdf_library"
+                                )
+
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 44.dp),
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+
+                                FolderRowItem(
+                                    icon = Icons.Default.Delete,
+                                    title = "Eliminadas recientemente",
+                                    count = trashCount,
+                                    isSelected = activeTab == NavTab.TRASH,
+                                    tint = Color(0xFFE50914),
+                                    onClick = { onSelectTab(NavTab.TRASH) },
+                                    testTag = "folder_trash"
                                 )
                             }
                         }
