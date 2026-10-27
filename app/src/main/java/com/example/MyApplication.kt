@@ -69,6 +69,7 @@ open class MyApplication : Application(), ImageLoaderFactory {
         }
     }
 
+
     private fun validateRoomDatabaseConnection() {
         try {
             val db = AppDatabase.getDatabase(this)
